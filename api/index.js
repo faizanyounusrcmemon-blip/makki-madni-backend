@@ -1,15 +1,15 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 
-require("dotenv").config();
-require("../db");
+require("../db"); // ⬅️ db path fix
 
 const app = express();
+
 app.use(cors());
 app.use(express.json());
 
 // ROUTES
-// SALES
 app.use("/api/bookings", require("./routes/bookings"));
 app.use("/api/hotels", require("./routes/hotels"));
 app.use("/api/ticketing", require("./routes/ticketing"));
@@ -28,12 +28,13 @@ app.use("/api/profit-report", require("./routes/profitReport"));
 // PURCHASE
 app.use("/api/purchase", require("./routes/purchase"));
 
-// 🔐 AUTH + USERS
+// AUTH & USERS
 app.use("/api/auth", require("./routes/auth"));
 app.use("/api/users", require("./routes/users"));
 
+// TEST
 app.get("/", (req, res) => {
-  res.json({ ok: true });
+  res.json({ ok: true, message: "Makki Madni Backend Running" });
 });
 
-module.exports = app;
+module.exports = app; // ✅ VERY IMPORTANT
