@@ -17,83 +17,27 @@ async function generateRefNo() {
 router.post("/save", async (req, res) => {
   try {
     const ref_no = await generateRefNo();
-
-    const {
-      customer_name,
-      booking_date,
-
-      adult_count,
-      adult_rate,
-      child_count,
-      child_rate,
-      infant_count,
-      infant_rate,
-      flight_total,
-
-      flights,
-
-      hotels,
-      hotels_total,
-
-      visa_persons,
-      visa_rate,
-      visa_total,
-
-      transport,
-      transport_total,
-
-      flight_sar_total,
-      hotel_sar_total,
-      visa_sar_total,
-      transport_sar_total,
-
-      flight_sar_rate,
-      hotel_sar_rate,
-      visa_sar_rate,
-      transport_sar_rate,
-
-      flight_pkr_total,
-      hotel_pkr_total,
-      visa_pkr_total,
-      transport_pkr_total,
-
-      net_pkr_total,
-
-      total_sar,
-      total_pkr,
-      per_person_qty,
-      per_person_final
-    } = req.body;
+    const d = req.body;
 
     await db.query(
       `
       INSERT INTO bookings (
         ref_no, customer_name, booking_date,
-
         adult_count, adult_rate,
         child_count, child_rate,
         infant_count, infant_rate,
         flight_total,
-
         flights,
-
         hotels, hotels_total,
-
         visa_persons, visa_rate, visa_total,
-
         transport, transport_total,
-
         flight_sar_total, hotel_sar_total,
         visa_sar_total, transport_sar_total,
-
         flight_sar_rate, hotel_sar_rate,
         visa_sar_rate, transport_sar_rate,
-
         flight_pkr_total, hotel_pkr_total,
         visa_pkr_total, transport_pkr_total,
-
         net_pkr_total,
-
         total_sar, total_pkr,
         per_person_qty, per_person_final
       )
@@ -113,50 +57,40 @@ router.post("/save", async (req, res) => {
       `,
       [
         ref_no,
-        customer_name,
-        booking_date,
-
-        adult_count,
-        adult_rate,
-        child_count,
-        child_rate,
-        infant_count,
-        infant_rate,
-        flight_total,
-
-        JSON.stringify(flights),
-
-        JSON.stringify(hotels),
-        hotels_total,
-
-        visa_persons,
-        visa_rate,
-        visa_total,
-
-        JSON.stringify(transport),
-        transport_total,
-
-        flight_sar_total,
-        hotel_sar_total,
-        visa_sar_total,
-        transport_sar_total,
-
-        flight_sar_rate,
-        hotel_sar_rate,
-        visa_sar_rate,
-        transport_sar_rate,
-
-        flight_pkr_total,
-        hotel_pkr_total,
-        visa_pkr_total,
-        transport_pkr_total,
-
-        net_pkr_total,
-
-        total_sar,
-        total_pkr,
-        per_person_qty,
-        per_person_final
+        d.customer_name,
+        d.booking_date,
+        d.adult_count,
+        d.adult_rate,
+        d.child_count,
+        d.child_rate,
+        d.infant_count,
+        d.infant_rate,
+        d.flight_total,
+        JSON.stringify(d.flights),
+        JSON.stringify(d.hotels),
+        d.hotels_total,
+        d.visa_persons,
+        d.visa_rate,
+        d.visa_total,
+        JSON.stringify(d.transport),
+        d.transport_total,
+        d.flight_sar_total,
+        d.hotel_sar_total,
+        d.visa_sar_total,
+        d.transport_sar_total,
+        d.flight_sar_rate,
+        d.hotel_sar_rate,
+        d.visa_sar_rate,
+        d.transport_sar_rate,
+        d.flight_pkr_total,
+        d.hotel_pkr_total,
+        d.visa_pkr_total,
+        d.transport_pkr_total,
+        d.net_pkr_total,
+        d.total_sar,
+        d.total_pkr,
+        d.per_person_qty,
+        d.per_person_final
       ]
     );
 
@@ -164,7 +98,7 @@ router.post("/save", async (req, res) => {
 
   } catch (err) {
     console.error("BOOKING SAVE ERROR:", err);
-    res.json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -178,24 +112,25 @@ router.get("/list", async (req, res) => {
   res.json(q.rows);
 });
 
-// ============================================
-// GET ONE BOOKING
-// ============================================
-router.get("/get/:id", async (req, res) => {
-  const q = await db.query("SELECT * FROM bookings WHERE id = $1", [
-    req.params.id,
-  ]);
-  res.json(q.rows[0]);
-});
+// =======================================
+// GET BOOKING BY REF NO (EDIT MODE)
+// =======================================
+router.get("/get/:ref", async (req, res) => {
+  try {
+    const q = await db.query(
+      "SELECT * FROM bookings WHERE ref_no = $1 AND is_deleted = false",
+      [req.params.ref]
+    );
 
-// ============================================
-// SOFT DELETE
-// ============================================
-router.delete("/delete/:id", async (req, res) => {
-  await db.query("UPDATE bookings SET is_deleted = true WHERE id = $1", [
-    req.params.id,
-  ]);
-  res.json({ success: true });
+    if (q.rows.length === 0)
+      return res.json({ success: false });
+
+    res.json({ success: true, row: q.rows[0] });
+
+  } catch (err) {
+    console.error("GET BOOKING ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // ===================================
@@ -203,11 +138,9 @@ router.delete("/delete/:id", async (req, res) => {
 // ===================================
 router.get("/voucher/:ref", async (req, res) => {
   try {
-    const { ref } = req.params;
-
     const q = await db.query(
       "SELECT * FROM bookings WHERE ref_no = $1 AND is_deleted = false",
-      [ref]
+      [req.params.ref]
     );
 
     if (q.rows.length === 0)
@@ -215,28 +148,29 @@ router.get("/voucher/:ref", async (req, res) => {
 
     const row = q.rows[0];
 
-    // 🔥 booking.js ke hotel data ko voucher format me convert
-    const hotels = row.hotels.map((h, i) => ({
-      hotel: h.hotel,
-      location: h.location,
-      checkIn: h.checkIn,
-      checkOut: h.checkOut,
-      nights: h.nights,
-    }));
-
     res.json({
       success: true,
       ref_no: row.ref_no,
       customer_name: row.customer_name,
       booking_date: row.booking_date,
-      hotels,
+      hotels: row.hotels,
     });
 
   } catch (err) {
-    console.error("BOOKING VOUCHER ERROR:", err);
+    console.error("VOUCHER ERROR:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
+// ============================================
+// SOFT DELETE (BY REF)
+// ============================================
+router.delete("/delete/:ref", async (req, res) => {
+  await db.query(
+    "UPDATE bookings SET is_deleted = true WHERE ref_no = $1",
+    [req.params.ref]
+  );
+  res.json({ success: true });
+});
 
 module.exports = router;
