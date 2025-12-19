@@ -198,4 +198,45 @@ router.delete("/delete/:id", async (req, res) => {
   res.json({ success: true });
 });
 
+// ===================================
+// GET BOOKING HOTEL VOUCHER BY REF
+// ===================================
+router.get("/voucher/:ref", async (req, res) => {
+  try {
+    const { ref } = req.params;
+
+    const q = await db.query(
+      "SELECT * FROM bookings WHERE ref_no = $1 AND is_deleted = false",
+      [ref]
+    );
+
+    if (q.rows.length === 0)
+      return res.json({ success: false });
+
+    const row = q.rows[0];
+
+    // 🔥 booking.js ke hotel data ko voucher format me convert
+    const hotels = row.hotels.map((h, i) => ({
+      hotel: h.hotel,
+      location: h.location,
+      checkIn: h.checkIn,
+      checkOut: h.checkOut,
+      nights: h.nights,
+    }));
+
+    res.json({
+      success: true,
+      ref_no: row.ref_no,
+      customer_name: row.customer_name,
+      booking_date: row.booking_date,
+      hotels,
+    });
+
+  } catch (err) {
+    console.error("BOOKING VOUCHER ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
 module.exports = router;

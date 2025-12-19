@@ -103,4 +103,45 @@ router.get("/get/:id", async (req, res) => {
   }
 });
 
+// ===================================
+// GET HOTEL BY REF NO (FOR VOUCHER)
+// ===================================
+router.get("/by-ref/:ref", async (req, res) => {
+  try {
+    const { ref } = req.params;
+
+    const q = await db.query(
+      "SELECT * FROM hotels WHERE ref_no = $1 AND is_deleted = false",
+      [ref]
+    );
+
+    if (q.rows.length === 0)
+      return res.json({ success: false });
+
+    const row = q.rows[0];
+
+    // 🔹 Rebuild hotels array for voucher
+    const hotels = row.hotel_name.map((_, i) => ({
+      hotel: row.hotel_name[i],
+      location: row.hotel_location[i],
+      checkIn: row.hotel_checkin[i],
+      checkOut: row.hotel_checkout[i],
+      nights: row.hotel_nights[i],
+    }));
+
+    res.json({
+      success: true,
+      ref_no: row.ref_no,
+      customer_name: row.customer_name,
+      booking_date: row.booking_date,
+      hotels,
+    });
+
+  } catch (err) {
+    console.error("HOTEL BY REF ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
 module.exports = router;
