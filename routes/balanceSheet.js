@@ -3,57 +3,77 @@ const router = express.Router();
 const db = require("../db");
 
 /* =========================================
-   BALANCE SHEET (FINAL)
+   BALANCE SHEET (FINAL — ALL TABLES)
 ========================================= */
 router.get("/", async (req, res) => {
   try {
 
     /* ===============================
-       CUSTOMER RECEIVABLES
+       CUSTOMER SALES (ALL TABLES)
     =============================== */
-    const customers = await db.query(`
-      SELECT
-        b.ref_no,
-        b.total_pkr AS sale_total,
-        COALESCE(SUM(cp.amount),0) AS received
-      FROM bookings b
-      LEFT JOIN customer_payments cp
-        ON cp.ref_no = b.ref_no
-      GROUP BY b.ref_no, b.total_pkr
-      ORDER BY b.ref_no
+    const sales = await db.query(`
+      SELECT ref_no, SUM(amount) AS sale_total FROM (
+        SELECT ref_no, total_pkr AS amount FROM bookings
+        UNION ALL
+        SELECT ref_no, total_pkr FROM ticketing
+        UNION ALL
+        SELECT ref_no, total_pkr FROM hotels
+        UNION ALL
+        SELECT ref_no, total_pkr FROM visa
+        UNION ALL
+        SELECT ref_no, total_pkr FROM transport
+      ) x
+      GROUP BY ref_no
+      ORDER BY ref_no
     `);
 
-    const customerRows = customers.rows.map(r => ({
-      ref_no: r.ref_no,
-      sale_total: Number(r.sale_total),
-      received: Number(r.received),
-      balance: Number(r.sale_total) - Number(r.received)
-    }));
+    const payments = await db.query(`
+      SELECT ref_no, COALESCE(SUM(amount),0) AS received
+      FROM customer_payments
+      GROUP BY ref_no
+    `);
+
+    const customerRows = sales.rows.map(s => {
+      const paid =
+        payments.rows.find(p => p.ref_no === s.ref_no)?.received || 0;
+
+      return {
+        ref_no: s.ref_no,
+        sale_total: Number(s.sale_total),
+        received: Number(paid),
+        balance: Number(s.sale_total) - Number(paid)
+      };
+    });
 
     /* ===============================
        PURCHASE PAYABLES
     =============================== */
     const purchases = await db.query(`
-      SELECT
-        pe.ref_no,
-        SUM(pe.purchase_pkr) AS purchase_total,
-        COALESCE(SUM(pp.amount),0) AS paid
-      FROM purchase_entries pe
-      LEFT JOIN purchase_payments pp
-        ON pp.ref_no = pe.ref_no
-      GROUP BY pe.ref_no
-      ORDER BY pe.ref_no
+      SELECT ref_no, SUM(purchase_pkr) AS purchase_total
+      FROM purchase_entries
+      GROUP BY ref_no
     `);
 
-    const purchaseRows = purchases.rows.map(r => ({
-      ref_no: r.ref_no,
-      purchase_total: Number(r.purchase_total),
-      paid: Number(r.paid),
-      balance: Number(r.purchase_total) - Number(r.paid)
-    }));
+    const paid = await db.query(`
+      SELECT ref_no, COALESCE(SUM(amount),0) AS paid
+      FROM purchase_payments
+      GROUP BY ref_no
+    `);
+
+    const purchaseRows = purchases.rows.map(p => {
+      const paidAmt =
+        paid.rows.find(x => x.ref_no === p.ref_no)?.paid || 0;
+
+      return {
+        ref_no: p.ref_no,
+        purchase_total: Number(p.purchase_total),
+        paid: Number(paidAmt),
+        balance: Number(p.purchase_total) - Number(paidAmt)
+      };
+    });
 
     /* ===============================
-       TOTALS
+       SUMMARY
     =============================== */
     const totalReceivable = customerRows.reduce((s,r)=>s+r.balance,0);
     const totalPayable = purchaseRows.reduce((s,r)=>s+r.balance,0);
