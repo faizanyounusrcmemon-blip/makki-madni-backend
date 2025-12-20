@@ -21,6 +21,7 @@ router.post("/save", async (req, res) => {
       booking_date,
       hotels,
       hotels_total,
+      sar_rate,
       total_pkr,
     } = req.body;
 
@@ -43,7 +44,8 @@ router.post("/save", async (req, res) => {
           hotel_rate=$11,
           hotel_total=$12,
           hotels_total=$13,
-          total_pkr=$14
+          sar_rate=$14,
+          total_pkr=$15
         WHERE ref_no=$1
         `,
         [
@@ -59,6 +61,7 @@ router.post("/save", async (req, res) => {
           JSON.stringify(hotels.map(h => h.type)),
           JSON.stringify(hotels.map(h => h.rate)),
           JSON.stringify(hotels.map(h => h.total)),
+          sar_rate,
           hotels_total,
           total_pkr,
         ]
@@ -89,10 +92,11 @@ router.post("/save", async (req, res) => {
         hotel_rate,
         hotel_total,
         hotels_total,
+        sar_rate,
         total_pkr
       )
       VALUES
-      ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+      ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
       `,
       [
         newRef,
@@ -108,6 +112,7 @@ router.post("/save", async (req, res) => {
         JSON.stringify(hotels.map(h => h.rate)),
         JSON.stringify(hotels.map(h => h.total)),
         hotels_total,
+        sar_rate,
         total_pkr,
       ]
     );
@@ -142,6 +147,7 @@ router.get("/get/:ref", async (req, res) => {
     rooms: r.hotel_rooms[i],
     type: r.hotel_type[i],
     rate: r.hotel_rate[i],
+    sar_rate: r.sar_rate[i],
     total: r.hotel_total[i],
   }));
 
@@ -153,6 +159,7 @@ router.get("/get/:ref", async (req, res) => {
       booking_date: r.booking_date,
       hotels,
       hotels_total: r.hotels_total,
+      sar_rate: r.sar_rate,
       total_pkr: r.total_pkr,
     },
   });
@@ -180,3 +187,4 @@ router.delete("/delete/:ref_no", async (req, res) => {
 });
 
 module.exports = router;
+
