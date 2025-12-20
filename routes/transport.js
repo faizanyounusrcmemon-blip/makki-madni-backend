@@ -91,4 +91,26 @@ router.get("/get/:ref", async (req, res) => {
   res.json({ success: true, row: q.rows[0] });
 });
 
+router.delete("/delete/:ref_no", async (req, res) => {
+  try {
+    const { ref_no } = req.params;
+
+    const q = await db.query(
+      `UPDATE transport
+       SET is_deleted = true
+       WHERE ref_no = $1
+       RETURNING ref_no`,
+      [ref_no]
+    );
+
+    if (!q.rows.length)
+      return res.json({ success: false, error: "Transport not found" });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+
 module.exports = router;
