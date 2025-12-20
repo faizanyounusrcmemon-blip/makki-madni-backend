@@ -5,15 +5,16 @@ const db = require("../db");
 // AUTO REF
 async function generateRef() {
   const r = await db.query("SELECT COUNT(*) FROM visa");
-  return "VISA-" + String(Number(r.rows[0].count) + 1).padStart(5, "0");
+  return "VISA-" + (Number(r.rows[0].count) + 1).toString().padStart(5, "0");
 }
 
-/* ---------------------------------------------------
-   SAVE VISA
---------------------------------------------------- */
+// ========================
+// SAVE / UPDATE
+// ========================
 router.post("/save", async (req, res) => {
   try {
     const {
+      ref_no,
       customer_name,
       booking_date,
       rows,
@@ -21,70 +22,104 @@ router.post("/save", async (req, res) => {
       rate,
       total_sar,
       pkr_rate,
-      total_pkr
+      total_pkr,
     } = req.body;
 
-    const ref_no = await generateRef();
+    let finalRef = ref_no;
 
-    await db.query(
-      `
-      INSERT INTO visa
-      (
-        ref_no,
-        customer_name,
-        booking_date,
-        persons,
-        rate,
-        total_sar,
-        pkr_rate,
-        total_pkr,
-        rows
-      )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-      `,
-      [
-        ref_no,
-        customer_name,
-        booking_date,
-        persons,
-        rate,
-        total_sar,
-        pkr_rate,
-        total_pkr,
-        JSON.stringify(rows || [])
-      ]
-    );
+    if (!finalRef) {
+      finalRef = await generateRef();
 
-    res.json({ success: true, ref_no });
-
-  } catch (err) {
-    console.log("VISA SAVE ERROR:", err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-/* ---------------------------------------------------
-   GET VISA BY ID  ✅ (MISSING — NOW FIXED)
---------------------------------------------------- */
-router.get("/get/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const result = await db.query(
-      "SELECT * FROM visa WHERE id = $1 AND is_deleted = false",
-      [id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Visa not found" });
+      await db.query(
+        `
+        INSERT INTO visa
+        (ref_no, customer_name, booking_date,
+         persons, rate, total_sar, pkr_rate, total_pkr, rows)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        `,
+        [
+          finalRef,
+          customer_name,
+          booking_date,
+          persons,
+          rate,
+          total_sar,
+          pkr_rate,
+          total_pkr,
+          JSON.stringify(rows || []),
+        ]
+      );
+    } else {
+      await db.query(
+        `
+        UPDATE visa SET
+          customer_name=$1,
+          booking_date=$2,
+          persons=$3,
+          rate=$4,
+          total_sar=$5,
+          pkr_rate=$6,
+          total_pkr=$7,
+          rows=$8
+        WHERE ref_no=$9
+        `,
+        [
+          customer_name,
+          booking_date,
+          persons,
+          rate,
+          total_sar,
+          pkr_rate,
+          total_pkr,
+          JSON.stringify(rows || []),
+          finalRef,
+        ]
+      );
     }
 
-    res.json(result.rows[0]);
+    res.json({ success: true, ref_no: finalRef });
 
   } catch (err) {
-    console.log("VISA GET ERROR:", err);
-    res.status(500).json({ error: err.message });
+    console.error("VISA SAVE ERROR:", err);
+    res.json({ success: false, error: err.message });
   }
 });
+
+// ========================
+// GET BY REF
+// ========================
+router.get("/get/:ref", async (req, res) => {
+  const q = await db.query(
+    "SELECT * FROM visa WHERE ref_no=$1 AND is_deleted=false",
+    [req.params.ref]
+  );
+
+  if (q.rows.length === 0)
+    return res.json({ success: false });
+
+  res.json({ success: true, row: q.rows[0] });
+});
+
+router.delete("/delete/:ref_no", async (req, res) => {
+  try {
+    const { ref_no } = req.params;
+
+    const q = await db.query(
+      `UPDATE visa
+       SET is_deleted = true
+       WHERE ref_no = $1
+       RETURNING ref_no`,
+      [ref_no]
+    );
+
+    if (!q.rows.length)
+      return res.json({ success: false, error: "visa not found" });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
 
 module.exports = router;
