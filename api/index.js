@@ -18,6 +18,7 @@ app.use("/api/ticketing", require("../routes/ticketing"));
 app.use("/api/visa", require("../routes/visa"));
 app.use("/api/transport", require("../routes/transport"));
 app.use("/api/reports", require("../routes/reports"));
+app.use("/api/deleted", require("../routes/deleted"));
 
 // LEDGERS
 app.use("/api/customer-ledger", require("../routes/customerLedger"));
