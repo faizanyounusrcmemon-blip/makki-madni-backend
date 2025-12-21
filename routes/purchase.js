@@ -3,7 +3,7 @@ const router = express.Router();
 const db = require("../db");
 
 /* =====================================================
-   LOAD PURCHASE (FINAL – ALL MODULES FIXED)
+   LOAD PURCHASE (FINAL – SCHEMA MATCHED)
 ===================================================== */
 router.get("/load/:ref_no", async (req, res) => {
   try {
@@ -63,7 +63,7 @@ router.get("/load/:ref_no", async (req, res) => {
           sale_pkr: r.infant_count * r.infant_rate * (r.flight_sar_rate || 0),
         });
 
-      // ---- HOTELS ----
+      // ---- HOTELS (ARRAY) ----
       if (Array.isArray(r.hotels))
         r.hotels.forEach((h, i) =>
           rows.push({
@@ -85,7 +85,7 @@ router.get("/load/:ref_no", async (req, res) => {
         });
       }
 
-      // ---- TRANSPORT ----
+      // ---- TRANSPORT (ARRAY) ----
       if (Array.isArray(r.transport))
         r.transport.forEach((t, i) =>
           rows.push({
@@ -104,7 +104,11 @@ router.get("/load/:ref_no", async (req, res) => {
     ========================= */
     else if (ref_no.startsWith("HOT-")) {
       const q = await db.query(
-        `SELECT rows, pkr_rate FROM hotels WHERE ref_no=$1 AND is_deleted=false`,
+        `
+        SELECT hotel_name, hotel_total, sar_rate
+        FROM hotels
+        WHERE ref_no=$1 AND is_deleted=false
+        `,
         [ref_no]
       );
 
@@ -112,16 +116,13 @@ router.get("/load/:ref_no", async (req, res) => {
         return res.json({ success: false, error: "Hotel not found" });
 
       const r = q.rows[0];
-      const list = Array.isArray(r.rows) ? r.rows : [];
 
-      list.forEach((h, i) =>
-        rows.push({
-          item: `Hotel ${i + 1} - ${h.hotel || ""}`,
-          sale_sar: Number(h.total) || 0,
-          sale_rate: r.pkr_rate || 0,
-          sale_pkr: (Number(h.total) || 0) * (r.pkr_rate || 0),
-        })
-      );
+      rows.push({
+        item: `Hotel - ${r.hotel_name || ""}`,
+        sale_sar: Number(r.hotel_total) || 0,
+        sale_rate: r.sar_rate || 0,
+        sale_pkr: (Number(r.hotel_total) || 0) * (r.sar_rate || 0),
+      });
     }
 
     /* =========================
@@ -129,7 +130,11 @@ router.get("/load/:ref_no", async (req, res) => {
     ========================= */
     else if (ref_no.startsWith("VISA-")) {
       const q = await db.query(
-        `SELECT total_sar, pkr_rate FROM visa WHERE ref_no=$1 AND is_deleted=false`,
+        `
+        SELECT total_sar, pkr_rate
+        FROM visa
+        WHERE ref_no=$1 AND is_deleted=false
+        `,
         [ref_no]
       );
 
@@ -137,11 +142,12 @@ router.get("/load/:ref_no", async (req, res) => {
         return res.json({ success: false, error: "Visa not found" });
 
       const r = q.rows[0];
+
       rows.push({
         item: "Visa",
-        sale_sar: r.total_sar || 0,
+        sale_sar: Number(r.total_sar) || 0,
         sale_rate: r.pkr_rate || 0,
-        sale_pkr: (r.total_sar || 0) * (r.pkr_rate || 0),
+        sale_pkr: (Number(r.total_sar) || 0) * (r.pkr_rate || 0),
       });
     }
 
@@ -150,7 +156,11 @@ router.get("/load/:ref_no", async (req, res) => {
     ========================= */
     else if (ref_no.startsWith("TRN-")) {
       const q = await db.query(
-        `SELECT rows, pkr_rate FROM transport WHERE ref_no=$1 AND is_deleted=false`,
+        `
+        SELECT total_sar, pkr_rate
+        FROM transport
+        WHERE ref_no=$1 AND is_deleted=false
+        `,
         [ref_no]
       );
 
@@ -158,16 +168,13 @@ router.get("/load/:ref_no", async (req, res) => {
         return res.json({ success: false, error: "Transport not found" });
 
       const r = q.rows[0];
-      const list = Array.isArray(r.rows) ? r.rows : [];
 
-      list.forEach((t, i) =>
-        rows.push({
-          item: `Transport ${i + 1}`,
-          sale_sar: Number(t.amount) || 0,
-          sale_rate: r.pkr_rate || 0,
-          sale_pkr: (Number(t.amount) || 0) * (r.pkr_rate || 0),
-        })
-      );
+      rows.push({
+        item: "Transport",
+        sale_sar: Number(r.total_sar) || 0,
+        sale_rate: r.pkr_rate || 0,
+        sale_pkr: (Number(r.total_sar) || 0) * (r.pkr_rate || 0),
+      });
     }
 
     /* =========================
@@ -220,7 +227,7 @@ router.get("/load/:ref_no", async (req, res) => {
       return res.json({ success: false, error: "Invalid Ref No" });
     }
 
-    res.json({ success: true, rows });
+    return res.json({ success: true, rows });
 
   } catch (err) {
     console.error("PURCHASE LOAD ERROR:", err);
@@ -229,7 +236,7 @@ router.get("/load/:ref_no", async (req, res) => {
 });
 
 /* =====================================================
-   SAVE PURCHASE (SAFE – UNCHANGED)
+   SAVE PURCHASE (SAFE)
 ===================================================== */
 router.post("/save", async (req, res) => {
   try {
