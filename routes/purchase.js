@@ -13,28 +13,48 @@ router.get("/load/:ref_no", async (req, res) => {
 router.get("/pending", async (req, res) => {
   try {
     const q = await db.query(`
-      SELECT DISTINCT ref_no
-      FROM sales
+      SELECT ref_no, MIN(created_at) AS created_at
+      FROM (
+        -- PACKAGES
+        SELECT ref_no, created_at FROM bookings
+        WHERE is_deleted = false
+
+        UNION ALL
+        -- TICKETING
+        SELECT ref_no, created_at FROM ticketing
+        WHERE is_deleted = false
+
+        UNION ALL
+        -- HOTELS
+        SELECT ref_no, created_at FROM hotels
+        WHERE is_deleted = false
+
+        UNION ALL
+        -- VISA
+        SELECT ref_no, created_at FROM visa
+        WHERE is_deleted = false
+
+        UNION ALL
+        -- TRANSPORT
+        SELECT ref_no, created_at FROM transport
+        WHERE is_deleted = false
+      ) s
       WHERE ref_no NOT IN (
-        SELECT ref_no FROM purchase_entries
+        SELECT DISTINCT ref_no
+        FROM purchase_entries
+        WHERE is_deleted = false
       )
-      ORDER BY ref_no DESC
+      GROUP BY ref_no
+      ORDER BY created_at DESC
     `);
 
-    res.json({
-      success: true,
-      rows: q.rows
-    });
+    res.json({ success: true, rows: q.rows });
 
   } catch (err) {
     console.error("PENDING PURCHASE ERROR:", err);
-    res.status(500).json({
-      success: false,
-      error: err.message
-    });
+    res.json({ success: false, error: err.message });
   }
 });
-
 
     /* =========================
        PACKAGE (PKG-)
@@ -307,6 +327,7 @@ router.post("/save", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
