@@ -3,7 +3,7 @@ const router = express.Router();
 const db = require("../db");
 
 /* =====================================================
-   LOAD PURCHASE (FINAL – ALL CASES SAFE)
+   LOAD PURCHASE (FINAL – ALL MODULES FIXED)
 ===================================================== */
 router.get("/load/:ref_no", async (req, res) => {
   try {
@@ -38,51 +38,43 @@ router.get("/load/:ref_no", async (req, res) => {
 
       const r = q.rows[0];
 
-      /* ---- TICKETS ---- */
-      if (r.adult_count > 0) {
+      // ---- TICKETS ----
+      if (r.adult_count > 0)
         rows.push({
           item: "Ticket – Adult",
           sale_sar: r.adult_count * r.adult_rate,
           sale_rate: r.flight_sar_rate || 0,
-          sale_pkr:
-            r.adult_count * r.adult_rate * (r.flight_sar_rate || 0),
+          sale_pkr: r.adult_count * r.adult_rate * (r.flight_sar_rate || 0),
         });
-      }
 
-      if (r.child_count > 0) {
+      if (r.child_count > 0)
         rows.push({
           item: "Ticket – Child",
           sale_sar: r.child_count * r.child_rate,
           sale_rate: r.flight_sar_rate || 0,
-          sale_pkr:
-            r.child_count * r.child_rate * (r.flight_sar_rate || 0),
+          sale_pkr: r.child_count * r.child_rate * (r.flight_sar_rate || 0),
         });
-      }
 
-      if (r.infant_count > 0) {
+      if (r.infant_count > 0)
         rows.push({
           item: "Ticket – Infant",
           sale_sar: r.infant_count * r.infant_rate,
           sale_rate: r.flight_sar_rate || 0,
-          sale_pkr:
-            r.infant_count * r.infant_rate * (r.flight_sar_rate || 0),
+          sale_pkr: r.infant_count * r.infant_rate * (r.flight_sar_rate || 0),
         });
-      }
 
-      /* ---- HOTELS (array inside PKG) ---- */
-      if (Array.isArray(r.hotels)) {
-        r.hotels.forEach((h, i) => {
+      // ---- HOTELS ----
+      if (Array.isArray(r.hotels))
+        r.hotels.forEach((h, i) =>
           rows.push({
             item: `Hotel ${i + 1} - ${h.hotel || ""}`,
             sale_sar: Number(h.total) || 0,
             sale_rate: r.hotel_sar_rate || 0,
-            sale_pkr:
-              (Number(h.total) || 0) * (r.hotel_sar_rate || 0),
-          });
-        });
-      }
+            sale_pkr: (Number(h.total) || 0) * (r.hotel_sar_rate || 0),
+          })
+        );
 
-      /* ---- VISA ---- */
+      // ---- VISA ----
       if (r.visa_persons > 0) {
         const sar = r.visa_total || r.visa_persons * r.visa_rate;
         rows.push({
@@ -93,9 +85,9 @@ router.get("/load/:ref_no", async (req, res) => {
         });
       }
 
-      /* ---- TRANSPORT (array inside PKG) ---- */
-      if (Array.isArray(r.transport)) {
-        r.transport.forEach((t, i) => {
+      // ---- TRANSPORT ----
+      if (Array.isArray(r.transport))
+        r.transport.forEach((t, i) =>
           rows.push({
             item: `Transport ${i + 1}`,
             sale_sar: Number(t.amount) || 0,
@@ -103,9 +95,79 @@ router.get("/load/:ref_no", async (req, res) => {
             sale_pkr:
               (Number(t.amount) || 0) *
               (r.transport_sar_rate || 0),
-          });
-        });
-      }
+          })
+        );
+    }
+
+    /* =========================
+       HOTEL ONLY (HOT-)
+    ========================= */
+    else if (ref_no.startsWith("HOT-")) {
+      const q = await db.query(
+        `SELECT rows, pkr_rate FROM hotels WHERE ref_no=$1 AND is_deleted=false`,
+        [ref_no]
+      );
+
+      if (!q.rows.length)
+        return res.json({ success: false, error: "Hotel not found" });
+
+      const r = q.rows[0];
+      const list = Array.isArray(r.rows) ? r.rows : [];
+
+      list.forEach((h, i) =>
+        rows.push({
+          item: `Hotel ${i + 1} - ${h.hotel || ""}`,
+          sale_sar: Number(h.total) || 0,
+          sale_rate: r.pkr_rate || 0,
+          sale_pkr: (Number(h.total) || 0) * (r.pkr_rate || 0),
+        })
+      );
+    }
+
+    /* =========================
+       VISA ONLY (VISA-)
+    ========================= */
+    else if (ref_no.startsWith("VISA-")) {
+      const q = await db.query(
+        `SELECT total_sar, pkr_rate FROM visa WHERE ref_no=$1 AND is_deleted=false`,
+        [ref_no]
+      );
+
+      if (!q.rows.length)
+        return res.json({ success: false, error: "Visa not found" });
+
+      const r = q.rows[0];
+      rows.push({
+        item: "Visa",
+        sale_sar: r.total_sar || 0,
+        sale_rate: r.pkr_rate || 0,
+        sale_pkr: (r.total_sar || 0) * (r.pkr_rate || 0),
+      });
+    }
+
+    /* =========================
+       TRANSPORT ONLY (TRN-)
+    ========================= */
+    else if (ref_no.startsWith("TRN-")) {
+      const q = await db.query(
+        `SELECT rows, pkr_rate FROM transport WHERE ref_no=$1 AND is_deleted=false`,
+        [ref_no]
+      );
+
+      if (!q.rows.length)
+        return res.json({ success: false, error: "Transport not found" });
+
+      const r = q.rows[0];
+      const list = Array.isArray(r.rows) ? r.rows : [];
+
+      list.forEach((t, i) =>
+        rows.push({
+          item: `Transport ${i + 1}`,
+          sale_sar: Number(t.amount) || 0,
+          sale_rate: r.pkr_rate || 0,
+          sale_pkr: (Number(t.amount) || 0) * (r.pkr_rate || 0),
+        })
+      );
     }
 
     /* =========================
@@ -114,11 +176,10 @@ router.get("/load/:ref_no", async (req, res) => {
     else if (ref_no.startsWith("TIC-")) {
       const q = await db.query(
         `
-        SELECT
-          adult_qty, adult_rate,
-          child_qty, child_rate,
-          infant_qty, infant_rate,
-          pkr_rate
+        SELECT adult_qty, adult_rate,
+               child_qty, child_rate,
+               infant_qty, infant_rate,
+               pkr_rate
         FROM ticketing
         WHERE ref_no=$1 AND is_deleted=false
         `,
@@ -155,92 +216,6 @@ router.get("/load/:ref_no", async (req, res) => {
         });
     }
 
- /* =========================
-   HOTEL ONLY (HOT-)
-========================= */
-else if (ref_no.startsWith("HOT-")) {
-  const q = await db.query(
-    `
-    SELECT rows, pkr_rate
-    FROM hotels
-    WHERE ref_no=$1 AND is_deleted=false
-    `,
-    [ref_no]
-  );
-
-  if (!q.rows.length)
-    return res.json({ success: false, error: "Hotel not found" });
-
-  const r = q.rows[0];
-
-  if (Array.isArray(r.rows)) {
-    r.rows.forEach((h, i) => {
-      rows.push({
-        item: `Hotel ${i + 1} - ${h.hotel}`,
-        sale_sar: Number(h.total) || 0,
-        sale_rate: r.pkr_rate || 0,
-        sale_pkr: (Number(h.total) || 0) * (r.pkr_rate || 0),
-      });
-    });
-  }
-}
-
-/* =========================
-   VISA ONLY (VISA-)
-========================= */
-else if (ref_no.startsWith("VISA-")) {
-  const q = await db.query(
-    `
-    SELECT total_sar, pkr_rate
-    FROM visa
-    WHERE ref_no=$1 AND is_deleted=false
-    `,
-    [ref_no]
-  );
-
-  if (!q.rows.length)
-    return res.json({ success: false, error: "Visa not found" });
-
-  const r = q.rows[0];
-
-  rows.push({
-    item: "Visa",
-    sale_sar: r.total_sar || 0,
-    sale_rate: r.pkr_rate || 0,
-    sale_pkr: (r.total_sar || 0) * (r.pkr_rate || 0),
-  });
-}
-
-/* =========================
-   TRANSPORT ONLY (TRN-)
-========================= */
-else if (ref_no.startsWith("TRN-")) {
-  const q = await db.query(
-    `
-    SELECT rows, pkr_rate
-    FROM transport
-    WHERE ref_no=$1 AND is_deleted=false
-    `,
-    [ref_no]
-  );
-
-  if (!q.rows.length)
-    return res.json({ success: false, error: "Transport not found" });
-
-  const r = q.rows[0];
-
-  if (Array.isArray(r.rows)) {
-    r.rows.forEach((t, i) => {
-      rows.push({
-        item: `Transport ${i + 1}`,
-        sale_sar: Number(t.amount) || 0,
-        sale_rate: r.pkr_rate || 0,
-        sale_pkr: (Number(t.amount) || 0) * (r.pkr_rate || 0),
-      });
-    });
-  }
-}
-
     else {
       return res.json({ success: false, error: "Invalid Ref No" });
     }
@@ -254,7 +229,7 @@ else if (ref_no.startsWith("TRN-")) {
 });
 
 /* =====================================================
-   SAVE PURCHASE (SAFE)
+   SAVE PURCHASE (SAFE – UNCHANGED)
 ===================================================== */
 router.post("/save", async (req, res) => {
   try {
@@ -297,4 +272,3 @@ router.post("/save", async (req, res) => {
 });
 
 module.exports = router;
-
