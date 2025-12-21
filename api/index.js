@@ -1,12 +1,14 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
-require("../db");   // ✅ FIXED
+require("../db");
 
 const app = express();
+
 app.use(cors());
 app.use(express.json());
 
+// ROOT TEST ROUTE
 app.get("/", (req, res) => {
   res.json({ ok: true, message: "Makki Madni Backend Live" });
 });
@@ -31,9 +33,11 @@ app.use("/api/profit-report", require("../routes/profitReport"));
 // PURCHASE
 app.use("/api/purchase", require("../routes/purchase"));
 
-// AUTH + USERS
+// AUTH
 app.use("/api/auth", require("../routes/auth"));
 app.use("/api/users", require("../routes/users"));
-app.use("/api/backup", require("../routes/backup"));
+
+// ❌ BACKUP DISABLED (Vercel-safe)
+// app.use("/api/backup", require("../routes/backup"));
 
 module.exports = app;
