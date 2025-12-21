@@ -102,10 +102,11 @@ router.get("/load/:ref_no", async (req, res) => {
     /* =========================
        HOTEL ONLY (HOT-)
     ========================= */
+    // ================= HOTELS MODULE =================
     else if (ref_no.startsWith("HOT-")) {
       const q = await db.query(
         `
-        SELECT hotel_name, hotel_total, sar_rate
+        SELECT hotel_name, hotel_total
         FROM hotels
         WHERE ref_no=$1 AND is_deleted=false
         `,
@@ -113,18 +114,19 @@ router.get("/load/:ref_no", async (req, res) => {
       );
 
       if (!q.rows.length)
-        return res.json({ success: false, error: "Hotel not found" });
+        return res.json({ success:false, error:"Hotel not found" });
 
       const r = q.rows[0];
 
-      rows.push({
-        item: `Hotel - ${r.hotel_name || ""}`,
-        sale_sar: Number(r.hotel_total) || 0,
-        sale_rate: r.sar_rate || 0,
-        sale_pkr: (Number(r.hotel_total) || 0) * (r.sar_rate || 0),
+      (r.hotel_name || []).forEach((name,i)=>{
+        rows.push({
+          item:`Hotel ${i+1} - ${name}`,
+          sale_sar:Number(r.hotel_total[i])||0,
+          sale_rate:1,
+          sale_pkr:Number(r.hotel_total[i])||0
+        });
       });
     }
-
     /* =========================
        VISA ONLY (VISA-)
     ========================= */
@@ -279,3 +281,4 @@ router.post("/save", async (req, res) => {
 });
 
 module.exports = router;
+
