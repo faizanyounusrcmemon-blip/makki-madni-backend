@@ -3,7 +3,7 @@ const router = express.Router();
 const db = require("../db");
 
 /* =====================================================
-   LOAD PURCHASE (ALL TYPES – FINAL FIXED)
+   LOAD PURCHASE (FINAL – ALL CASES SAFE)
 ===================================================== */
 router.get("/load/:ref_no", async (req, res) => {
   try {
@@ -11,7 +11,7 @@ router.get("/load/:ref_no", async (req, res) => {
     let rows = [];
 
     /* =========================
-       PACKAGES (PKG-)
+       PACKAGE (PKG-)
     ========================= */
     if (ref_no.startsWith("PKG-")) {
       const q = await db.query(
@@ -23,8 +23,8 @@ router.get("/load/:ref_no", async (req, res) => {
           child_count, child_rate,
           infant_count, infant_rate,
           visa_persons, visa_rate, visa_total,
-          flight_sar_rate,
           hotel_sar_rate,
+          flight_sar_rate,
           visa_sar_rate,
           transport_sar_rate
         FROM bookings
@@ -38,13 +38,14 @@ router.get("/load/:ref_no", async (req, res) => {
 
       const r = q.rows[0];
 
-      // Tickets
+      /* ---- TICKETS ---- */
       if (r.adult_count > 0) {
         rows.push({
           item: "Ticket – Adult",
           sale_sar: r.adult_count * r.adult_rate,
-          sale_rate: r.flight_sar_rate,
-          sale_pkr: r.adult_count * r.adult_rate * r.flight_sar_rate,
+          sale_rate: r.flight_sar_rate || 0,
+          sale_pkr:
+            r.adult_count * r.adult_rate * (r.flight_sar_rate || 0),
         });
       }
 
@@ -52,8 +53,9 @@ router.get("/load/:ref_no", async (req, res) => {
         rows.push({
           item: "Ticket – Child",
           sale_sar: r.child_count * r.child_rate,
-          sale_rate: r.flight_sar_rate,
-          sale_pkr: r.child_count * r.child_rate * r.flight_sar_rate,
+          sale_rate: r.flight_sar_rate || 0,
+          sale_pkr:
+            r.child_count * r.child_rate * (r.flight_sar_rate || 0),
         });
       }
 
@@ -61,42 +63,49 @@ router.get("/load/:ref_no", async (req, res) => {
         rows.push({
           item: "Ticket – Infant",
           sale_sar: r.infant_count * r.infant_rate,
-          sale_rate: r.flight_sar_rate,
-          sale_pkr: r.infant_count * r.infant_rate * r.flight_sar_rate,
+          sale_rate: r.flight_sar_rate || 0,
+          sale_pkr:
+            r.infant_count * r.infant_rate * (r.flight_sar_rate || 0),
         });
       }
 
-      // Hotels
-      (r.hotels || []).forEach((h, i) => {
-        rows.push({
-          item: `Hotel ${i + 1} - ${h.hotel || ""}`,
-          sale_sar: Number(h.total) || 0,
-          sale_rate: r.hotel_sar_rate,
-          sale_pkr: (Number(h.total) || 0) * r.hotel_sar_rate,
+      /* ---- HOTELS (array inside PKG) ---- */
+      if (Array.isArray(r.hotels)) {
+        r.hotels.forEach((h, i) => {
+          rows.push({
+            item: `Hotel ${i + 1} - ${h.hotel || ""}`,
+            sale_sar: Number(h.total) || 0,
+            sale_rate: r.hotel_sar_rate || 0,
+            sale_pkr:
+              (Number(h.total) || 0) * (r.hotel_sar_rate || 0),
+          });
         });
-      });
+      }
 
-      // Visa
+      /* ---- VISA ---- */
       if (r.visa_persons > 0) {
         const sar = r.visa_total || r.visa_persons * r.visa_rate;
         rows.push({
           item: "Visa",
           sale_sar: sar,
-          sale_rate: r.visa_sar_rate,
-          sale_pkr: sar * r.visa_sar_rate,
+          sale_rate: r.visa_sar_rate || 0,
+          sale_pkr: sar * (r.visa_sar_rate || 0),
         });
       }
 
-      // Transport
-      (r.transport || []).forEach((t, i) => {
-        rows.push({
-          item: `Transport ${i + 1}`,
-          sale_sar: Number(t.amount) || 0,
-          sale_rate: r.transport_sar_rate,
-          sale_pkr:
-            (Number(t.amount) || 0) * r.transport_sar_rate,
+      /* ---- TRANSPORT (array inside PKG) ---- */
+      if (Array.isArray(r.transport)) {
+        r.transport.forEach((t, i) => {
+          rows.push({
+            item: `Transport ${i + 1}`,
+            sale_sar: Number(t.amount) || 0,
+            sale_rate: r.transport_sar_rate || 0,
+            sale_pkr:
+              (Number(t.amount) || 0) *
+              (r.transport_sar_rate || 0),
+          });
         });
-      });
+      }
     }
 
     /* =========================
@@ -121,41 +130,38 @@ router.get("/load/:ref_no", async (req, res) => {
 
       const r = q.rows[0];
 
-      if (r.adult_qty > 0) {
+      if (r.adult_qty > 0)
         rows.push({
           item: "Ticket – Adult",
           sale_sar: r.adult_qty * r.adult_rate,
           sale_rate: r.pkr_rate,
           sale_pkr: r.adult_qty * r.adult_rate * r.pkr_rate,
         });
-      }
 
-      if (r.child_qty > 0) {
+      if (r.child_qty > 0)
         rows.push({
           item: "Ticket – Child",
           sale_sar: r.child_qty * r.child_rate,
           sale_rate: r.pkr_rate,
           sale_pkr: r.child_qty * r.child_rate * r.pkr_rate,
         });
-      }
 
-      if (r.infant_qty > 0) {
+      if (r.infant_qty > 0)
         rows.push({
           item: "Ticket – Infant",
           sale_sar: r.infant_qty * r.infant_rate,
           sale_rate: r.pkr_rate,
           sale_pkr: r.infant_qty * r.infant_rate * r.pkr_rate,
         });
-      }
     }
 
     /* =========================
-       HOTELS ONLY (HOT-)
+       HOTEL ONLY (HOT-)
     ========================= */
     else if (ref_no.startsWith("HOT-")) {
       const q = await db.query(
         `
-        SELECT hotels, sar_rate
+        SELECT hotel_name, hotel_total, sar_rate
         FROM hotels
         WHERE ref_no=$1 AND is_deleted=false
         `,
@@ -163,17 +169,15 @@ router.get("/load/:ref_no", async (req, res) => {
       );
 
       if (!q.rows.length)
-        return res.json({ success: false, error: "Hotel record not found" });
+        return res.json({ success: false, error: "Hotel not found" });
 
       const r = q.rows[0];
 
-      (r.hotels || []).forEach((h, i) => {
-        rows.push({
-          item: `Hotel ${i + 1} - ${h.hotel || ""}`,
-          sale_sar: Number(h.total) || 0,
-          sale_rate: r.sar_rate,
-          sale_pkr: (Number(h.total) || 0) * r.sar_rate,
-        });
+      rows.push({
+        item: `Hotel - ${r.hotel_name}`,
+        sale_sar: r.hotel_total || 0,
+        sale_rate: r.sar_rate || 0,
+        sale_pkr: (r.hotel_total || 0) * (r.sar_rate || 0),
       });
     }
 
@@ -183,7 +187,7 @@ router.get("/load/:ref_no", async (req, res) => {
     else if (ref_no.startsWith("VISA-")) {
       const q = await db.query(
         `
-        SELECT persons, rate, total_sar, pkr_rate
+        SELECT total_sar, sar_rate
         FROM visa
         WHERE ref_no=$1 AND is_deleted=false
         `,
@@ -191,16 +195,15 @@ router.get("/load/:ref_no", async (req, res) => {
       );
 
       if (!q.rows.length)
-        return res.json({ success: false, error: "Visa record not found" });
+        return res.json({ success: false, error: "Visa not found" });
 
       const r = q.rows[0];
-      const sar = r.total_sar || r.persons * r.rate;
 
       rows.push({
         item: "Visa",
-        sale_sar: sar,
-        sale_rate: r.pkr_rate,
-        sale_pkr: sar * r.pkr_rate,
+        sale_sar: r.total_sar || 0,
+        sale_rate: r.sar_rate || 0,
+        sale_pkr: (r.total_sar || 0) * (r.sar_rate || 0),
       });
     }
 
@@ -210,7 +213,7 @@ router.get("/load/:ref_no", async (req, res) => {
     else if (ref_no.startsWith("TRN-")) {
       const q = await db.query(
         `
-        SELECT transport, pkr_rate
+        SELECT rows, sar_rate
         FROM transport
         WHERE ref_no=$1 AND is_deleted=false
         `,
@@ -218,18 +221,21 @@ router.get("/load/:ref_no", async (req, res) => {
       );
 
       if (!q.rows.length)
-        return res.json({ success: false, error: "Transport record not found" });
+        return res.json({ success: false, error: "Transport not found" });
 
       const r = q.rows[0];
 
-      (r.transport || []).forEach((t, i) => {
-        rows.push({
-          item: `Transport ${i + 1}`,
-          sale_sar: Number(t.amount) || 0,
-          sale_rate: r.pkr_rate,
-          sale_pkr: (Number(t.amount) || 0) * r.pkr_rate,
+      if (Array.isArray(r.rows)) {
+        r.rows.forEach((t, i) => {
+          rows.push({
+            item: `Transport ${i + 1}`,
+            sale_sar: Number(t.amount) || 0,
+            sale_rate: r.sar_rate || 0,
+            sale_pkr:
+              (Number(t.amount) || 0) * (r.sar_rate || 0),
+          });
         });
-      });
+      }
     }
 
     else {
@@ -245,7 +251,7 @@ router.get("/load/:ref_no", async (req, res) => {
 });
 
 /* =====================================================
-   SAVE PURCHASE
+   SAVE PURCHASE (SAFE)
 ===================================================== */
 router.post("/save", async (req, res) => {
   try {
