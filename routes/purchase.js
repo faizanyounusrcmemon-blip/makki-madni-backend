@@ -132,27 +132,32 @@ router.get("/pending", async (req, res) => {
     else if (ref_no.startsWith("HOT-")) {
       const q = await db.query(
         `
-        SELECT hotel_name, hotel_total, sar_rate
+        SELECT rows, sar_rate
         FROM hotels
         WHERE ref_no=$1 AND is_deleted=false
         `,
-        [ref_no]
-      );
+       [ref_no]
+     );
 
-      if (!q.rows.length)
-        return res.json({ success:false, error:"Hotel not found" });
+     if (!q.rows.length)
+       return res.json({ success: false, error: "Hotel not found" });
 
-      const r = q.rows[0];
+     const r = q.rows[0];
 
-      (r.hotel_name || []).forEach((name,i)=>{
-        rows.push({
-          item: `Hotel - ${r.hotel_name || ""}`,
-          sale_sar: Number(r.hotel_total) || 0,
-          sale_rate: r.sar_rate || 0,
-          sale_pkr: (Number(r.hotel_total) || 0) * (r.sar_rate || 0),
-        });
-      });
-    }
+     if (Array.isArray(r.rows)) {
+       r.rows.forEach((h, i) => {
+         const sar = Number(h.total) || 0;
+         const rate = Number(r.sar_rate) || 0;
+
+         rows.push({
+           item: `Hotel ${i + 1} - ${h.hotel || ""}`,
+           sale_sar: sar,
+           sale_rate: rate,
+           sale_pkr: sar * rate,
+         });
+       });
+     }
+   }
     /* =========================
        VISA ONLY (VISA-)
     ========================= */
@@ -307,6 +312,7 @@ router.post("/save", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
