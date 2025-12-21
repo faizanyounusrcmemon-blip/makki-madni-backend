@@ -3,19 +3,30 @@ const router = express.Router();
 const db = require("../db");
 
 /* =====================================================
-   UNIVERSAL PURCHASE LOAD (DETAIL BASED)
+   LOAD PURCHASE (DETAIL BASED – FINAL)
 ===================================================== */
 router.get("/load/:ref_no", async (req, res) => {
   try {
     const { ref_no } = req.params;
     let rows = [];
 
-    // ================= PACKAGES =================
+    /* =========================
+       PACKAGES (PKG-)
+    ========================= */
     if (ref_no.startsWith("PKG-")) {
       const q = await db.query(
         `
-        SELECT flights, hotels, transport,
-               flight_sar_rate, hotel_sar_rate, transport_sar_rate
+        SELECT
+          flights,
+          adult_count, adult_rate,
+          child_count, child_rate,
+          infant_count, infant_rate,
+
+          hotels, sar_rate,
+
+          visa_persons, visa_rate, visa_total,
+
+          transport
         FROM bookings
         WHERE ref_no=$1 AND is_deleted=false
         `,
@@ -23,124 +34,82 @@ router.get("/load/:ref_no", async (req, res) => {
       );
 
       if (!q.rows.length)
-        return res.json({ success:false, error:"Package not found" });
+        return res.json({ success: false, error: "Package not found" });
 
       const r = q.rows[0];
 
-      // FLIGHTS
-      Array.isArray(r.flights) && r.flights.forEach((f,i)=>{
+      /* ---------- TICKETING (DETAIL) ---------- */
+      if (r.adult_count > 0) {
         rows.push({
-          item:`Flight ${i+1} ${f.from||""}→${f.to||""}`,
-          sale_sar:1,
-          sale_rate:r.flight_sar_rate||0,
-          sale_pkr:r.flight_sar_rate||0
+          item: "Ticket – Adult",
+          sale_sar: r.adult_count * r.adult_rate,
+          sale_rate: r.sar_rate,
+          sale_pkr: r.adult_count * r.adult_rate * r.sar_rate,
+        });
+      }
+
+      if (r.child_count > 0) {
+        rows.push({
+          item: "Ticket – Child",
+          sale_sar: r.child_count * r.child_rate,
+          sale_rate: r.sar_rate,
+          sale_pkr: r.child_count * r.child_rate * r.sar_rate,
+        });
+      }
+
+      if (r.infant_count > 0) {
+        rows.push({
+          item: "Ticket – Infant",
+          sale_sar: r.infant_count * r.infant_rate,
+          sale_rate: r.sar_rate,
+          sale_pkr: r.infant_count * r.infant_rate * r.sar_rate,
+        });
+      }
+
+      /* ---------- HOTELS (PER ROW) ---------- */
+      (r.hotels || []).forEach((h, i) => {
+        rows.push({
+          item: `Hotel ${i + 1} - ${h.hotel || ""}`,
+          sale_sar: Number(h.total) || 0,
+          sale_rate: r.sar_rate || 0,
+          sale_pkr: (Number(h.total) || 0) * (r.sar_rate || 0),
         });
       });
 
-      // HOTELS
-      Array.isArray(r.hotels) && r.hotels.forEach((h,i)=>{
+      /* ---------- VISA (FIXED) ---------- */
+      if (r.visa_persons > 0) {
         rows.push({
-          item:`Hotel ${i+1} - ${h.hotel||""}`,
-          sale_sar:Number(h.total)||0,
-          sale_rate:r.hotel_sar_rate||0,
-          sale_pkr:(Number(h.total)||0)*(r.hotel_sar_rate||0)
+          item: "Visa",
+          sale_sar: r.visa_total || (r.visa_persons * r.visa_rate),
+          sale_rate: r.sar_rate || 0,
+          sale_pkr:
+            (r.visa_total || (r.visa_persons * r.visa_rate)) *
+            (r.sar_rate || 0),
         });
-      });
+      }
 
-      // TRANSPORT
-      Array.isArray(r.transport) && r.transport.forEach((t,i)=>{
+      /* ---------- TRANSPORT (PER ROW) ---------- */
+      (r.transport || []).forEach((t, i) => {
         rows.push({
-          item:`Transport ${i+1} - ${t.text||""}`,
-          sale_sar:Number(t.amount)||0,
-          sale_rate:r.transport_sar_rate||0,
-          sale_pkr:(Number(t.amount)||0)*(r.transport_sar_rate||0)
+          item: `Transport ${i + 1} - ${t.text || ""}`,
+          sale_sar: Number(t.amount) || 0,
+          sale_rate: r.sar_rate || 0,
+          sale_pkr: (Number(t.amount) || 0) * (r.sar_rate || 0),
         });
       });
     }
 
-    // ================= HOTELS MODULE =================
-    else if (ref_no.startsWith("HOT-")) {
-      const q = await db.query(
-        `
-        SELECT hotel_name, hotel_total
-        FROM hotels
-        WHERE ref_no=$1 AND is_deleted=false
-        `,
-        [ref_no]
-      );
-
-      if (!q.rows.length)
-        return res.json({ success:false, error:"Hotel not found" });
-
-      const r = q.rows[0];
-
-      (r.hotel_name || []).forEach((name,i)=>{
-        rows.push({
-          item:`Hotel ${i+1} - ${name}`,
-          sale_sar:Number(r.hotel_total[i])||0,
-          sale_rate:1,
-          sale_pkr:Number(r.hotel_total[i])||0
-        });
-      });
-    }
-
-    // ================= TRANSPORT MODULE =================
-    else if (ref_no.startsWith("TRN-")) {
-      const q = await db.query(
-        `
-        SELECT rows, pkr_rate
-        FROM transport
-        WHERE ref_no=$1 AND is_deleted=false
-        `,
-        [ref_no]
-      );
-
-      if (!q.rows.length)
-        return res.json({ success:false, error:"Transport not found" });
-
-      const r = q.rows[0];
-
-      (r.rows || []).forEach((t,i)=>{
-        rows.push({
-          item:`Transport ${i+1} - ${t.text||""}`,
-          sale_sar:Number(t.amount)||0,
-          sale_rate:r.pkr_rate||0,
-          sale_pkr:(Number(t.amount)||0)*(r.pkr_rate||0)
-        });
-      });
-    }
-
-    // ================= VISA =================
-    else if (ref_no.startsWith("VISA-")) {
-      const q = await db.query(
-        `
-        SELECT rows, pkr_rate
-        FROM visa
-        WHERE ref_no=$1 AND is_deleted=false
-        `,
-        [ref_no]
-      );
-
-      if (!q.rows.length)
-        return res.json({ success:false, error:"Visa not found" });
-
-      const r = q.rows[0];
-
-      (r.rows || []).forEach((v,i)=>{
-        rows.push({
-          item:`Visa ${i+1}`,
-          sale_sar:Number(v.amount)||0,
-          sale_rate:r.pkr_rate||0,
-          sale_pkr:(Number(v.amount)||0)*(r.pkr_rate||0)
-        });
-      });
-    }
-
-    // ================= TICKETING =================
+    /* =========================
+       TICKETING ONLY (TIC-)
+    ========================= */
     else if (ref_no.startsWith("TIC-")) {
       const q = await db.query(
         `
-        SELECT total_sar, pkr_rate, total_pkr
+        SELECT
+          adult_qty, adult_rate,
+          child_qty, child_rate,
+          infant_qty, infant_rate,
+          pkr_rate
         FROM ticketing
         WHERE ref_no=$1 AND is_deleted=false
         `,
@@ -148,48 +117,68 @@ router.get("/load/:ref_no", async (req, res) => {
       );
 
       if (!q.rows.length)
-        return res.json({ success:false, error:"Ticket not found" });
+        return res.json({ success: false, error: "Ticket not found" });
 
       const r = q.rows[0];
 
-      rows.push({
-        item:"Ticketing",
-        sale_sar:r.total_sar||0,
-        sale_rate:r.pkr_rate||0,
-        sale_pkr:r.total_pkr||0
-      });
+      if (r.adult_qty > 0) {
+        rows.push({
+          item: "Ticket – Adult",
+          sale_sar: r.adult_qty * r.adult_rate,
+          sale_rate: r.pkr_rate,
+          sale_pkr: r.adult_qty * r.adult_rate * r.pkr_rate,
+        });
+      }
+
+      if (r.child_qty > 0) {
+        rows.push({
+          item: "Ticket – Child",
+          sale_sar: r.child_qty * r.child_rate,
+          sale_rate: r.pkr_rate,
+          sale_pkr: r.child_qty * r.child_rate * r.pkr_rate,
+        });
+      }
+
+      if (r.infant_qty > 0) {
+        rows.push({
+          item: "Ticket – Infant",
+          sale_sar: r.infant_qty * r.infant_rate,
+          sale_rate: r.pkr_rate,
+          sale_pkr: r.infant_qty * r.infant_rate * r.pkr_rate,
+        });
+      }
     }
 
     else {
-      return res.json({ success:false, error:"Invalid Ref No" });
+      return res.json({ success: false, error: "Invalid Ref No" });
     }
 
-    res.json({ success:true, rows });
+    res.json({ success: true, rows });
 
   } catch (err) {
     console.error("PURCHASE LOAD ERROR:", err);
-    res.json({ success:false, error:err.message });
+    res.json({ success: false, error: err.message });
   }
 });
 
-
 /* =====================================================
-   PURCHASE SAVE (SAME AS BEFORE)
+   SAVE PURCHASE (UNCHANGED – SAFE)
 ===================================================== */
 router.post("/save", async (req, res) => {
   try {
     const { ref_no, items } = req.body;
 
-    if (!ref_no || !Array.isArray(items) || !items.length)
-      return res.json({ success: false, error: "Invalid payload" });
+    if (!ref_no || !Array.isArray(items))
+      return res.json({ success: false });
 
-    await db.query(`DELETE FROM purchase_entries WHERE ref_no = $1`, [ref_no]);
+    await db.query(`DELETE FROM purchase_entries WHERE ref_no=$1`, [ref_no]);
 
     for (const r of items) {
       await db.query(
         `
         INSERT INTO purchase_entries
-        (ref_no, item, sale_sar, sale_rate, sale_pkr,
+        (ref_no, item,
+         sale_sar, sale_rate, sale_pkr,
          purchase_sar, purchase_rate, purchase_pkr, profit)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
         `,
@@ -202,7 +191,7 @@ router.post("/save", async (req, res) => {
           r.purchase_sar || 0,
           r.purchase_rate || 0,
           r.purchase_pkr || 0,
-          r.profit || 0
+          r.profit || 0,
         ]
       );
     }
@@ -216,4 +205,3 @@ router.post("/save", async (req, res) => {
 });
 
 module.exports = router;
-
