@@ -106,7 +106,7 @@ router.get("/load/:ref_no", async (req, res) => {
     else if (ref_no.startsWith("HOT-")) {
       const q = await db.query(
         `
-        SELECT hotel_name, hotel_total
+        SELECT hotel_name, hotel_total, sar_rate
         FROM hotels
         WHERE ref_no=$1 AND is_deleted=false
         `,
@@ -281,5 +281,6 @@ router.post("/save", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
