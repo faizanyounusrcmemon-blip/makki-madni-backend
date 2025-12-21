@@ -8,6 +8,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// FAVICON FIX (IMPORTANT FOR VERCEL)
+app.get("/favicon.ico", (req, res) => res.status(204).end());
+app.get("/favicon.png", (req, res) => res.status(204).end());
+
+
 // ROOT TEST ROUTE
 app.get("/", (req, res) => {
   res.json({ ok: true, message: "Makki Madni Backend Live" });
