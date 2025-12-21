@@ -122,8 +122,8 @@ router.get("/load/:ref_no", async (req, res) => {
         rows.push({
           item:`Hotel ${i+1} - ${name}`,
           sale_sar:Number(r.hotel_total[i])||0,
-          sale_rate:1,
-          sale_pkr:Number(r.hotel_total[i])||0
+          sale_rate: r.sar_rate || 0,
+          sale_pkr: (Number(r.hotel_total) || 0) * (r.sar_rate || 0),
         });
       });
     }
@@ -281,4 +281,5 @@ router.post("/save", async (req, res) => {
 });
 
 module.exports = router;
+
 
