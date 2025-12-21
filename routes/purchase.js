@@ -3,7 +3,7 @@ const router = express.Router();
 const db = require("../db");
 
 /* =====================================================
-   LOAD PURCHASE (ALL TYPES – FINAL)
+   LOAD PURCHASE (ALL TYPES – FINAL FIXED)
 ===================================================== */
 router.get("/load/:ref_no", async (req, res) => {
   try {
@@ -23,8 +23,8 @@ router.get("/load/:ref_no", async (req, res) => {
           child_count, child_rate,
           infant_count, infant_rate,
           visa_persons, visa_rate, visa_total,
-          hotel_sar_rate,
           flight_sar_rate,
+          hotel_sar_rate,
           visa_sar_rate,
           transport_sar_rate
         FROM bookings
@@ -38,7 +38,7 @@ router.get("/load/:ref_no", async (req, res) => {
 
       const r = q.rows[0];
 
-      // --- Tickets ---
+      // Tickets
       if (r.adult_count > 0) {
         rows.push({
           item: "Ticket – Adult",
@@ -66,35 +66,35 @@ router.get("/load/:ref_no", async (req, res) => {
         });
       }
 
-      // --- Hotels ---
+      // Hotels
       (r.hotels || []).forEach((h, i) => {
         rows.push({
           item: `Hotel ${i + 1} - ${h.hotel || ""}`,
           sale_sar: Number(h.total) || 0,
-          sale_rate: r.hotel_sar_rate || 0,
-          sale_pkr: (Number(h.total) || 0) * (r.hotel_sar_rate || 0),
+          sale_rate: r.hotel_sar_rate,
+          sale_pkr: (Number(h.total) || 0) * r.hotel_sar_rate,
         });
       });
 
-      // --- Visa ---
+      // Visa
       if (r.visa_persons > 0) {
         const sar = r.visa_total || r.visa_persons * r.visa_rate;
         rows.push({
           item: "Visa",
           sale_sar: sar,
-          sale_rate: r.visa_sar_rate || 0,
-          sale_pkr: sar * (r.visa_sar_rate || 0),
+          sale_rate: r.visa_sar_rate,
+          sale_pkr: sar * r.visa_sar_rate,
         });
       }
 
-      // --- Transport ---
+      // Transport
       (r.transport || []).forEach((t, i) => {
         rows.push({
           item: `Transport ${i + 1}`,
           sale_sar: Number(t.amount) || 0,
-          sale_rate: r.transport_sar_rate || 0,
+          sale_rate: r.transport_sar_rate,
           sale_pkr:
-            (Number(t.amount) || 0) * (r.transport_sar_rate || 0),
+            (Number(t.amount) || 0) * r.transport_sar_rate,
         });
       });
     }
@@ -155,7 +155,7 @@ router.get("/load/:ref_no", async (req, res) => {
     else if (ref_no.startsWith("HOT-")) {
       const q = await db.query(
         `
-        SELECT hotels, hotel_sar_rate
+        SELECT hotels, sar_rate
         FROM hotels
         WHERE ref_no=$1 AND is_deleted=false
         `,
@@ -171,9 +171,8 @@ router.get("/load/:ref_no", async (req, res) => {
         rows.push({
           item: `Hotel ${i + 1} - ${h.hotel || ""}`,
           sale_sar: Number(h.total) || 0,
-          sale_rate: r.hotel_sar_rate || 0,
-          sale_pkr:
-            (Number(h.total) || 0) * (r.hotel_sar_rate || 0),
+          sale_rate: r.sar_rate,
+          sale_pkr: (Number(h.total) || 0) * r.sar_rate,
         });
       });
     }
@@ -184,7 +183,7 @@ router.get("/load/:ref_no", async (req, res) => {
     else if (ref_no.startsWith("VISA-")) {
       const q = await db.query(
         `
-        SELECT persons, rate, total_sar, sar_rate
+        SELECT persons, rate, total_sar, pkr_rate
         FROM visa
         WHERE ref_no=$1 AND is_deleted=false
         `,
@@ -200,8 +199,8 @@ router.get("/load/:ref_no", async (req, res) => {
       rows.push({
         item: "Visa",
         sale_sar: sar,
-        sale_rate: r.sar_rate || 0,
-        sale_pkr: sar * (r.sar_rate || 0),
+        sale_rate: r.pkr_rate,
+        sale_pkr: sar * r.pkr_rate,
       });
     }
 
@@ -211,7 +210,7 @@ router.get("/load/:ref_no", async (req, res) => {
     else if (ref_no.startsWith("TRN-")) {
       const q = await db.query(
         `
-        SELECT transport, transport_sar_rate
+        SELECT transport, pkr_rate
         FROM transport
         WHERE ref_no=$1 AND is_deleted=false
         `,
@@ -227,9 +226,8 @@ router.get("/load/:ref_no", async (req, res) => {
         rows.push({
           item: `Transport ${i + 1}`,
           sale_sar: Number(t.amount) || 0,
-          sale_rate: r.transport_sar_rate || 0,
-          sale_pkr:
-            (Number(t.amount) || 0) * (r.transport_sar_rate || 0),
+          sale_rate: r.pkr_rate,
+          sale_pkr: (Number(t.amount) || 0) * r.pkr_rate,
         });
       });
     }
