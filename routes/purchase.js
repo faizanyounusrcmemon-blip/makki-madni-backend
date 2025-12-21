@@ -155,88 +155,91 @@ router.get("/load/:ref_no", async (req, res) => {
         });
     }
 
-    /* =========================
-       HOTEL ONLY (HOT-)
-    ========================= */
-    else if (ref_no.startsWith("HOT-")) {
-      const q = await db.query(
-        `
-        SELECT hotel_name, hotel_total, sar_rate
-        FROM hotels
-        WHERE ref_no=$1 AND is_deleted=false
-        `,
-        [ref_no]
-      );
+ /* =========================
+   HOTEL ONLY (HOT-)
+========================= */
+else if (ref_no.startsWith("HOT-")) {
+  const q = await db.query(
+    `
+    SELECT rows, pkr_rate
+    FROM hotels
+    WHERE ref_no=$1 AND is_deleted=false
+    `,
+    [ref_no]
+  );
 
-      if (!q.rows.length)
-        return res.json({ success: false, error: "Hotel not found" });
+  if (!q.rows.length)
+    return res.json({ success: false, error: "Hotel not found" });
 
-      const r = q.rows[0];
+  const r = q.rows[0];
 
+  if (Array.isArray(r.rows)) {
+    r.rows.forEach((h, i) => {
       rows.push({
-        item: `Hotel - ${r.hotel_name}`,
-        sale_sar: r.hotel_total || 0,
-        sale_rate: r.sar_rate || 0,
-        sale_pkr: (r.hotel_total || 0) * (r.sar_rate || 0),
+        item: `Hotel ${i + 1} - ${h.hotel}`,
+        sale_sar: Number(h.total) || 0,
+        sale_rate: r.pkr_rate || 0,
+        sale_pkr: (Number(h.total) || 0) * (r.pkr_rate || 0),
       });
-    }
+    });
+  }
+}
 
-    /* =========================
-       VISA ONLY (VISA-)
-    ========================= */
-    else if (ref_no.startsWith("VISA-")) {
-      const q = await db.query(
-        `
-        SELECT total_sar, sar_rate
-        FROM visa
-        WHERE ref_no=$1 AND is_deleted=false
-        `,
-        [ref_no]
-      );
+/* =========================
+   VISA ONLY (VISA-)
+========================= */
+else if (ref_no.startsWith("VISA-")) {
+  const q = await db.query(
+    `
+    SELECT total_sar, pkr_rate
+    FROM visa
+    WHERE ref_no=$1 AND is_deleted=false
+    `,
+    [ref_no]
+  );
 
-      if (!q.rows.length)
-        return res.json({ success: false, error: "Visa not found" });
+  if (!q.rows.length)
+    return res.json({ success: false, error: "Visa not found" });
 
-      const r = q.rows[0];
+  const r = q.rows[0];
 
+  rows.push({
+    item: "Visa",
+    sale_sar: r.total_sar || 0,
+    sale_rate: r.pkr_rate || 0,
+    sale_pkr: (r.total_sar || 0) * (r.pkr_rate || 0),
+  });
+}
+
+/* =========================
+   TRANSPORT ONLY (TRN-)
+========================= */
+else if (ref_no.startsWith("TRN-")) {
+  const q = await db.query(
+    `
+    SELECT rows, pkr_rate
+    FROM transport
+    WHERE ref_no=$1 AND is_deleted=false
+    `,
+    [ref_no]
+  );
+
+  if (!q.rows.length)
+    return res.json({ success: false, error: "Transport not found" });
+
+  const r = q.rows[0];
+
+  if (Array.isArray(r.rows)) {
+    r.rows.forEach((t, i) => {
       rows.push({
-        item: "Visa",
-        sale_sar: r.total_sar || 0,
-        sale_rate: r.sar_rate || 0,
-        sale_pkr: (r.total_sar || 0) * (r.sar_rate || 0),
+        item: `Transport ${i + 1}`,
+        sale_sar: Number(t.amount) || 0,
+        sale_rate: r.pkr_rate || 0,
+        sale_pkr: (Number(t.amount) || 0) * (r.pkr_rate || 0),
       });
-    }
-
-    /* =========================
-       TRANSPORT ONLY (TRN-)
-    ========================= */
-    else if (ref_no.startsWith("TRN-")) {
-      const q = await db.query(
-        `
-        SELECT rows, sar_rate
-        FROM transport
-        WHERE ref_no=$1 AND is_deleted=false
-        `,
-        [ref_no]
-      );
-
-      if (!q.rows.length)
-        return res.json({ success: false, error: "Transport not found" });
-
-      const r = q.rows[0];
-
-      if (Array.isArray(r.rows)) {
-        r.rows.forEach((t, i) => {
-          rows.push({
-            item: `Transport ${i + 1}`,
-            sale_sar: Number(t.amount) || 0,
-            sale_rate: r.sar_rate || 0,
-            sale_pkr:
-              (Number(t.amount) || 0) * (r.sar_rate || 0),
-          });
-        });
-      }
-    }
+    });
+  }
+}
 
     else {
       return res.json({ success: false, error: "Invalid Ref No" });
@@ -294,3 +297,4 @@ router.post("/save", async (req, res) => {
 });
 
 module.exports = router;
+
