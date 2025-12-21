@@ -130,7 +130,7 @@ router.delete("/delete/:id", async (req, res) => {
     const { id } = req.params;
     const { password } = req.body;
 
-    if (password !== "faizanyounus") {
+    if (password !== "786") {
       return res.json({
         success: false,
         error: "Wrong password"
@@ -165,3 +165,4 @@ router.delete("/delete/:id", async (req, res) => {
 });
 
 module.exports = router;
+
