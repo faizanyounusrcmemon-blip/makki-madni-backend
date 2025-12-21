@@ -34,5 +34,6 @@ app.use("/api/purchase", require("../routes/purchase"));
 // AUTH + USERS
 app.use("/api/auth", require("../routes/auth"));
 app.use("/api/users", require("../routes/users"));
+app.use("/api/backup", require("../routes/backup"));
 
 module.exports = app;
