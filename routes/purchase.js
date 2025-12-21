@@ -10,51 +10,6 @@ router.get("/load/:ref_no", async (req, res) => {
     const { ref_no } = req.params;
     let rows = [];
      
-router.get("/pending", async (req, res) => {
-  try {
-    const q = await db.query(`
-      SELECT ref_no, MIN(created_at) AS created_at
-      FROM (
-        -- PACKAGES
-        SELECT ref_no, created_at FROM bookings
-        WHERE is_deleted = false
-
-        UNION ALL
-        -- TICKETING
-        SELECT ref_no, created_at FROM ticketing
-        WHERE is_deleted = false
-
-        UNION ALL
-        -- HOTELS
-        SELECT ref_no, created_at FROM hotels
-        WHERE is_deleted = false
-
-        UNION ALL
-        -- VISA
-        SELECT ref_no, created_at FROM visa
-        WHERE is_deleted = false
-
-        UNION ALL
-        -- TRANSPORT
-        SELECT ref_no, created_at FROM transport
-        WHERE is_deleted = false
-      ) s
-      WHERE ref_no NOT IN (
-        SELECT DISTINCT ref_no
-        FROM purchase_entries
-        WHERE is_deleted = false
-      )
-      GROUP BY ref_no
-      ORDER BY created_at DESC
-    `);
-
-    res.json({ success: true, rows: q.rows });
-
-  } catch (err) {
-    console.error("PENDING PURCHASE ERROR:", err);
-    res.json({ success: false, error: err.message });
-  }
-});
 
     /* =========================
        PACKAGE (PKG-)
@@ -326,7 +281,54 @@ router.post("/save", async (req, res) => {
   }
 });
 
+router.get("/pending", async (req, res) => {
+  try {
+    const q = await db.query(`
+      SELECT ref_no, MIN(created_at) AS created_at
+      FROM (
+        -- PACKAGES
+        SELECT ref_no, created_at FROM bookings
+        WHERE is_deleted = false
+
+        UNION ALL
+        -- TICKETING
+        SELECT ref_no, created_at FROM ticketing
+        WHERE is_deleted = false
+
+        UNION ALL
+        -- HOTELS
+        SELECT ref_no, created_at FROM hotels
+        WHERE is_deleted = false
+
+        UNION ALL
+        -- VISA
+        SELECT ref_no, created_at FROM visa
+        WHERE is_deleted = false
+
+        UNION ALL
+        -- TRANSPORT
+        SELECT ref_no, created_at FROM transport
+        WHERE is_deleted = false
+      ) s
+      WHERE ref_no NOT IN (
+        SELECT DISTINCT ref_no
+        FROM purchase_entries
+        WHERE is_deleted = false
+      )
+      GROUP BY ref_no
+      ORDER BY created_at DESC
+    `);
+
+    res.json({ success: true, rows: q.rows });
+
+  } catch (err) {
+    console.error("PENDING PURCHASE ERROR:", err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
+
 
 
 
