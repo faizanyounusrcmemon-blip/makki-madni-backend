@@ -9,6 +9,32 @@ router.get("/load/:ref_no", async (req, res) => {
   try {
     const { ref_no } = req.params;
     let rows = [];
+     
+router.get("/pending", async (req, res) => {
+  try {
+    const q = await db.query(`
+      SELECT DISTINCT ref_no
+      FROM sales
+      WHERE ref_no NOT IN (
+        SELECT ref_no FROM purchase_entries
+      )
+      ORDER BY ref_no DESC
+    `);
+
+    res.json({
+      success: true,
+      rows: q.rows
+    });
+
+  } catch (err) {
+    console.error("PENDING PURCHASE ERROR:", err);
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
 
     /* =========================
        PACKAGE (PKG-)
@@ -281,6 +307,7 @@ router.post("/save", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
