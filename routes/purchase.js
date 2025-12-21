@@ -239,6 +239,82 @@ router.get("/load/:ref_no", async (req, res) => {
 });
 
 /* =====================================================
+   PURCHASE LIST (DATE FILTER + SEARCH)
+===================================================== */
+router.get("/list", async (req, res) => {
+  try {
+    const { from, to, ref } = req.query;
+
+    let where = `WHERE is_deleted = false`;
+    let params = [];
+    let i = 1;
+
+    if (from && to) {
+      where += ` AND DATE(created_at) BETWEEN $${i} AND $${i + 1}`;
+      params.push(from, to);
+      i += 2;
+    }
+
+    if (ref) {
+      where += ` AND ref_no ILIKE $${i}`;
+      params.push(`%${ref}%`);
+    }
+
+    const q = await db.query(
+      `
+      SELECT
+        ref_no,
+        SUM(sale_pkr)     AS sale_pkr,
+        SUM(purchase_pkr) AS purchase_pkr,
+        SUM(profit)       AS profit,
+        MIN(created_at)   AS created_at
+      FROM purchase_entries
+      ${where}
+      GROUP BY ref_no
+      ORDER BY created_at DESC
+      `,
+      params
+    );
+
+    res.json({ success: true, rows: q.rows });
+
+  } catch (err) {
+    console.error("PURCHASE LIST ERROR:", err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
+
+/* =====================================================
+   PURCHASE SOFT DELETE
+===================================================== */
+router.delete("/delete/:ref_no", async (req, res) => {
+  try {
+    const { ref_no } = req.params;
+
+    const q = await db.query(
+      `
+      UPDATE purchase_entries
+      SET is_deleted = true
+      WHERE ref_no = $1
+      RETURNING ref_no
+      `,
+      [ref_no]
+    );
+
+    if (!q.rows.length)
+      return res.json({ success: false, error: "Purchase not found" });
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("PURCHASE DELETE ERROR:", err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
+
+/* =====================================================
    SAVE PURCHASE (SAFE)
 ===================================================== */
 router.post("/save", async (req, res) => {
@@ -328,6 +404,7 @@ router.get("/pending", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
