@@ -144,7 +144,7 @@ router.get("/pending", async (req, res) => {
 
       const r = q.rows[0];
 
-      
+      (r.hotel_name || []).forEach((name,i)=>{
         rows.push({
           item: `Hotel - ${r.hotel_name || ""}`,
           sale_sar: Number(r.hotel_total) || 0,
@@ -307,6 +307,7 @@ router.post("/save", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
