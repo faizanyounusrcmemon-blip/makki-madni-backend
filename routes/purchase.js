@@ -146,10 +146,10 @@ router.get("/pending", async (req, res) => {
 
      (r.hotel_name || []).forEach((name,i)=>{
        rows.push({
-          item: `Hotel - ${r.hotel_name || ""}`,
-          sale_sar: Number(r.hotel_total) || 0,
+          item:`Hotel ${i+1} - ${name}`,
+          sale_sar:Number(r.hotel_total[i])||0,
           sale_rate: r.sar_rate || 0,
-          sale_pkr: (Number(r.hotel_total) || 0) * (r.sar_rate || 0),
+          sale_pkr: (Number(r.hotel_total[i]) || 0) * (r.sar_rate || 0),
         });
       });
     }
@@ -307,6 +307,7 @@ router.post("/save", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
