@@ -8,12 +8,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// FAVICON FIX (IMPORTANT FOR VERCEL)
+// FAVICON FIX
 app.get("/favicon.ico", (req, res) => res.status(204).end());
 app.get("/favicon.png", (req, res) => res.status(204).end());
 
-
-// ROOT TEST ROUTE
+// ROOT
 app.get("/", (req, res) => {
   res.json({ ok: true, message: "Makki Madni Backend Live" });
 });
@@ -42,7 +41,7 @@ app.use("/api/purchase", require("../routes/purchase"));
 app.use("/api/auth", require("../routes/auth"));
 app.use("/api/users", require("../routes/users"));
 
-// ❌ BACKUP DISABLED (Vercel-safe)
-// app.use("/api/backup", require("../routes/backup"));
+// ✅ BACKUP ENABLED
+app.use("/api/backup", require("../routes/backup"));
 
 module.exports = app;
