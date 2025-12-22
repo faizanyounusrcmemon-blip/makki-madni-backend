@@ -7,11 +7,12 @@ const archiver = require("archiver");
 const AdmZip = require("adm-zip");
 const cron = require("node-cron");
 const db = require("../db");
+const { Parser } = require("json2csv");
 const { createClient } = require("@supabase/supabase-js");
 
 // ================= PASSWORDS =================
-const BACKUP_PASSWORD = "8515";          // 🔄 Backup only
-const ADMIN_PASSWORD = "faisalyounus";   // ♻️ Restore / ⬇️ Download / ❌ Delete
+const BACKUP_PASSWORD = "8515";
+const ADMIN_PASSWORD = "faisalyounus";
 
 // ================= SUPABASE =================
 const supabase = createClient(
@@ -36,7 +37,7 @@ const TABLES = [
   "purchase_payments",
 ];
 
-// ================= CREATE BACKUP =================
+// ================= CREATE CSV BACKUP =================
 async function createBackup() {
   await fs.ensureDir(TMP);
 
@@ -46,57 +47,47 @@ async function createBackup() {
 
   const output = fs.createWriteStream(zipPath);
   const archive = archiver("zip", { zlib: { level: 9 } });
-
-  archive.on("error", err => {
-    throw err;
-  });
-
   archive.pipe(output);
 
   for (const table of TABLES) {
     try {
       const { rows } = await db.query(`SELECT * FROM ${table}`);
-      archive.append(JSON.stringify(rows), { name: `${table}.json` });
-    } catch (err) {
-      console.error("⏭️ TABLE SKIPPED:", table, err.message);
+      if (!rows || rows.length === 0) continue;
+
+      const parser = new Parser();
+      const csv = parser.parse(rows);
+
+      archive.append(csv, { name: `${table}.csv` });
+    } catch (e) {
+      console.error("⏭️ Skipped table:", table);
     }
   }
-
-  archive.append(
-    JSON.stringify({ created_at: new Date(), tables: TABLES }),
-    { name: "meta.json" }
-  );
 
   await archive.finalize();
 
   const buffer = await fs.readFile(zipPath);
-
-  const { error } = await supabase
-    .storage
+  const { error } = await supabase.storage
     .from(BUCKET)
     .upload(zipName, buffer, { upsert: true });
 
-  if (error) {
-    console.error("❌ SUPABASE UPLOAD ERROR:", error.message);
-    throw error;
-  }
+  if (error) throw error;
 
   await fs.remove(zipPath);
   return zipName;
 }
 
-// ================= AUTO BACKUP (DAILY 11 PM) =================
+// ================= AUTO BACKUP (11 PM) =================
 cron.schedule("0 23 * * *", async () => {
   try {
     await createBackup();
-    console.log("✅ Auto backup created");
+    console.log("✅ Auto CSV backup created");
   } catch (e) {
     console.error("❌ Auto backup failed:", e.message);
   }
 });
 
 // ================= MANUAL BACKUP =================
-router.post("/backup", async (req, res) => {
+router.post("/manual", async (req, res) => {
   if (req.body.password !== BACKUP_PASSWORD)
     return res.json({ success: false, error: "Wrong password" });
 
@@ -108,13 +99,25 @@ router.post("/backup", async (req, res) => {
   }
 });
 
-// ================= LIST BACKUPS =================
+// ================= LIST =================
 router.get("/list", async (req, res) => {
   const { data } = await supabase.storage.from(BUCKET).list("", {
     sortBy: { column: "name", order: "desc" },
   });
-
   res.json({ success: true, files: data || [] });
+});
+
+// ================= LAST =================
+router.get("/last", async (req, res) => {
+  const { data } = await supabase.storage.from(BUCKET).list("", {
+    limit: 1,
+    sortBy: { column: "name", order: "desc" },
+  });
+
+  res.json({
+    success: true,
+    last_backup: data?.[0]?.created_at || null,
+  });
 });
 
 // ================= DOWNLOAD =================
@@ -131,7 +134,7 @@ router.post("/download", async (req, res) => {
   res.send(buffer);
 });
 
-// ================= DELETE BACKUP =================
+// ================= DELETE =================
 router.post("/delete", async (req, res) => {
   const { file, password } = req.body;
   if (password !== ADMIN_PASSWORD)
@@ -141,99 +144,4 @@ router.post("/delete", async (req, res) => {
   res.json({ success: true });
 });
 
-// ================= FULL RESTORE =================
-router.post("/restore/full", async (req, res) => {
-  const { file, password } = req.body;
-  if (password !== ADMIN_PASSWORD)
-    return res.json({ success: false, error: "Wrong password" });
-
-  const { data } = await supabase.storage.from(BUCKET).download(file);
-  const zip = new AdmZip(Buffer.from(await data.arrayBuffer()));
-
-  const client = await db.connect();
-  try {
-    await client.query("BEGIN");
-
-    for (const table of TABLES) {
-      const entry = zip.getEntry(`${table}.json`);
-      if (!entry) continue;
-
-      const rows = JSON.parse(entry.getData().toString("utf8"));
-      await client.query(`TRUNCATE ${table} RESTART IDENTITY CASCADE`);
-
-      for (const row of rows) {
-        await client.query(
-          `INSERT INTO ${table}
-           SELECT * FROM json_populate_record(NULL::${table}, $1)`,
-          [row]
-        );
-      }
-    }
-
-    await client.query("COMMIT");
-    res.json({ success: true });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    res.json({ success: false, error: e.message });
-  } finally {
-    client.release();
-  }
-});
-
-// ================= SINGLE TABLE RESTORE =================
-router.post("/restore/table", async (req, res) => {
-  const { file, table, password } = req.body;
-  if (password !== ADMIN_PASSWORD)
-    return res.json({ success: false, error: "Wrong password" });
-
-  if (!TABLES.includes(table))
-    return res.json({ success: false, error: "Invalid table" });
-
-  const { data } = await supabase.storage.from(BUCKET).download(file);
-  const zip = new AdmZip(Buffer.from(await data.arrayBuffer()));
-  const entry = zip.getEntry(`${table}.json`);
-  if (!entry)
-    return res.json({ success: false, error: "Table not found" });
-
-  const rows = JSON.parse(entry.getData().toString("utf8"));
-
-  const client = await db.connect();
-  try {
-    await client.query("BEGIN");
-    await client.query(`TRUNCATE ${table} RESTART IDENTITY CASCADE`);
-
-    for (const row of rows) {
-      await client.query(
-        `INSERT INTO ${table}
-         SELECT * FROM json_populate_record(NULL::${table}, $1)`,
-        [row]
-      );
-    }
-
-    await client.query("COMMIT");
-    res.json({ success: true });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    res.json({ success: false, error: e.message });
-  } finally {
-    client.release();
-  }
-});
-
-// ================= LAST BACKUP =================
-router.get("/last", async (req, res) => {
-  const { data } = await supabase.storage.from(BUCKET).list("", {
-    limit: 1,
-    sortBy: { column: "name", order: "desc" },
-  });
-
-  res.json({
-    success: true,
-    last_backup: data?.[0]
-      ? new Date(data[0].created_at).toLocaleString()
-      : "",
-  });
-});
-
 module.exports = router;
-
