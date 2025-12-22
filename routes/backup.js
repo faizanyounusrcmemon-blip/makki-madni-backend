@@ -9,9 +9,11 @@ const cron = require("node-cron");
 const db = require("../db");
 const { createClient } = require("@supabase/supabase-js");
 
-// ================= CONFIG =================
-const BACKUP_PASSWORD = "8515";
+// ================= PASSWORDS =================
+const BACKUP_PASSWORD = "8515";          // 🔄 Backup only
+const ADMIN_PASSWORD = "faisalyounus";   // ♻️ Restore / ⬇️ Download / ❌ Delete
 
+// ================= SUPABASE =================
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -47,22 +49,27 @@ async function createBackup() {
   archive.pipe(output);
 
   for (const table of TABLES) {
-    const { rows } = await db.query(`SELECT * FROM ${table}`);
-    archive.append(JSON.stringify(rows), { name: `${table}.json` });
+    try {
+      const { rows } = await db.query(`SELECT * FROM ${table}`);
+      archive.append(JSON.stringify(rows), { name: `${table}.json` });
+    } catch (e) {
+      console.error("⏭️ Skipped table:", table);
+    }
   }
 
   archive.append(
-    JSON.stringify({
-      created_at: new Date(),
-      tables: TABLES,
-    }),
+    JSON.stringify({ created_at: new Date(), tables: TABLES }),
     { name: "meta.json" }
   );
 
   await archive.finalize();
 
   const buffer = await fs.readFile(zipPath);
-  await supabase.storage.from(BUCKET).upload(zipName, buffer, { upsert: true });
+  const { error } = await supabase.storage
+    .from(BUCKET)
+    .upload(zipName, buffer, { upsert: true });
+
+  if (error) throw error;
 
   await fs.remove(zipPath);
   return zipName;
@@ -74,7 +81,7 @@ cron.schedule("0 23 * * *", async () => {
     await createBackup();
     console.log("✅ Auto backup created");
   } catch (e) {
-    console.error("❌ Auto backup failed", e.message);
+    console.error("❌ Auto backup failed:", e.message);
   }
 });
 
@@ -101,28 +108,33 @@ router.get("/list", async (req, res) => {
 });
 
 // ================= DOWNLOAD =================
-router.get("/download/:file", async (req, res) => {
-  const { data } = await supabase.storage.from(BUCKET).download(req.params.file);
+router.post("/download", async (req, res) => {
+  const { file, password } = req.body;
+  if (password !== ADMIN_PASSWORD)
+    return res.json({ success: false, error: "Wrong password" });
+
+  const { data } = await supabase.storage.from(BUCKET).download(file);
   const buffer = Buffer.from(await data.arrayBuffer());
 
   res.setHeader("Content-Type", "application/zip");
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename="${req.params.file}"`
-  );
+  res.setHeader("Content-Disposition", `attachment; filename="${file}"`);
   res.send(buffer);
 });
 
 // ================= DELETE BACKUP =================
-router.delete("/delete/:file", async (req, res) => {
-  await supabase.storage.from(BUCKET).remove([req.params.file]);
+router.post("/delete", async (req, res) => {
+  const { file, password } = req.body;
+  if (password !== ADMIN_PASSWORD)
+    return res.json({ success: false, error: "Wrong password" });
+
+  await supabase.storage.from(BUCKET).remove([file]);
   res.json({ success: true });
 });
 
 // ================= FULL RESTORE =================
 router.post("/restore/full", async (req, res) => {
   const { file, password } = req.body;
-  if (password !== BACKUP_PASSWORD)
+  if (password !== ADMIN_PASSWORD)
     return res.json({ success: false, error: "Wrong password" });
 
   const { data } = await supabase.storage.from(BUCKET).download(file);
@@ -137,10 +149,7 @@ router.post("/restore/full", async (req, res) => {
       if (!entry) continue;
 
       const rows = JSON.parse(entry.getData().toString("utf8"));
-
-      await client.query(
-        `TRUNCATE ${table} RESTART IDENTITY CASCADE`
-      );
+      await client.query(`TRUNCATE ${table} RESTART IDENTITY CASCADE`);
 
       for (const row of rows) {
         await client.query(
@@ -164,7 +173,7 @@ router.post("/restore/full", async (req, res) => {
 // ================= SINGLE TABLE RESTORE =================
 router.post("/restore/table", async (req, res) => {
   const { file, table, password } = req.body;
-  if (password !== BACKUP_PASSWORD)
+  if (password !== ADMIN_PASSWORD)
     return res.json({ success: false, error: "Wrong password" });
 
   if (!TABLES.includes(table))
@@ -173,9 +182,8 @@ router.post("/restore/table", async (req, res) => {
   const { data } = await supabase.storage.from(BUCKET).download(file);
   const zip = new AdmZip(Buffer.from(await data.arrayBuffer()));
   const entry = zip.getEntry(`${table}.json`);
-
   if (!entry)
-    return res.json({ success: false, error: "Table not found in backup" });
+    return res.json({ success: false, error: "Table not found" });
 
   const rows = JSON.parse(entry.getData().toString("utf8"));
 
