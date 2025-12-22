@@ -3,13 +3,19 @@ const router = express.Router();
 const db = require("../db");
 
 /* =====================================================
-   LOAD PURCHASE (FINAL – SCHEMA MATCHED)
+   LOAD PURCHASE (SAVE + EDIT AUTO)
 ===================================================== */
 router.get("/load/:ref_no", async (req, res) => {
   try {
     const { ref_no } = req.params;
     let rows = [];
-     
+
+    // 🔥 CHECK EDIT MODE
+    const chk = await db.query(
+      `SELECT COUNT(*) FROM purchase_entries WHERE ref_no=$1 AND is_deleted=false`,
+      [ref_no]
+    );
+    const isEdit = Number(chk.rows[0].count) > 0;
 
     /* =========================
        PACKAGE (PKG-)
@@ -17,17 +23,7 @@ router.get("/load/:ref_no", async (req, res) => {
     if (ref_no.startsWith("PKG-")) {
       const q = await db.query(
         `
-        SELECT
-          hotels,
-          transport,
-          adult_count, adult_rate,
-          child_count, child_rate,
-          infant_count, infant_rate,
-          visa_persons, visa_rate, visa_total,
-          hotel_sar_rate,
-          flight_sar_rate,
-          visa_sar_rate,
-          transport_sar_rate
+        SELECT *
         FROM bookings
         WHERE ref_no=$1 AND is_deleted=false
         `,
@@ -64,7 +60,7 @@ router.get("/load/:ref_no", async (req, res) => {
           sale_pkr: r.infant_count * r.infant_rate * (r.flight_sar_rate || 0),
         });
 
-      // ---- HOTELS (ARRAY) ----
+      // ---- HOTELS ----
       if (Array.isArray(r.hotels))
         r.hotels.forEach((h, i) =>
           rows.push({
@@ -86,7 +82,7 @@ router.get("/load/:ref_no", async (req, res) => {
         });
       }
 
-      // ---- TRANSPORT (ARRAY) ----
+      // ---- TRANSPORT ----
       if (Array.isArray(r.transport))
         r.transport.forEach((t, i) =>
           rows.push({
@@ -103,7 +99,6 @@ router.get("/load/:ref_no", async (req, res) => {
     /* =========================
        HOTEL ONLY (HOT-)
     ========================= */
-    // ================= HOTELS MODULE =================
     else if (ref_no.startsWith("HOT-")) {
       const q = await db.query(
         `
@@ -111,23 +106,24 @@ router.get("/load/:ref_no", async (req, res) => {
         FROM hotels
         WHERE ref_no=$1 AND is_deleted=false
         `,
-       [ref_no]
-     );
+        [ref_no]
+      );
 
-     if (!q.rows.length)
-       return res.json({ success:false, error:"Hotel not found" });
+      if (!q.rows.length)
+        return res.json({ success: false, error: "Hotel not found" });
 
-     const r = q.rows[0];
+      const r = q.rows[0];
 
-     (r.hotel_name || []).forEach((name,i)=>{
-       rows.push({
-          item:`Hotel ${i+1} - ${name}`,
-          sale_sar:Number(r.hotel_total[i])||0,
+      (r.hotel_name || []).forEach((name, i) => {
+        rows.push({
+          item: `Hotel ${i + 1} - ${name}`,
+          sale_sar: Number(r.hotel_total[i]) || 0,
           sale_rate: r.sar_rate || 0,
           sale_pkr: (Number(r.hotel_total[i]) || 0) * (r.sar_rate || 0),
         });
       });
     }
+
     /* =========================
        VISA ONLY (VISA-)
     ========================= */
@@ -224,13 +220,34 @@ router.get("/load/:ref_no", async (req, res) => {
           sale_rate: r.pkr_rate,
           sale_pkr: r.infant_qty * r.infant_rate * r.pkr_rate,
         });
-    }
-
-    else {
+    } else {
       return res.json({ success: false, error: "Invalid Ref No" });
     }
 
-    return res.json({ success: true, rows });
+    /* =========================
+       MERGE PURCHASE (EDIT)
+    ========================= */
+    const p = await db.query(
+      `
+      SELECT item, purchase_sar, purchase_rate, purchase_pkr, profit
+      FROM purchase_entries
+      WHERE ref_no=$1 AND is_deleted=false
+      `,
+      [ref_no]
+    );
+
+    rows = rows.map(r => {
+      const x = p.rows.find(p => p.item === r.item);
+      return {
+        ...r,
+        purchase_sar: x?.purchase_sar || 0,
+        purchase_rate: x?.purchase_rate || 0,
+        purchase_pkr: x?.purchase_pkr || 0,
+        profit: x?.profit || 0,
+      };
+    });
+
+    res.json({ success: true, is_edit: isEdit, rows });
 
   } catch (err) {
     console.error("PURCHASE LOAD ERROR:", err);
@@ -239,88 +256,11 @@ router.get("/load/:ref_no", async (req, res) => {
 });
 
 /* =====================================================
-   PURCHASE LIST (DATE FILTER + SEARCH)
-===================================================== */
-router.get("/list", async (req, res) => {
-  try {
-    const { from, to, ref } = req.query;
-
-    let where = `WHERE is_deleted = false`;
-    let params = [];
-    let i = 1;
-
-    if (from && to) {
-      where += ` AND DATE(created_at) BETWEEN $${i} AND $${i + 1}`;
-      params.push(from, to);
-      i += 2;
-    }
-
-    if (ref) {
-      where += ` AND ref_no ILIKE $${i}`;
-      params.push(`%${ref}%`);
-    }
-
-    const q = await db.query(
-      `
-      SELECT
-        ref_no,
-        SUM(sale_pkr)     AS sale_pkr,
-        SUM(purchase_pkr) AS purchase_pkr,
-        SUM(profit)       AS profit,
-        MIN(created_at)   AS created_at
-      FROM purchase_entries
-      ${where}
-      GROUP BY ref_no
-      ORDER BY created_at DESC
-      `,
-      params
-    );
-
-    res.json({ success: true, rows: q.rows });
-
-  } catch (err) {
-    console.error("PURCHASE LIST ERROR:", err);
-    res.json({ success: false, error: err.message });
-  }
-});
-
-
-/* =====================================================
-   PURCHASE SOFT DELETE
-===================================================== */
-router.delete("/delete/:ref_no", async (req, res) => {
-  try {
-    const { ref_no } = req.params;
-
-    const q = await db.query(
-      `
-      UPDATE purchase_entries
-      SET is_deleted = true
-      WHERE ref_no = $1
-      RETURNING ref_no
-      `,
-      [ref_no]
-    );
-
-    if (!q.rows.length)
-      return res.json({ success: false, error: "Purchase not found" });
-
-    res.json({ success: true });
-
-  } catch (err) {
-    console.error("PURCHASE DELETE ERROR:", err);
-    res.json({ success: false, error: err.message });
-  }
-});
-
-
-/* =====================================================
-   SAVE PURCHASE (SAFE)
+   SAVE PURCHASE (SAVE + EDIT)
 ===================================================== */
 router.post("/save", async (req, res) => {
   try {
     const { ref_no, items } = req.body;
-
     if (!ref_no || !Array.isArray(items))
       return res.json({ success: false });
 
@@ -357,62 +297,4 @@ router.post("/save", async (req, res) => {
   }
 });
 
-router.get("/pending", async (req, res) => {
-  try {
-    const q = await db.query(`
-      SELECT ref_no, MIN(created_at) AS created_at
-      FROM (
-        -- PACKAGES
-        SELECT ref_no, created_at FROM bookings
-        WHERE is_deleted = false
-
-        UNION ALL
-        -- TICKETING
-        SELECT ref_no, created_at FROM ticketing
-        WHERE is_deleted = false
-
-        UNION ALL
-        -- HOTELS
-        SELECT ref_no, created_at FROM hotels
-        WHERE is_deleted = false
-
-        UNION ALL
-        -- VISA
-        SELECT ref_no, created_at FROM visa
-        WHERE is_deleted = false
-
-        UNION ALL
-        -- TRANSPORT
-        SELECT ref_no, created_at FROM transport
-        WHERE is_deleted = false
-      ) s
-      WHERE ref_no NOT IN (
-        SELECT DISTINCT ref_no
-        FROM purchase_entries
-        WHERE is_deleted = false
-      )
-      GROUP BY ref_no
-      ORDER BY created_at DESC
-    `);
-
-    res.json({ success: true, rows: q.rows });
-
-  } catch (err) {
-    console.error("PENDING PURCHASE ERROR:", err);
-    res.json({ success: false, error: err.message });
-  }
-});
-
 module.exports = router;
-
-
-
-
-
-
-
-
-
-
-
-
