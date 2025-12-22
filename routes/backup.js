@@ -1,17 +1,26 @@
 const express = require("express");
 const router = express.Router();
+
+const fs = require("fs-extra");
+const path = require("path");
+const archiver = require("archiver");
+const AdmZip = require("adm-zip");
+const cron = require("node-cron");
 const db = require("../db");
 const { createClient } = require("@supabase/supabase-js");
 
-// SUPABASE
+// ================= CONFIG =================
+const BACKUP_PASSWORD = "8515";
+
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 const BUCKET = "mmtbackups";
+const TMP = path.join(__dirname, "../tmp");
 
-// TABLES
+// ================= TABLES =================
 const TABLES = [
   "bookings",
   "hotels",
@@ -19,83 +28,193 @@ const TABLES = [
   "visa",
   "transport",
   "purchase_entries",
+  "users",
+  "bank_transactions",
   "customer_payments",
+  "purchase_payments",
 ];
 
-// CSV helper
-function toCSV(rows) {
-  if (!rows.length) return "";
-  const headers = Object.keys(rows[0]).join(",");
-  const body = rows.map(r =>
-    Object.values(r)
-      .map(v => `"${String(v ?? "").replace(/"/g, '""')}"`)
-      .join(",")
-  ).join("\n");
-  return headers + "\n" + body;
-}
+// ================= CREATE BACKUP =================
+async function createBackup() {
+  await fs.ensureDir(TMP);
 
-// ================= MANUAL BACKUP ONLY =================
-router.post("/manual", async (req, res) => {
-  if (req.body.password !== "8515") {
-    return res.json({ success: false, error: "Wrong password" });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const zipName = `backup-${stamp}.zip`;
+  const zipPath = path.join(TMP, zipName);
+
+  const output = fs.createWriteStream(zipPath);
+  const archive = archiver("zip", { zlib: { level: 9 } });
+  archive.pipe(output);
+
+  for (const table of TABLES) {
+    const { rows } = await db.query(`SELECT * FROM ${table}`);
+    archive.append(JSON.stringify(rows), { name: `${table}.json` });
   }
 
+  archive.append(
+    JSON.stringify({
+      created_at: new Date(),
+      tables: TABLES,
+    }),
+    { name: "meta.json" }
+  );
+
+  await archive.finalize();
+
+  const buffer = await fs.readFile(zipPath);
+  await supabase.storage.from(BUCKET).upload(zipName, buffer, { upsert: true });
+
+  await fs.remove(zipPath);
+  return zipName;
+}
+
+// ================= AUTO BACKUP (DAILY 11 PM) =================
+cron.schedule("0 23 * * *", async () => {
   try {
-    let content = {};
+    await createBackup();
+    console.log("✅ Auto backup created");
+  } catch (e) {
+    console.error("❌ Auto backup failed", e.message);
+  }
+});
 
-    for (const table of TABLES) {
-      const { rows } = await db.query(`SELECT * FROM ${table}`);
-      content[table] = toCSV(rows);
-    }
+// ================= MANUAL BACKUP =================
+router.post("/backup", async (req, res) => {
+  if (req.body.password !== BACKUP_PASSWORD)
+    return res.json({ success: false, error: "Wrong password" });
 
-    const name = `backup-${Date.now()}.json`;
-
-    await supabase.storage.from(BUCKET).upload(
-      name,
-      Buffer.from(JSON.stringify(content)),
-      { upsert: true }
-    );
-
-    res.json({ success: true, file: name });
-
+  try {
+    const file = await createBackup();
+    res.json({ success: true, file });
   } catch (e) {
     res.json({ success: false, error: e.message });
   }
 });
 
-// ================= LIST =================
+// ================= LIST BACKUPS =================
 router.get("/list", async (req, res) => {
   const { data } = await supabase.storage.from(BUCKET).list("", {
     sortBy: { column: "name", order: "desc" },
   });
 
-  res.json({
-    success: true,
-    files: (data || []).map(f => ({
-      name: f.name,
-      time: f.created_at || null,
-    })),
-  });
+  res.json({ success: true, files: data || [] });
 });
 
-router.get("/last", async (req, res) => {
+// ================= DOWNLOAD =================
+router.get("/download/:file", async (req, res) => {
+  const { data } = await supabase.storage.from(BUCKET).download(req.params.file);
+  const buffer = Buffer.from(await data.arrayBuffer());
+
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${req.params.file}"`
+  );
+  res.send(buffer);
+});
+
+// ================= DELETE BACKUP =================
+router.delete("/delete/:file", async (req, res) => {
+  await supabase.storage.from(BUCKET).remove([req.params.file]);
+  res.json({ success: true });
+});
+
+// ================= FULL RESTORE =================
+router.post("/restore/full", async (req, res) => {
+  const { file, password } = req.body;
+  if (password !== BACKUP_PASSWORD)
+    return res.json({ success: false, error: "Wrong password" });
+
+  const { data } = await supabase.storage.from(BUCKET).download(file);
+  const zip = new AdmZip(Buffer.from(await data.arrayBuffer()));
+
+  const client = await db.connect();
   try {
-    const q = await db.query(`
-      SELECT created_at
-      FROM backup_logs
-      ORDER BY created_at DESC
-      LIMIT 1
-    `);
+    await client.query("BEGIN");
 
-    res.json({
-      success: true,
-      last_backup: q.rows[0]?.created_at || null
-    });
+    for (const table of TABLES) {
+      const entry = zip.getEntry(`${table}.json`);
+      if (!entry) continue;
 
-  } catch (err) {
-    res.json({ success: false, error: err.message });
+      const rows = JSON.parse(entry.getData().toString("utf8"));
+
+      await client.query(
+        `TRUNCATE ${table} RESTART IDENTITY CASCADE`
+      );
+
+      for (const row of rows) {
+        await client.query(
+          `INSERT INTO ${table}
+           SELECT * FROM json_populate_record(NULL::${table}, $1)`,
+          [row]
+        );
+      }
+    }
+
+    await client.query("COMMIT");
+    res.json({ success: true });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    res.json({ success: false, error: e.message });
+  } finally {
+    client.release();
   }
 });
 
-module.exports = router;
+// ================= SINGLE TABLE RESTORE =================
+router.post("/restore/table", async (req, res) => {
+  const { file, table, password } = req.body;
+  if (password !== BACKUP_PASSWORD)
+    return res.json({ success: false, error: "Wrong password" });
 
+  if (!TABLES.includes(table))
+    return res.json({ success: false, error: "Invalid table" });
+
+  const { data } = await supabase.storage.from(BUCKET).download(file);
+  const zip = new AdmZip(Buffer.from(await data.arrayBuffer()));
+  const entry = zip.getEntry(`${table}.json`);
+
+  if (!entry)
+    return res.json({ success: false, error: "Table not found in backup" });
+
+  const rows = JSON.parse(entry.getData().toString("utf8"));
+
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`TRUNCATE ${table} RESTART IDENTITY CASCADE`);
+
+    for (const row of rows) {
+      await client.query(
+        `INSERT INTO ${table}
+         SELECT * FROM json_populate_record(NULL::${table}, $1)`,
+        [row]
+      );
+    }
+
+    await client.query("COMMIT");
+    res.json({ success: true });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    res.json({ success: false, error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ================= LAST BACKUP =================
+router.get("/last", async (req, res) => {
+  const { data } = await supabase.storage.from(BUCKET).list("", {
+    limit: 1,
+    sortBy: { column: "name", order: "desc" },
+  });
+
+  res.json({
+    success: true,
+    last_backup: data?.[0]
+      ? new Date(data[0].created_at).toLocaleString()
+      : "",
+  });
+});
+
+module.exports = router;
