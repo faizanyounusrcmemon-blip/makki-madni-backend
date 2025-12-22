@@ -224,6 +224,81 @@ router.get("/load/:ref_no", async (req, res) => {
       return res.json({ success: false, error: "Invalid Ref No" });
     }
 
+
+
+    /* =========================
+       MERGE PURCHASE (EDIT)
+    ========================= */
+    const p = await db.query(
+      `
+      SELECT item, purchase_sar, purchase_rate, purchase_pkr, profit
+      FROM purchase_entries
+      WHERE ref_no=$1 AND is_deleted=false
+      `,
+      [ref_no]
+    );
+
+    rows = rows.map(r => {
+      const x = p.rows.find(p => p.item === r.item);
+      return {
+        ...r,
+        purchase_sar: x?.purchase_sar || 0,
+        purchase_rate: x?.purchase_rate || 0,
+        purchase_pkr: x?.purchase_pkr || 0,
+        profit: x?.profit || 0,
+      };
+    });
+
+    res.json({ success: true, is_edit: isEdit, rows });
+
+  } catch (err) {
+    console.error("PURCHASE LOAD ERROR:", err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
+/* =====================================================
+   SAVE PURCHASE (SAVE + EDIT)
+===================================================== */
+router.post("/save", async (req, res) => {
+  try {
+    const { ref_no, items } = req.body;
+    if (!ref_no || !Array.isArray(items))
+      return res.json({ success: false });
+
+    await db.query(`DELETE FROM purchase_entries WHERE ref_no=$1`, [ref_no]);
+
+    for (const r of items) {
+      await db.query(
+        `
+        INSERT INTO purchase_entries
+        (ref_no, item,
+         sale_sar, sale_rate, sale_pkr,
+         purchase_sar, purchase_rate, purchase_pkr, profit)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        `,
+        [
+          ref_no,
+          r.item,
+          r.sale_sar || 0,
+          r.sale_rate || 0,
+          r.sale_pkr || 0,
+          r.purchase_sar || 0,
+          r.purchase_rate || 0,
+          r.purchase_pkr || 0,
+          r.profit || 0,
+        ]
+      );
+    }
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("PURCHASE SAVE ERROR:", err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
      /* =====================================================
    PURCHASE LIST (DATE FILTER + SEARCH)
 ===================================================== */
@@ -301,79 +376,6 @@ router.delete("/delete/:ref_no", async (req, res) => {
      
 
 
-    /* =========================
-       MERGE PURCHASE (EDIT)
-    ========================= */
-    const p = await db.query(
-      `
-      SELECT item, purchase_sar, purchase_rate, purchase_pkr, profit
-      FROM purchase_entries
-      WHERE ref_no=$1 AND is_deleted=false
-      `,
-      [ref_no]
-    );
-
-    rows = rows.map(r => {
-      const x = p.rows.find(p => p.item === r.item);
-      return {
-        ...r,
-        purchase_sar: x?.purchase_sar || 0,
-        purchase_rate: x?.purchase_rate || 0,
-        purchase_pkr: x?.purchase_pkr || 0,
-        profit: x?.profit || 0,
-      };
-    });
-
-    res.json({ success: true, is_edit: isEdit, rows });
-
-  } catch (err) {
-    console.error("PURCHASE LOAD ERROR:", err);
-    res.json({ success: false, error: err.message });
-  }
-});
-
-/* =====================================================
-   SAVE PURCHASE (SAVE + EDIT)
-===================================================== */
-router.post("/save", async (req, res) => {
-  try {
-    const { ref_no, items } = req.body;
-    if (!ref_no || !Array.isArray(items))
-      return res.json({ success: false });
-
-    await db.query(`DELETE FROM purchase_entries WHERE ref_no=$1`, [ref_no]);
-
-    for (const r of items) {
-      await db.query(
-        `
-        INSERT INTO purchase_entries
-        (ref_no, item,
-         sale_sar, sale_rate, sale_pkr,
-         purchase_sar, purchase_rate, purchase_pkr, profit)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-        `,
-        [
-          ref_no,
-          r.item,
-          r.sale_sar || 0,
-          r.sale_rate || 0,
-          r.sale_pkr || 0,
-          r.purchase_sar || 0,
-          r.purchase_rate || 0,
-          r.purchase_pkr || 0,
-          r.profit || 0,
-        ]
-      );
-    }
-
-    res.json({ success: true });
-
-  } catch (err) {
-    console.error("PURCHASE SAVE ERROR:", err);
-    res.json({ success: false, error: err.message });
-  }
-});
-
 /* =====================================================
    PENDING PURCHASE
 ===================================================== */
@@ -426,5 +428,6 @@ router.get("/pending", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
