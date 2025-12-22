@@ -373,6 +373,59 @@ router.delete("/delete/:ref_no", async (req, res) => {
     res.json({ success: false, error: err.message });
   }
 });
+
+/* =====================================================
+   PURCHASE DETAIL (BY REF NO)
+===================================================== */
+router.get("/detail/:ref_no", async (req, res) => {
+  try {
+    const { ref_no } = req.params;
+
+    const q = await db.query(
+      `
+      SELECT
+        ref_no,
+        item,
+        sale_sar,
+        sale_rate,
+        sale_pkr,
+        purchase_sar,
+        purchase_rate,
+        purchase_pkr,
+        profit,
+        created_at
+      FROM purchase_entries
+      WHERE ref_no=$1 AND is_deleted=false
+      ORDER BY item
+      `,
+      [ref_no]
+    );
+
+    if (!q.rows.length)
+      return res.json({ success: false, error: "Purchase not found" });
+
+    const totals = q.rows.reduce(
+      (a, r) => {
+        a.sale_pkr += Number(r.sale_pkr || 0);
+        a.purchase_pkr += Number(r.purchase_pkr || 0);
+        a.profit += Number(r.profit || 0);
+        return a;
+      },
+      { sale_pkr: 0, purchase_pkr: 0, profit: 0 }
+    );
+
+    res.json({
+      success: true,
+      rows: q.rows,
+      totals
+    });
+
+  } catch (err) {
+    console.error("PURCHASE DETAIL ERROR:", err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
      
 
 
@@ -428,6 +481,7 @@ router.get("/pending", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
