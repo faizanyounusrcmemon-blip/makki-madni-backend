@@ -375,7 +375,7 @@ router.delete("/delete/:ref_no", async (req, res) => {
 });
 
 /* =====================================================
-   PURCHASE DETAIL (BY REF NO)
+   PURCHASE DETAIL (BY REF NO) - FINAL
 ===================================================== */
 router.get("/detail/:ref_no", async (req, res) => {
   try {
@@ -401,8 +401,12 @@ router.get("/detail/:ref_no", async (req, res) => {
       [ref_no]
     );
 
-    if (!q.rows.length)
-      return res.json({ success: false, error: "Purchase not found" });
+    if (!q.rows.length) {
+      return res.json({
+        success: false,
+        error: "Purchase entry not saved yet"
+      });
+    }
 
     const totals = q.rows.reduce(
       (a, r) => {
@@ -481,6 +485,7 @@ router.get("/pending", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
