@@ -21,7 +21,7 @@ const supabase = createClient(
 );
 
 const BUCKET = "mmtbackups";
-const TMP = path.join(__dirname, "../tmp");
+const TMP = "/tmp";
 
 /* ================= TABLES ================= */
 
@@ -234,3 +234,4 @@ router.post("/restore/table", async (req, res) => {
 });
 
 module.exports = router;
+
