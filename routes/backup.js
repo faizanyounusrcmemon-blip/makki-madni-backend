@@ -46,14 +46,19 @@ async function createBackup() {
 
   const output = fs.createWriteStream(zipPath);
   const archive = archiver("zip", { zlib: { level: 9 } });
+
+  archive.on("error", err => {
+    throw err;
+  });
+
   archive.pipe(output);
 
   for (const table of TABLES) {
     try {
       const { rows } = await db.query(`SELECT * FROM ${table}`);
       archive.append(JSON.stringify(rows), { name: `${table}.json` });
-    } catch (e) {
-      console.error("⏭️ Skipped table:", table);
+    } catch (err) {
+      console.error("⏭️ TABLE SKIPPED:", table, err.message);
     }
   }
 
@@ -65,11 +70,16 @@ async function createBackup() {
   await archive.finalize();
 
   const buffer = await fs.readFile(zipPath);
-  const { error } = await supabase.storage
+
+  const { error } = await supabase
+    .storage
     .from(BUCKET)
     .upload(zipName, buffer, { upsert: true });
 
-  if (error) throw error;
+  if (error) {
+    console.error("❌ SUPABASE UPLOAD ERROR:", error.message);
+    throw error;
+  }
 
   await fs.remove(zipPath);
   return zipName;
@@ -226,3 +236,4 @@ router.get("/last", async (req, res) => {
 });
 
 module.exports = router;
+
