@@ -78,4 +78,24 @@ router.get("/list", async (req, res) => {
   });
 });
 
+router.get("/last", async (req, res) => {
+  try {
+    const q = await db.query(`
+      SELECT created_at
+      FROM backup_logs
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
+
+    res.json({
+      success: true,
+      last_backup: q.rows[0]?.created_at || null
+    });
+
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
+
