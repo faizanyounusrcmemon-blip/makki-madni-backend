@@ -110,17 +110,25 @@ router.get("/list", async (req, res) => {
 
 /* ================= DOWNLOAD BACKUP ================= */
 
-router.post("/download", async (req, res) => {
-  if (req.body.password !== ACTION_PASSWORD) {
-    return res.json({ success: false, error: "Wrong password" });
+router.get("/download/:file", async (req, res) => {
+  const file = req.params.file;
+
+  const { data, error } = await supabase
+    .storage
+    .from(BUCKET)
+    .download(file);
+
+  if (error) {
+    return res.status(404).send("File not found");
   }
 
-  const { file } = req.body;
-  const { data } = await supabase.storage.from(BUCKET).download(file);
   const buffer = Buffer.from(await data.arrayBuffer());
 
   res.setHeader("Content-Type", "application/zip");
-  res.setHeader("Content-Disposition", `attachment; filename="${file}"`);
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${file}"`
+  );
   res.send(buffer);
 });
 
@@ -234,4 +242,5 @@ router.post("/restore/table", async (req, res) => {
 });
 
 module.exports = router;
+
 
