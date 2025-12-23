@@ -434,49 +434,76 @@ router.get("/detail/:ref_no", async (req, res) => {
 
 
 /* =====================================================
-   PENDING PURCHASE
+   PENDING + PARTIAL PURCHASE
 ===================================================== */
-
-
 router.get("/pending", async (req, res) => {
   try {
-    const q = await db.query(`
+    // 🔹 All refs that have SALES
+    const sales = await db.query(`
       SELECT ref_no, MIN(created_at) AS created_at
       FROM (
-        -- PACKAGES
-        SELECT ref_no, created_at FROM bookings
-        WHERE is_deleted = false
-
+        SELECT ref_no, created_at FROM bookings WHERE is_deleted=false
         UNION ALL
-        -- TICKETING
-        SELECT ref_no, created_at FROM ticketing
-        WHERE is_deleted = false
-
+        SELECT ref_no, created_at FROM ticketing WHERE is_deleted=false
         UNION ALL
-        -- HOTELS
-        SELECT ref_no, created_at FROM hotels
-        WHERE is_deleted = false
-
+        SELECT ref_no, created_at FROM hotels WHERE is_deleted=false
         UNION ALL
-        -- VISA
-        SELECT ref_no, created_at FROM visa
-        WHERE is_deleted = false
-
+        SELECT ref_no, created_at FROM visa WHERE is_deleted=false
         UNION ALL
-        -- TRANSPORT
-        SELECT ref_no, created_at FROM transport
-        WHERE is_deleted = false
+        SELECT ref_no, created_at FROM transport WHERE is_deleted=false
       ) s
-      WHERE ref_no NOT IN (
-        SELECT DISTINCT ref_no
-        FROM purchase_entries
-        WHERE is_deleted = false
-      )
       GROUP BY ref_no
-      ORDER BY created_at DESC
     `);
 
-    res.json({ success: true, rows: q.rows });
+    // 🔹 Purchase summary per ref
+    const purchase = await db.query(`
+      SELECT
+        ref_no,
+        COUNT(*)                    AS total_items,
+        SUM(
+          CASE
+            WHEN purchase_sar > 0 AND purchase_rate > 0 THEN 1
+            ELSE 0
+          END
+        ) AS completed_items
+      FROM purchase_entries
+      WHERE is_deleted=false
+      GROUP BY ref_no
+    `);
+
+    const map = {};
+    purchase.rows.forEach(r => {
+      map[r.ref_no] = r;
+    });
+
+    const result = [];
+
+    for (const r of sales.rows) {
+      const p = map[r.ref_no];
+
+      // 🔴 No purchase at all
+      if (!p) {
+        result.push({
+          ref_no: r.ref_no,
+          created_at: r.created_at,
+          status: "PENDING",
+          note: "No purchase entry"
+        });
+        continue;
+      }
+
+      // 🟡 Partial purchase
+      if (Number(p.completed_items) < Number(p.total_items)) {
+        result.push({
+          ref_no: r.ref_no,
+          created_at: r.created_at,
+          status: "PARTIAL",
+          note: "Some items not purchased yet"
+        });
+      }
+    }
+
+    res.json({ success: true, rows: result });
 
   } catch (err) {
     console.error("PENDING PURCHASE ERROR:", err);
@@ -485,6 +512,7 @@ router.get("/pending", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
