@@ -27,46 +27,47 @@ router.post("/save", async (req, res) => {
         UPDATE bookings SET
           customer_name=$2,
           booking_date=$3,
+          contact_no=$4,
 
-          adult_count=$4,
-          adult_rate=$5,
-          child_count=$6,
-          child_rate=$7,
-          infant_count=$8,
-          infant_rate=$9,
-          flight_total=$10,
+          adult_count=$5,
+          adult_rate=$6,
+          child_count=$7,
+          child_rate=$8,
+          infant_count=$9,
+          infant_rate=$10,
+          flight_total=$11,
 
-          flights=$11::jsonb,
-          hotels=$12::jsonb,
-          hotels_total=$13,
+          flights=$12::jsonb,
+          hotels=$13::jsonb,
+          hotels_total=$14,
 
-          visa_persons=$14,
-          visa_rate=$15,
-          visa_total=$16,
+          visa_persons=$15,
+          visa_rate=$16,
+          visa_total=$17,
 
-          transport=$17::jsonb,
-          transport_total=$18,
+          transport=$18::jsonb,
+          transport_total=$19,
 
-          flight_sar_total=$19,
-          hotel_sar_total=$20,
-          visa_sar_total=$21,
-          transport_sar_total=$22,
+          flight_sar_total=$20,
+          hotel_sar_total=$21,
+          visa_sar_total=$22,
+          transport_sar_total=$23,
 
-          flight_sar_rate=$23,
-          hotel_sar_rate=$24,
-          visa_sar_rate=$25,
-          transport_sar_rate=$26,
+          flight_sar_rate=$24,
+          hotel_sar_rate=$25,
+          visa_sar_rate=$26,
+          transport_sar_rate=$27,
 
-          flight_pkr_total=$27,
-          hotel_pkr_total=$28,
-          visa_pkr_total=$29,
-          transport_pkr_total=$30,
+          flight_pkr_total=$28,
+          hotel_pkr_total=$29,
+          visa_pkr_total=$30,
+          transport_pkr_total=$31,
 
-          net_pkr_total=$31,
-          total_sar=$32,
-          total_pkr=$33,
-          per_person_qty=$34,
-          per_person_final=$35
+          net_pkr_total=$32,
+          total_sar=$33,
+          total_pkr=$34,
+          per_person_qty=$36,
+          per_person_final=$36
 
         WHERE ref_no=$1
         `,
@@ -74,6 +75,7 @@ router.post("/save", async (req, res) => {
           d.ref_no,
           d.customer_name,
           d.booking_date,
+          d.contact_no,
 
           d.adult_count,
           d.adult_rate,
@@ -128,7 +130,7 @@ router.post("/save", async (req, res) => {
     await db.query(
       `
       INSERT INTO bookings (
-        ref_no, customer_name, booking_date,
+        ref_no, customer_name, contact_no, booking_date,
 
         adult_count, adult_rate, child_count, child_rate,
         infant_count, infant_rate, flight_total,
@@ -148,22 +150,23 @@ router.post("/save", async (req, res) => {
         per_person_qty, per_person_final
       )
       VALUES (
-        $1,$2,$3,
-        $4,$5,$6,$7,
-        $8,$9,$10,
-        $11::jsonb,$12::jsonb,$13,
-        $14,$15,$16,
-        $17::jsonb,$18,
-        $19,$20,$21,$22,
-        $23,$24,$25,$26,
-        $27,$28,$29,$30,
-        $31,$32,$33,
-        $34,$35
+        $1,$2,$3,$4,
+        $5,$6,$7,$8,
+        $9,$10,$11,
+        $12::jsonb,$13::jsonb,$14,
+        $15,$16,$17,
+        $18::jsonb,$19,
+        $20,$21,$22,$23,
+        $24,$25,$26,$27,
+        $28,$29,$30,$31,
+        $32,$33,$34,
+        $35,$36
       )
       `,
       [
         ref_no,
         d.customer_name,
+        d.contact_no,
         d.booking_date,
 
         d.adult_count,
