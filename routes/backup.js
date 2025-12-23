@@ -12,8 +12,8 @@ const { createClient } = require("@supabase/supabase-js");
 
 /* ================= CONFIG ================= */
 
-const BACKUP_PASSWORD = "8515";          // create backup
-const ACTION_PASSWORD = "faisalyounus";  // restore / delete / download
+const BACKUP_PASSWORD = "8515";
+const ACTION_PASSWORD = "faisalyounus";
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -21,7 +21,7 @@ const supabase = createClient(
 );
 
 const BUCKET = "mmtbackups";
-const TMP = "/tmp"; // ✅ vercel safe
+const TMP = "/tmp";
 
 /* ================= TABLES ================= */
 
@@ -38,146 +38,33 @@ const TABLES = [
   "purchase_payments",
 ];
 
-/* ================= VALUE NORMALIZER (🔥 FINAL FIX) ================= */
+/* ================= HELPERS ================= */
 
 function normalizeValue(val) {
   if (val === "" || val === undefined) return null;
 
-  // JSON object / array
-  if (typeof val === "object") {
-    return JSON.stringify(val);
+  // timestamp in ms
+  if (/^\d{13}$/.test(String(val))) {
+    return new Date(Number(val));
   }
 
-  // JSON string
-  if (
-    typeof val === "string" &&
-    (val.startsWith("{") || val.startsWith("["))
-  ) {
-    try {
-      JSON.parse(val);
-      return val;
-    } catch {
-      return val;
+  // number
+  if (!isNaN(val) && val !== "") return Number(val);
+
+  // JSON
+  if (typeof val === "string") {
+    const t = val.trim();
+    if (t.startsWith("{") || t.startsWith("[")) {
+      try {
+        return JSON.parse(t);
+      } catch {
+        return null;
+      }
     }
   }
 
-  // timestamp (13 digit ms)
-  if (/^\d{13}$/.test(String(val))) {
-    return new Date(Number(val))
-      .toISOString()
-      .slice(0, 19)
-      .replace("T", " ");
-  }
-
-  // numeric
-  if (!isNaN(val) && val !== "") return Number(val);
-
   return val;
 }
-
-/* ================= CREATE CSV BACKUP ================= */
-
-async function createBackupCSV() {
-  await fs.ensureDir(TMP);
-
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const zipName = `backup-${stamp}.zip`;
-  const zipPath = path.join(TMP, zipName);
-
-  const output = fs.createWriteStream(zipPath);
-  const archive = archiver("zip", { zlib: { level: 9 } });
-  archive.pipe(output);
-
-  for (const table of TABLES) {
-    const { rows } = await db.query(`SELECT * FROM ${table}`);
-    const csv = stringify(rows, {
-      header: true,
-      quoted: true,
-      quoted_empty: true,
-    });
-    archive.append(csv, { name: `${table}.csv` });
-  }
-
-  archive.append(
-    JSON.stringify({ created_at: new Date(), tables: TABLES }, null, 2),
-    { name: "meta.json" }
-  );
-
-  await archive.finalize();
-  await new Promise((r) => output.on("close", r));
-
-  const buffer = await fs.readFile(zipPath);
-  await supabase.storage.from(BUCKET).upload(zipName, buffer, {
-    upsert: true,
-    contentType: "application/zip",
-  });
-
-  await fs.remove(zipPath);
-  return zipName;
-}
-
-/* ================= AUTO BACKUP ================= */
-
-cron.schedule("0 23 * * *", async () => {
-  try {
-    await createBackupCSV();
-    console.log("✅ Auto backup done");
-  } catch (e) {
-    console.error("❌ Auto backup error:", e.message);
-  }
-});
-
-/* ================= MANUAL BACKUP ================= */
-
-router.post("/manual", async (req, res) => {
-  if (req.body.password !== BACKUP_PASSWORD)
-    return res.json({ success: false, error: "Wrong password" });
-
-  try {
-    const file = await createBackupCSV();
-    res.json({ success: true, file });
-  } catch (e) {
-    res.json({ success: false, error: e.message });
-  }
-});
-
-/* ================= LIST BACKUPS ================= */
-
-router.get("/list", async (req, res) => {
-  const { data } = await supabase.storage.from(BUCKET).list("", {
-    sortBy: { column: "name", order: "desc" },
-  });
-  res.json({ success: true, files: data || [] });
-});
-
-/* ================= DOWNLOAD ================= */
-
-router.post("/download", async (req, res) => {
-  const { file, password } = req.body;
-
-  if (password !== ACTION_PASSWORD)
-    return res.json({ success: false, error: "Wrong password" });
-
-  const { data, error } = await supabase.storage.from(BUCKET).download(file);
-  if (error) return res.status(404).send("File not found");
-
-  const buffer = Buffer.from(await data.arrayBuffer());
-  res.setHeader("Content-Type", "application/zip");
-  res.setHeader("Content-Disposition", `attachment; filename="${file}"`);
-  res.send(buffer);
-});
-
-/* ================= DELETE BACKUP ================= */
-
-router.post("/delete", async (req, res) => {
-  const { file, password } = req.body;
-
-  if (password !== ACTION_PASSWORD)
-    return res.json({ success: false, error: "Wrong password" });
-
-  await supabase.storage.from(BUCKET).remove([file]);
-  res.json({ success: true });
-});
 
 /* ================= CSV PARSER ================= */
 
@@ -197,11 +84,56 @@ function parseCSV(csv) {
   });
 }
 
+/* ================= CREATE BACKUP ================= */
+
+async function createBackupCSV() {
+  await fs.ensureDir(TMP);
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const zipName = `backup-${stamp}.zip`;
+  const zipPath = path.join(TMP, zipName);
+
+  const output = fs.createWriteStream(zipPath);
+  const archive = archiver("zip", { zlib: { level: 9 } });
+  archive.pipe(output);
+
+  for (const table of TABLES) {
+    const { rows } = await db.query(`SELECT * FROM ${table}`);
+    const csv = stringify(rows, { header: true });
+    archive.append(csv, { name: `${table}.csv` });
+  }
+
+  await archive.finalize();
+  await new Promise(r => output.on("close", r));
+
+  const buffer = await fs.readFile(zipPath);
+  await supabase.storage.from(BUCKET).upload(zipName, buffer, { upsert: true });
+
+  await fs.remove(zipPath);
+  return zipName;
+}
+
+/* ================= RESTORE CORE ================= */
+
+async function restoreTable(client, table, rows) {
+  await client.query(`TRUNCATE ${table} RESTART IDENTITY CASCADE`);
+
+  for (const row of rows) {
+    const cols = Object.keys(row);
+    const placeholders = cols.map((_, i) => `$${i + 1}`).join(",");
+    const values = cols.map(c => row[c]);
+
+    await client.query(
+      `INSERT INTO ${table} (${cols.join(",")}) VALUES (${placeholders})`,
+      values
+    );
+  }
+}
+
 /* ================= FULL RESTORE ================= */
 
 router.post("/restore/full", async (req, res) => {
   const { file, password } = req.body;
-
   if (password !== ACTION_PASSWORD)
     return res.json({ success: false, error: "Wrong password" });
 
@@ -217,18 +149,7 @@ router.post("/restore/full", async (req, res) => {
       if (!entry) continue;
 
       const rows = parseCSV(entry.getData().toString("utf8"));
-      await client.query(`TRUNCATE ${table} RESTART IDENTITY CASCADE`);
-
-      for (const row of rows) {
-        const cols = Object.keys(row);
-        const placeholders = cols.map((_, i) => `$${i + 1}`).join(",");
-        const values = cols.map(k => row[k]);
-
-        await client.query(
-          `INSERT INTO ${table} (${cols.join(",")}) VALUES (${placeholders})`,
-          values
-        );
-      }
+      await restoreTable(client, table, rows);
     }
 
     await client.query("COMMIT");
@@ -241,7 +162,7 @@ router.post("/restore/full", async (req, res) => {
   }
 });
 
-/* ================= SINGLE TABLE RESTORE ================= */
+/* ================= SINGLE TABLE ================= */
 
 router.post("/restore/table", async (req, res) => {
   const { file, table, password } = req.body;
@@ -264,19 +185,7 @@ router.post("/restore/table", async (req, res) => {
   const client = await db.connect();
   try {
     await client.query("BEGIN");
-    await client.query(`TRUNCATE ${table} RESTART IDENTITY CASCADE`);
-
-    for (const row of rows) {
-      const cols = Object.keys(row);
-      const placeholders = cols.map((_, i) => `$${i + 1}`).join(",");
-      const values = cols.map(k => row[k]);
-
-      await client.query(
-        `INSERT INTO ${table} (${cols.join(",")}) VALUES (${placeholders})`,
-        values
-      );
-    }
-
+    await restoreTable(client, table, rows);
     await client.query("COMMIT");
     res.json({ success: true });
   } catch (e) {
