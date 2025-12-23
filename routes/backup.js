@@ -12,7 +12,7 @@ const { createClient } = require("@supabase/supabase-js");
 
 /* ================= CONFIG ================= */
 
-const BACKUP_PASSWORD = "8515";          // backup banane ke liye
+const BACKUP_PASSWORD = "8515";          // backup create
 const ACTION_PASSWORD = "faisalyounus";  // restore / delete / download
 
 const supabase = createClient(
@@ -38,6 +38,22 @@ const TABLES = [
   "purchase_payments",
 ];
 
+/* ================= DATE NORMALIZER (🔥 FIX) ================= */
+
+function normalizeValue(val) {
+  if (val === "" || val === undefined) return null;
+
+  // timestamp in ms → postgres datetime
+  if (/^\d{13}$/.test(String(val))) {
+    return new Date(Number(val))
+      .toISOString()
+      .slice(0, 19)
+      .replace("T", " ");
+  }
+
+  return val;
+}
+
 /* ================= CREATE CSV BACKUP ================= */
 
 async function createBackupCSV() {
@@ -62,11 +78,7 @@ async function createBackupCSV() {
   }
 
   archive.append(
-    JSON.stringify(
-      { created_at: new Date(), tables: TABLES },
-      null,
-      2
-    ),
+    JSON.stringify({ created_at: new Date(), tables: TABLES }, null, 2),
     { name: "meta.json" }
   );
 
@@ -97,9 +109,8 @@ cron.schedule("0 23 * * *", async () => {
 /* ================= MANUAL BACKUP ================= */
 
 router.post("/manual", async (req, res) => {
-  if (req.body.password !== BACKUP_PASSWORD) {
+  if (req.body.password !== BACKUP_PASSWORD)
     return res.json({ success: false, error: "Wrong password" });
-  }
 
   try {
     const file = await createBackupCSV();
@@ -119,28 +130,20 @@ router.get("/list", async (req, res) => {
   res.json({ success: true, files: data || [] });
 });
 
-/* ================= DOWNLOAD (PASSWORD PROTECTED) ================= */
+/* ================= DOWNLOAD (PASSWORD) ================= */
 
 router.post("/download", async (req, res) => {
   const { file, password } = req.body;
 
-  if (password !== ACTION_PASSWORD) {
+  if (password !== ACTION_PASSWORD)
     return res.json({ success: false, error: "Wrong password" });
-  }
 
-  const { data, error } = await supabase
-    .storage
-    .from(BUCKET)
-    .download(file);
-
+  const { data, error } = await supabase.storage.from(BUCKET).download(file);
   if (error) return res.status(404).send("File not found");
 
   const buffer = Buffer.from(await data.arrayBuffer());
   res.setHeader("Content-Type", "application/zip");
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename="${file}"`
-  );
+  res.setHeader("Content-Disposition", `attachment; filename="${file}"`);
   res.send(buffer);
 });
 
@@ -149,32 +152,26 @@ router.post("/download", async (req, res) => {
 router.post("/delete", async (req, res) => {
   const { file, password } = req.body;
 
-  if (password !== ACTION_PASSWORD) {
+  if (password !== ACTION_PASSWORD)
     return res.json({ success: false, error: "Wrong password" });
-  }
 
   await supabase.storage.from(BUCKET).remove([file]);
   res.json({ success: true });
 });
 
-/* ================= CSV → OBJECT SAFE PARSER ================= */
+/* ================= CSV PARSER ================= */
 
 function parseCSV(csv) {
   const lines = csv.split("\n").filter(Boolean);
-  const headers = lines.shift().split(",").map(h =>
-    h.replace(/^"|"$/g, "")
-  );
+  const headers = lines.shift().split(",").map(h => h.replace(/^"|"$/g, ""));
 
   return lines.map(line => {
     const values = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
     const obj = {};
     headers.forEach((h, i) => {
       let v = values[i] ?? null;
-      if (typeof v === "string") {
-        v = v.replace(/^"|"$/g, "");
-        if (v === "") v = null;
-      }
-      obj[h] = v;
+      if (typeof v === "string") v = v.replace(/^"|"$/g, "");
+      obj[h] = normalizeValue(v);
     });
     return obj;
   });
@@ -185,9 +182,8 @@ function parseCSV(csv) {
 router.post("/restore/full", async (req, res) => {
   const { file, password } = req.body;
 
-  if (password !== ACTION_PASSWORD) {
+  if (password !== ACTION_PASSWORD)
     return res.json({ success: false, error: "Wrong password" });
-  }
 
   const { data } = await supabase.storage.from(BUCKET).download(file);
   const zip = new AdmZip(Buffer.from(await data.arrayBuffer()));
@@ -202,9 +198,7 @@ router.post("/restore/full", async (req, res) => {
 
       const rows = parseCSV(entry.getData().toString("utf8"));
 
-      await client.query(
-        `TRUNCATE ${table} RESTART IDENTITY CASCADE`
-      );
+      await client.query(`TRUNCATE ${table} RESTART IDENTITY CASCADE`);
 
       for (const row of rows) {
         await client.query(
@@ -248,9 +242,7 @@ router.post("/restore/table", async (req, res) => {
   const client = await db.connect();
   try {
     await client.query("BEGIN");
-    await client.query(
-      `TRUNCATE ${table} RESTART IDENTITY CASCADE`
-    );
+    await client.query(`TRUNCATE ${table} RESTART IDENTITY CASCADE`);
 
     for (const row of rows) {
       await client.query(
