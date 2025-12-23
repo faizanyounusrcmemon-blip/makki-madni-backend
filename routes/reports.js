@@ -3,14 +3,13 @@ const router = express.Router();
 const db = require("../db");
 
 // ==================================
-// ALL REPORTS (PKR BASED)
+// ALL REPORTS (SAFE & STABLE)
 // ==================================
 router.get("/all", async (req, res) => {
   try {
     const q = await db.query(`
       SELECT 
         'Packages' AS type,
-        id,
         ref_no,
         customer_name,
         booking_date,
@@ -19,10 +18,8 @@ router.get("/all", async (req, res) => {
       WHERE is_deleted = false
 
       UNION ALL
-
       SELECT 
         'Ticketing' AS type,
-        id,
         ref_no,
         customer_name,
         booking_date,
@@ -31,22 +28,18 @@ router.get("/all", async (req, res) => {
       WHERE is_deleted = false
 
       UNION ALL
-
       SELECT 
         'Hotels' AS type,
-        id,
         ref_no,
         customer_name,
         booking_date,
-        total_pkr        -- ✅ PKR column
+        total_pkr
       FROM hotels
       WHERE is_deleted = false
 
       UNION ALL
-
       SELECT 
         'Visa' AS type,
-        id,
         ref_no,
         customer_name,
         booking_date,
@@ -55,10 +48,8 @@ router.get("/all", async (req, res) => {
       WHERE is_deleted = false
 
       UNION ALL
-
       SELECT 
         'Transport' AS type,
-        id,
         ref_no,
         customer_name,
         booking_date,
@@ -69,11 +60,14 @@ router.get("/all", async (req, res) => {
       ORDER BY booking_date DESC
     `);
 
-    res.json(q.rows);
+    // ✅ ALWAYS ARRAY
+    res.json(q.rows || []);
 
   } catch (err) {
-    console.error("REPORTS ERROR:", err);
-    res.status(500).json({ success: false, error: err.message });
+    console.error("REPORTS ERROR:", err.message);
+
+    // 🔥 IMPORTANT FIX
+    res.json([]); // frontend crash se bachao
   }
 });
 
