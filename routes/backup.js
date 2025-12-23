@@ -12,7 +12,7 @@ const { createClient } = require("@supabase/supabase-js");
 
 /* ================= CONFIG ================= */
 
-const BACKUP_PASSWORD = "8515";          // backup create
+const BACKUP_PASSWORD = "8515";          // create backup
 const ACTION_PASSWORD = "faisalyounus";  // restore / delete / download
 
 const supabase = createClient(
@@ -21,7 +21,7 @@ const supabase = createClient(
 );
 
 const BUCKET = "mmtbackups";
-const TMP = "/tmp"; // ✅ Vercel safe
+const TMP = "/tmp"; // ✅ vercel safe
 
 /* ================= TABLES ================= */
 
@@ -38,18 +38,39 @@ const TABLES = [
   "purchase_payments",
 ];
 
-/* ================= DATE NORMALIZER (🔥 FIX) ================= */
+/* ================= VALUE NORMALIZER (🔥 FINAL FIX) ================= */
 
 function normalizeValue(val) {
   if (val === "" || val === undefined) return null;
 
-  // timestamp in ms → postgres datetime
+  // JSON object / array
+  if (typeof val === "object") {
+    return JSON.stringify(val);
+  }
+
+  // JSON string
+  if (
+    typeof val === "string" &&
+    (val.startsWith("{") || val.startsWith("["))
+  ) {
+    try {
+      JSON.parse(val);
+      return val;
+    } catch {
+      return val;
+    }
+  }
+
+  // timestamp (13 digit ms)
   if (/^\d{13}$/.test(String(val))) {
     return new Date(Number(val))
       .toISOString()
       .slice(0, 19)
       .replace("T", " ");
   }
+
+  // numeric
+  if (!isNaN(val) && val !== "") return Number(val);
 
   return val;
 }
@@ -95,7 +116,7 @@ async function createBackupCSV() {
   return zipName;
 }
 
-/* ================= AUTO BACKUP (DAILY) ================= */
+/* ================= AUTO BACKUP ================= */
 
 cron.schedule("0 23 * * *", async () => {
   try {
@@ -126,11 +147,10 @@ router.get("/list", async (req, res) => {
   const { data } = await supabase.storage.from(BUCKET).list("", {
     sortBy: { column: "name", order: "desc" },
   });
-
   res.json({ success: true, files: data || [] });
 });
 
-/* ================= DOWNLOAD (PASSWORD) ================= */
+/* ================= DOWNLOAD ================= */
 
 router.post("/download", async (req, res) => {
   const { file, password } = req.body;
@@ -197,14 +217,16 @@ router.post("/restore/full", async (req, res) => {
       if (!entry) continue;
 
       const rows = parseCSV(entry.getData().toString("utf8"));
-
       await client.query(`TRUNCATE ${table} RESTART IDENTITY CASCADE`);
 
       for (const row of rows) {
+        const cols = Object.keys(row);
+        const placeholders = cols.map((_, i) => `$${i + 1}`).join(",");
+        const values = cols.map(k => row[k]);
+
         await client.query(
-          `INSERT INTO ${table}
-           SELECT * FROM json_populate_record(NULL::${table}, $1)`,
-          [row]
+          `INSERT INTO ${table} (${cols.join(",")}) VALUES (${placeholders})`,
+          values
         );
       }
     }
@@ -245,10 +267,13 @@ router.post("/restore/table", async (req, res) => {
     await client.query(`TRUNCATE ${table} RESTART IDENTITY CASCADE`);
 
     for (const row of rows) {
+      const cols = Object.keys(row);
+      const placeholders = cols.map((_, i) => `$${i + 1}`).join(",");
+      const values = cols.map(k => row[k]);
+
       await client.query(
-        `INSERT INTO ${table}
-         SELECT * FROM json_populate_record(NULL::${table}, $1)`,
-        [row]
+        `INSERT INTO ${table} (${cols.join(",")}) VALUES (${placeholders})`,
+        values
       );
     }
 
