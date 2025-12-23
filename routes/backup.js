@@ -39,7 +39,7 @@ const TABLES = [
   "purchase_payments",
 ];
 
-/* ================= JSON COLUMNS MAP ================= */
+/* ================= JSON COLUMNS ================= */
 
 const JSON_COLUMNS = {
   bookings: ["flights", "hotels", "transport"],
@@ -49,10 +49,11 @@ const JSON_COLUMNS = {
 
 /* ================= HELPERS ================= */
 
+// ✅ SAFE NORMALIZE (reports break fix)
 const normalize = (v) => {
   if (v === "" || v === undefined) return null;
 
-  // timestamp (ms)
+  // timestamp (ms → datetime)
   if (/^\d{13}$/.test(String(v))) {
     return new Date(Number(v))
       .toISOString()
@@ -60,7 +61,10 @@ const normalize = (v) => {
       .replace("T", " ");
   }
 
-  if (!isNaN(v) && v !== "") return Number(v);
+  // only pure numbers
+  if (typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v)) {
+    return Number(v);
+  }
 
   return v;
 };
@@ -80,7 +84,21 @@ async function createBackupCSV() {
 
   for (const table of TABLES) {
     const { rows } = await db.query(`SELECT * FROM ${table}`);
-    const csv = stringify(rows, { header: true });
+
+    // ✅ FIX: JSON stringify before CSV
+    const safeRows = rows.map((r) => {
+      const copy = { ...r };
+      if (JSON_COLUMNS[table]) {
+        JSON_COLUMNS[table].forEach((col) => {
+          if (copy[col] && typeof copy[col] === "object") {
+            copy[col] = JSON.stringify(copy[col]);
+          }
+        });
+      }
+      return copy;
+    });
+
+    const csv = stringify(safeRows, { header: true });
     archive.append(csv, { name: `${table}.csv` });
   }
 
@@ -112,7 +130,7 @@ cron.schedule("0 23 * * *", async () => {
 
 router.post("/manual", async (req, res) => {
   if (req.body.password !== BACKUP_PASSWORD)
-    return res.json({ success: false });
+    return res.json({ success: false, error: "Wrong password" });
 
   try {
     const file = await createBackupCSV();
@@ -134,24 +152,27 @@ router.get("/list", async (_, res) => {
 /* ================= RESTORE CORE ================= */
 
 async function restoreTable(client, table, csv) {
-  const records = parse(csv, { columns: true, skip_empty_lines: true });
+  const records = parse(csv, {
+    columns: true,
+    skip_empty_lines: true,
+  });
 
   await client.query(`TRUNCATE ${table} RESTART IDENTITY CASCADE`);
 
   for (const r of records) {
     const cols = [];
-    const vals = [];
     const params = [];
+    const values = [];
 
     let i = 1;
     for (const key of Object.keys(r)) {
       cols.push(key);
 
       if (JSON_COLUMNS[table]?.includes(key)) {
-        vals.push(r[key] || "[]");
+        values.push(r[key] && r[key] !== "" ? r[key] : "{}");
         params.push(`$${i}::jsonb`);
       } else {
-        vals.push(normalize(r[key]));
+        values.push(normalize(r[key]));
         params.push(`$${i}`);
       }
       i++;
@@ -160,7 +181,7 @@ async function restoreTable(client, table, csv) {
     await client.query(
       `INSERT INTO ${table} (${cols.join(",")})
        VALUES (${params.join(",")})`,
-      vals
+      values
     );
   }
 }
@@ -169,7 +190,7 @@ async function restoreTable(client, table, csv) {
 
 router.post("/restore/full", async (req, res) => {
   if (req.body.password !== ACTION_PASSWORD)
-    return res.json({ success: false });
+    return res.json({ success: false, error: "Wrong password" });
 
   const zipData = await supabase.storage.from(BUCKET).download(req.body.file);
   const zip = new AdmZip(Buffer.from(await zipData.data.arrayBuffer()));
@@ -223,31 +244,24 @@ router.post("/restore/table", async (req, res) => {
   }
 });
 
-/* ================= LAST BACKUP INFO ================= */
+/* ================= LAST BACKUP ================= */
 
-router.get("/last", async (req, res) => {
-  try {
-    const { data } = await supabase.storage.from(BUCKET).list("", {
-      sortBy: { column: "name", order: "desc" },
-      limit: 1,
-    });
+router.get("/last", async (_, res) => {
+  const { data } = await supabase.storage.from(BUCKET).list("", {
+    sortBy: { column: "name", order: "desc" },
+    limit: 1,
+  });
 
-    if (!data || data.length === 0) {
-      return res.json({ success: true, last_backup: null });
-    }
+  if (!data || data.length === 0)
+    return res.json({ success: true, last_backup: null });
 
-    res.json({
-      success: true,
-      last_backup: {
-        name: data[0].name,
-        created_at: data[0].created_at,
-      },
-    });
-  } catch (e) {
-    res.json({ success: false, error: e.message });
-  }
+  res.json({
+    success: true,
+    last_backup: {
+      name: data[0].name,
+      created_at: data[0].created_at,
+    },
+  });
 });
 
-
 module.exports = router;
-
