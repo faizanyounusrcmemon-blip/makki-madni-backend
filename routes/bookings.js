@@ -68,7 +68,7 @@ router.post("/save", async (req, res) => {
           total_sar=$33,
           total_pkr=$34,
           per_person_qty=$36,
-          per_person_final=$36
+          per_person_final=$37
 
         WHERE ref_no=$1
         `,
