@@ -8,6 +8,7 @@ const AdmZip = require("adm-zip");
 const cron = require("node-cron");
 const db = require("../db");
 const { stringify } = require("csv-stringify/sync");
+const { parse } = require("csv-parse/sync");
 const { createClient } = require("@supabase/supabase-js");
 
 /* ================= CONFIG ================= */
@@ -40,49 +41,33 @@ const TABLES = [
 
 /* ================= HELPERS ================= */
 
-function normalizeValue(val) {
-  if (val === "" || val === undefined) return null;
+const isJSON = (v) => {
+  if (typeof v !== "string") return false;
+  try {
+    JSON.parse(v);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
-  // timestamp in ms
-  if (/^\d{13}$/.test(String(val))) {
-    return new Date(Number(val));
+const normalize = (v) => {
+  if (v === "" || v === undefined) return null;
+
+  // timestamp ms
+  if (/^\d{13}$/.test(v)) {
+    return new Date(Number(v))
+      .toISOString()
+      .slice(0, 19)
+      .replace("T", " ");
   }
 
-  // number
-  if (!isNaN(val) && val !== "") return Number(val);
+  if (isJSON(v)) return JSON.parse(v);
 
-  // JSON
-  if (typeof val === "string") {
-    const t = val.trim();
-    if (t.startsWith("{") || t.startsWith("[")) {
-      try {
-        return JSON.parse(t);
-      } catch {
-        return null;
-      }
-    }
-  }
+  if (!isNaN(v) && v !== "") return Number(v);
 
-  return val;
-}
-
-/* ================= CSV PARSER ================= */
-
-function parseCSV(csv) {
-  const lines = csv.split("\n").filter(Boolean);
-  const headers = lines.shift().split(",").map(h => h.replace(/^"|"$/g, ""));
-
-  return lines.map(line => {
-    const values = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
-    const obj = {};
-    headers.forEach((h, i) => {
-      let v = values[i] ?? null;
-      if (typeof v === "string") v = v.replace(/^"|"$/g, "");
-      obj[h] = normalizeValue(v);
-    });
-    return obj;
-  });
-}
+  return v;
+};
 
 /* ================= CREATE BACKUP ================= */
 
@@ -104,28 +89,92 @@ async function createBackupCSV() {
   }
 
   await archive.finalize();
-  await new Promise(r => output.on("close", r));
+  await new Promise((r) => output.on("close", r));
 
   const buffer = await fs.readFile(zipPath);
-  await supabase.storage.from(BUCKET).upload(zipName, buffer, { upsert: true });
+  await supabase.storage.from(BUCKET).upload(zipName, buffer, {
+    upsert: true,
+    contentType: "application/zip",
+  });
 
   await fs.remove(zipPath);
   return zipName;
 }
 
+/* ================= AUTO BACKUP ================= */
+
+cron.schedule("0 23 * * *", async () => {
+  try {
+    await createBackupCSV();
+    console.log("✅ Auto backup done");
+  } catch (e) {
+    console.error("❌ Auto backup error", e.message);
+  }
+});
+
+/* ================= MANUAL BACKUP ================= */
+
+router.post("/manual", async (req, res) => {
+  if (req.body.password !== BACKUP_PASSWORD)
+    return res.json({ success: false });
+
+  try {
+    const file = await createBackupCSV();
+    res.json({ success: true, file });
+  } catch (e) {
+    res.json({ success: false, error: e.message });
+  }
+});
+
+/* ================= LIST ================= */
+
+router.get("/list", async (_, res) => {
+  const { data } = await supabase.storage.from(BUCKET).list("", {
+    sortBy: { column: "name", order: "desc" },
+  });
+  res.json({ success: true, files: data || [] });
+});
+
+/* ================= DOWNLOAD ================= */
+
+router.post("/download", async (req, res) => {
+  const { file, password } = req.body;
+  if (password !== ACTION_PASSWORD)
+    return res.json({ success: false });
+
+  const { data } = await supabase.storage.from(BUCKET).download(file);
+  const buffer = Buffer.from(await data.arrayBuffer());
+
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader("Content-Disposition", `attachment; filename=${file}`);
+  res.send(buffer);
+});
+
+/* ================= DELETE ================= */
+
+router.post("/delete", async (req, res) => {
+  if (req.body.password !== ACTION_PASSWORD)
+    return res.json({ success: false });
+
+  await supabase.storage.from(BUCKET).remove([req.body.file]);
+  res.json({ success: true });
+});
+
 /* ================= RESTORE CORE ================= */
 
-async function restoreTable(client, table, rows) {
+async function restoreTable(client, table, csv) {
+  const records = parse(csv, { columns: true, skip_empty_lines: true });
+
   await client.query(`TRUNCATE ${table} RESTART IDENTITY CASCADE`);
 
-  for (const row of rows) {
-    const cols = Object.keys(row);
-    const placeholders = cols.map((_, i) => `$${i + 1}`).join(",");
-    const values = cols.map(c => row[c]);
+  for (const r of records) {
+    const cols = Object.keys(r);
+    const vals = cols.map((k) => normalize(r[k]));
+    const params = cols.map((_, i) => `$${i + 1}`).join(",");
 
     await client.query(
-      `INSERT INTO ${table} (${cols.join(",")}) VALUES (${placeholders})`,
-      values
+      `INSERT INTO ${table} (${cols.join(",")}) VALUES (${params})`,
+      vals
     );
   }
 }
@@ -133,12 +182,11 @@ async function restoreTable(client, table, rows) {
 /* ================= FULL RESTORE ================= */
 
 router.post("/restore/full", async (req, res) => {
-  const { file, password } = req.body;
-  if (password !== ACTION_PASSWORD)
-    return res.json({ success: false, error: "Wrong password" });
+  if (req.body.password !== ACTION_PASSWORD)
+    return res.json({ success: false });
 
-  const { data } = await supabase.storage.from(BUCKET).download(file);
-  const zip = new AdmZip(Buffer.from(await data.arrayBuffer()));
+  const zipData = await supabase.storage.from(BUCKET).download(req.body.file);
+  const zip = new AdmZip(Buffer.from(await zipData.data.arrayBuffer()));
 
   const client = await db.connect();
   try {
@@ -147,9 +195,7 @@ router.post("/restore/full", async (req, res) => {
     for (const table of TABLES) {
       const entry = zip.getEntry(`${table}.csv`);
       if (!entry) continue;
-
-      const rows = parseCSV(entry.getData().toString("utf8"));
-      await restoreTable(client, table, rows);
+      await restoreTable(client, table, entry.getData().toString("utf8"));
     }
 
     await client.query("COMMIT");
@@ -166,26 +212,18 @@ router.post("/restore/full", async (req, res) => {
 
 router.post("/restore/table", async (req, res) => {
   const { file, table, password } = req.body;
+  if (password !== ACTION_PASSWORD || !TABLES.includes(table))
+    return res.json({ success: false });
 
-  if (password !== ACTION_PASSWORD)
-    return res.json({ success: false, error: "Wrong password" });
-
-  if (!TABLES.includes(table))
-    return res.json({ success: false, error: "Invalid table" });
-
-  const { data } = await supabase.storage.from(BUCKET).download(file);
-  const zip = new AdmZip(Buffer.from(await data.arrayBuffer()));
+  const zipData = await supabase.storage.from(BUCKET).download(file);
+  const zip = new AdmZip(Buffer.from(await zipData.data.arrayBuffer()));
   const entry = zip.getEntry(`${table}.csv`);
-
-  if (!entry)
-    return res.json({ success: false, error: "Table not found" });
-
-  const rows = parseCSV(entry.getData().toString("utf8"));
+  if (!entry) return res.json({ success: false });
 
   const client = await db.connect();
   try {
     await client.query("BEGIN");
-    await restoreTable(client, table, rows);
+    await restoreTable(client, table, entry.getData().toString("utf8"));
     await client.query("COMMIT");
     res.json({ success: true });
   } catch (e) {
