@@ -227,6 +227,41 @@ router.post("/restore/full", async (req, res) => {
   }
 });
 
+/* ================= DOWNLOAD BACKUP ================= */
+
+router.post("/download", async (req, res) => {
+  try {
+    const { file, password } = req.body;
+
+    if (password !== ACTION_PASSWORD) {
+      return res.status(401).json({ success: false, error: "Wrong password" });
+    }
+
+    const { data, error } = await supabase
+      .storage
+      .from(BUCKET)
+      .download(file);
+
+    if (error || !data) {
+      return res.status(404).json({ success: false, error: "File not found" });
+    }
+
+    const buffer = Buffer.from(await data.arrayBuffer());
+
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${file}"`
+    );
+
+    return res.end(buffer); // 🔥 IMPORTANT
+  } catch (e) {
+    console.error("DOWNLOAD ERROR:", e);
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+
 
 /* ================= LAST BACKUP ================= */
 
@@ -249,4 +284,5 @@ router.get("/last", async (_, res) => {
 });
 
 module.exports = router;
+
 
