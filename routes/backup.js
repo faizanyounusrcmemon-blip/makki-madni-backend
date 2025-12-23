@@ -223,4 +223,31 @@ router.post("/restore/table", async (req, res) => {
   }
 });
 
+/* ================= LAST BACKUP INFO ================= */
+
+router.get("/last", async (req, res) => {
+  try {
+    const { data } = await supabase.storage.from(BUCKET).list("", {
+      sortBy: { column: "name", order: "desc" },
+      limit: 1,
+    });
+
+    if (!data || data.length === 0) {
+      return res.json({ success: true, last_backup: null });
+    }
+
+    res.json({
+      success: true,
+      last_backup: {
+        name: data[0].name,
+        created_at: data[0].created_at,
+      },
+    });
+  } catch (e) {
+    res.json({ success: false, error: e.message });
+  }
+});
+
+
 module.exports = router;
+
