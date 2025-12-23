@@ -11,8 +11,43 @@ router.get("/:ref_no", async (req, res) => {
     let rows = [];
     let balance = 0;
 
-    // 🔹 MERGED SALES (5 TABLES)
-    const sale = await db.query(`
+    /* ===============================
+       🔹 GET CUSTOMER NAME + DATE
+    ================================ */
+    const bk = await db.query(
+      `
+      SELECT customer_name, booking_date
+      FROM bookings
+      WHERE ref_no=$1
+      LIMIT 1
+      `,
+      [ref_no]
+    );
+
+    if (!bk.rows.length) {
+      return res.json({ success: false, error: "Booking not found" });
+    }
+
+    const customerName = bk.rows[0].customer_name;
+    const bookingDate = bk.rows[0].booking_date;
+
+    /* ===============================
+       👤 CUSTOMER NAME ROW (NEW)
+    ================================ */
+    rows.push({
+      id: "CUSTOMER",
+      date: bookingDate,
+      description: `Customer: ${customerName}`,
+      debit: null,
+      credit: null,
+      balance: null
+    });
+
+    /* ===============================
+       🔹 MERGED SALES (5 TABLES)
+    ================================ */
+    const sale = await db.query(
+      `
       SELECT MIN(booking_date) AS date, SUM(total_pkr) AS amount FROM bookings WHERE ref_no=$1
       UNION ALL
       SELECT MIN(booking_date), SUM(total_pkr) FROM hotels WHERE ref_no=$1
@@ -22,15 +57,20 @@ router.get("/:ref_no", async (req, res) => {
       SELECT MIN(booking_date), SUM(total_pkr) FROM ticketing WHERE ref_no=$1
       UNION ALL
       SELECT MIN(booking_date), SUM(total_pkr) FROM transport WHERE ref_no=$1
-    `, [ref_no]);
+      `,
+      [ref_no]
+    );
 
-    const totalSale = sale.rows.reduce((s, r) => s + Number(r.amount || 0), 0);
+    const totalSale = sale.rows.reduce(
+      (s, r) => s + Number(r.amount || 0),
+      0
+    );
 
     if (totalSale > 0) {
       balance = totalSale;
       rows.push({
         id: "SALE",
-        date: sale.rows[0].date,
+        date: sale.rows[0]?.date || bookingDate,
         description: "Sale Entry",
         debit: 0,
         credit: totalSale,
@@ -38,21 +78,30 @@ router.get("/:ref_no", async (req, res) => {
       });
     }
 
-    // 🔹 PAYMENTS / ADJUSTMENTS
-    const pays = await db.query(`
+    /* ===============================
+       🔹 PAYMENTS / ADJUSTMENTS
+    ================================ */
+    const pays = await db.query(
+      `
       SELECT id, payment_date, amount, type
       FROM customer_payments
       WHERE ref_no=$1
-      ORDER BY payment_date
-    `, [ref_no]);
+      ORDER BY payment_date, id
+      `,
+      [ref_no]
+    );
 
     pays.rows.forEach(p => {
-      balance -= Number(p.amount);
+      const amt = Number(p.amount || 0);
+      balance -= amt;
+
       rows.push({
         id: p.id,
         date: p.payment_date,
-        description: p.type === "adjustment" ? "Adjustment" : "Payment Received",
-        debit: p.amount,
+        description: p.type === "adjustment"
+          ? "Adjustment"
+          : "Payment Received",
+        debit: amt,
         credit: 0,
         balance
       });
@@ -75,11 +124,14 @@ router.post("/payment", async (req, res) => {
   if (!amount || !payment_date)
     return res.json({ success: false, error: "Amount & Date required" });
 
-  await db.query(`
+  await db.query(
+    `
     INSERT INTO customer_payments
     (ref_no, amount, payment_method, type, payment_date)
     VALUES ($1,$2,$3,$4,$5)
-  `, [ref_no, amount, payment_method, type, payment_date]);
+    `,
+    [ref_no, amount, payment_method, type, payment_date]
+  );
 
   res.json({ success: true });
 });
