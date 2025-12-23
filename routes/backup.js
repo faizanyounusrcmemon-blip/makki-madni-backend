@@ -49,7 +49,6 @@ const JSON_COLUMNS = {
 
 /* ================= HELPERS ================= */
 
-// ✅ SAFE NORMALIZE (reports break fix)
 const normalize = (v) => {
   if (v === "" || v === undefined) return null;
 
@@ -61,7 +60,10 @@ const normalize = (v) => {
       .replace("T", " ");
   }
 
-  // only pure numbers
+  // boolean safe
+  if (v === true || v === false) return v;
+
+  // numeric only
   if (typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v)) {
     return Number(v);
   }
@@ -85,17 +87,24 @@ async function createBackupCSV() {
   for (const table of TABLES) {
     const { rows } = await db.query(`SELECT * FROM ${table}`);
 
-    // ✅ FIX: JSON stringify before CSV
     const safeRows = rows.map((r) => {
-      const copy = { ...r };
+      const obj = { ...r };
+
+      // JSON stringify
       if (JSON_COLUMNS[table]) {
-        JSON_COLUMNS[table].forEach((col) => {
-          if (copy[col] && typeof copy[col] === "object") {
-            copy[col] = JSON.stringify(copy[col]);
+        JSON_COLUMNS[table].forEach((c) => {
+          if (obj[c] && typeof obj[c] === "object") {
+            obj[c] = JSON.stringify(obj[c]);
           }
         });
       }
-      return copy;
+
+      // FIX: is_deleted never empty
+      if ("is_deleted" in obj) {
+        obj.is_deleted = obj.is_deleted ? "TRUE" : "FALSE";
+      }
+
+      return obj;
     });
 
     const csv = stringify(safeRows, { header: true });
@@ -152,10 +161,7 @@ router.get("/list", async (_, res) => {
 /* ================= RESTORE CORE ================= */
 
 async function restoreTable(client, table, csv) {
-  const records = parse(csv, {
-    columns: true,
-    skip_empty_lines: true,
-  });
+  const records = parse(csv, { columns: true, skip_empty_lines: true });
 
   await client.query(`TRUNCATE ${table} RESTART IDENTITY CASCADE`);
 
@@ -171,6 +177,9 @@ async function restoreTable(client, table, csv) {
       if (JSON_COLUMNS[table]?.includes(key)) {
         values.push(r[key] && r[key] !== "" ? r[key] : "{}");
         params.push(`$${i}::jsonb`);
+      } else if (key === "is_deleted") {
+        values.push(r[key] === "TRUE");
+        params.push(`$${i}`);
       } else {
         values.push(normalize(r[key]));
         params.push(`$${i}`);
@@ -199,15 +208,17 @@ router.post("/restore/full", async (req, res) => {
   try {
     await client.query("BEGIN");
 
+    let done = 0;
     for (const table of TABLES) {
       const entry = zip.getEntry(`${table}.csv`);
       if (!entry) continue;
 
       await restoreTable(client, table, entry.getData().toString("utf8"));
+      done++;
     }
 
     await client.query("COMMIT");
-    res.json({ success: true });
+    res.json({ success: true, progress: 100 });
   } catch (e) {
     await client.query("ROLLBACK");
     res.json({ success: false, error: e.message });
@@ -216,33 +227,6 @@ router.post("/restore/full", async (req, res) => {
   }
 });
 
-/* ================= SINGLE TABLE ================= */
-
-router.post("/restore/table", async (req, res) => {
-  const { file, table, password } = req.body;
-
-  if (password !== ACTION_PASSWORD || !TABLES.includes(table))
-    return res.json({ success: false });
-
-  const zipData = await supabase.storage.from(BUCKET).download(file);
-  const zip = new AdmZip(Buffer.from(await zipData.data.arrayBuffer()));
-  const entry = zip.getEntry(`${table}.csv`);
-
-  if (!entry) return res.json({ success: false });
-
-  const client = await db.connect();
-  try {
-    await client.query("BEGIN");
-    await restoreTable(client, table, entry.getData().toString("utf8"));
-    await client.query("COMMIT");
-    res.json({ success: true });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    res.json({ success: false, error: e.message });
-  } finally {
-    client.release();
-  }
-});
 
 /* ================= LAST BACKUP ================= */
 
@@ -265,3 +249,4 @@ router.get("/last", async (_, res) => {
 });
 
 module.exports = router;
+
