@@ -26,8 +26,9 @@ router.post("/save", async (req, res) => {
         `
         UPDATE bookings SET
           customer_name=$2,
-          booking_date=$3,
-          contact_no=$4,
+          contact_no=$3,
+          booking_date=$4,
+
 
           adult_count=$5,
           adult_rate=$6,
@@ -74,8 +75,9 @@ router.post("/save", async (req, res) => {
         [
           d.ref_no,
           d.customer_name,
-          d.booking_date,
           d.contact_no,
+          d.booking_date,
+
 
           d.adult_count,
           d.adult_rate,
