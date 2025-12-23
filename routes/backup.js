@@ -262,52 +262,31 @@ router.post("/download", async (req, res) => {
 });
 
 /* ================= DELETE BACKUP ================= */
-
 router.post("/delete", async (req, res) => {
   try {
     const { file, password } = req.body;
 
-    // 🔐 Password check
     if (password !== ACTION_PASSWORD) {
-      return res.json({
-        success: false,
-        error: "Wrong password",
-      });
+      return res.json({ success: false, error: "Wrong password" });
     }
 
     if (!file) {
-      return res.json({
-        success: false,
-        error: "File name required",
-      });
+      return res.json({ success: false, error: "File required" });
     }
 
-    // 🗑 Delete from Supabase bucket
-    const { error } = await supabase
-      .storage
+    const { error } = await supabase.storage
       .from(BUCKET)
       .remove([file]);
 
     if (error) {
-      return res.json({
-        success: false,
-        error: error.message,
-      });
+      return res.json({ success: false, error: error.message });
     }
 
-    return res.json({
-      success: true,
-      message: "Backup deleted successfully",
-    });
-
+    res.json({ success: true });
   } catch (e) {
-    return res.json({
-      success: false,
-      error: e.message,
-    });
+    res.json({ success: false, error: e.message });
   }
 });
-
 
 
 
@@ -332,6 +311,7 @@ router.get("/last", async (_, res) => {
 });
 
 module.exports = router;
+
 
 
 
