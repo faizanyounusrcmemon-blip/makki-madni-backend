@@ -86,4 +86,33 @@ router.delete("/delete/:id", async (req, res) => {
   }
 });
 
+// GET all users with permissions
+router.get("/permissions/list", async (req, res) => {
+  const r = await db.query("SELECT * FROM users ORDER BY id");
+  res.json({ success: true, rows: r.rows });
+});
+
+// UPDATE all users permissions
+router.post("/permissions/update", async (req, res) => {
+  const { users } = req.body;
+
+  for (const u of users) {
+    const { id, ...cols } = u;
+
+    const keys = Object.keys(cols);
+    const vals = Object.values(cols);
+
+    const setSQL = keys.map((k, i) => `${k}=$${i + 1}`).join(", ");
+
+    await db.query(
+      `UPDATE users SET ${setSQL} WHERE id=$${keys.length + 1}`,
+      [...vals, id]
+    );
+  }
+
+  res.json({ success: true });
+});
+
+
 module.exports = router;
+
