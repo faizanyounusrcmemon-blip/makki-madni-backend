@@ -58,7 +58,6 @@ router.get("/", async (req, res) => {
     res.json({ success: true, rows });
 
   } catch (err) {
-    console.error("BANK LEDGER ERROR:", err);
     res.json({ success: false, error: err.message });
   }
 });
@@ -87,14 +86,21 @@ router.post("/transaction", async (req, res) => {
 });
 
 /* ======================================================
-   DELETE MANUAL TRANSACTION
+   DELETE MANUAL TRANSACTION (PASSWORD = 786)
 ====================================================== */
 router.delete("/transaction/:id", async (req, res) => {
   try {
+    const { password } = req.body;
+
+    if (password !== "786") {
+      return res.json({ success: false, error: "Wrong password" });
+    }
+
     await pool.query(
       "DELETE FROM bank_transactions WHERE id=$1",
       [req.params.id]
     );
+
     res.json({ success: true });
   } catch (err) {
     res.json({ success: false, error: err.message });
