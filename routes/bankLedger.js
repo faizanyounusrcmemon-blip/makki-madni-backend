@@ -3,14 +3,13 @@ const router = express.Router();
 const pool = require("../db");
 
 /* ======================================================
-   GET BANK LEDGER (AUTO + MANUAL + REF NO)
+   GET BANK LEDGER
 ====================================================== */
 router.get("/", async (req, res) => {
   try {
     const sql = `
       WITH all_entries AS (
 
-        /* CUSTOMER PAYMENTS → BANK IN */
         SELECT
           cp.id,
           cp.payment_date AS txn_date,
@@ -23,7 +22,6 @@ router.get("/", async (req, res) => {
 
         UNION ALL
 
-        /* PURCHASE PAYMENTS → BANK OUT */
         SELECT
           pp.id,
           pp.payment_date AS txn_date,
@@ -36,13 +34,12 @@ router.get("/", async (req, res) => {
 
         UNION ALL
 
-        /* MANUAL BANK TRANSACTIONS */
         SELECT
           bt.id,
           bt.txn_date,
           bt.comment AS description,
-          CASE WHEN bt.type = 'deposit' THEN bt.amount END AS credit,
-          CASE WHEN bt.type = 'withdraw' THEN bt.amount END AS debit,
+          CASE WHEN bt.type='deposit' THEN bt.amount END AS credit,
+          CASE WHEN bt.type='withdraw' THEN bt.amount END AS debit,
           'manual' AS source
         FROM bank_transactions bt
       )
@@ -56,21 +53,20 @@ router.get("/", async (req, res) => {
 
     const { rows } = await pool.query(sql);
     res.json({ success: true, rows });
-
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
 });
 
 /* ======================================================
-   SAVE MANUAL TRANSACTION
+   SAVE MANUAL ENTRY
 ====================================================== */
 router.post("/transaction", async (req, res) => {
   try {
     const { txn_date, type, amount, comment } = req.body;
 
     if (!txn_date || !amount || !type) {
-      return res.json({ success: false, error: "Date, Amount & Type required" });
+      return res.json({ success: false, error: "Required fields missing" });
     }
 
     await pool.query(
@@ -79,14 +75,14 @@ router.post("/transaction", async (req, res) => {
       [txn_date, type, amount, comment || ""]
     );
 
-    res.json({ success: true });
+    res.json({ success: true, message: "Transaction saved successfully" });
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
 });
 
 /* ======================================================
-   DELETE MANUAL TRANSACTION (PASSWORD = 786)
+   DELETE MANUAL ENTRY (PASSWORD = 786)
 ====================================================== */
 router.delete("/transaction/:id", async (req, res) => {
   try {
@@ -101,7 +97,7 @@ router.delete("/transaction/:id", async (req, res) => {
       [req.params.id]
     );
 
-    res.json({ success: true });
+    res.json({ success: true, message: "Transaction deleted successfully" });
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
