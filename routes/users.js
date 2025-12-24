@@ -25,7 +25,6 @@ router.post("/create", async (req, res) => {
     );
 
     res.json({ success: true });
-
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
@@ -43,21 +42,31 @@ router.get("/list", async (req, res) => {
   }
 });
 
-/* ================= UPDATE PASSWORD ================= */
-router.post("/update-password", async (req, res) => {
+/* ================= FULL UPDATE USER ================= */
+router.post("/update", async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { id, name, username, password, role } = req.body;
 
-    if (!username || !password)
+    if (!id || !name || !username || !role)
       return res.json({ success: false, error: "Missing data" });
 
-    await db.query(
-      "UPDATE users SET password=$1 WHERE username=$2",
-      [password, username]
-    );
+    if (password) {
+      await db.query(
+        `UPDATE users
+         SET name=$1, username=$2, password=$3, role=$4
+         WHERE id=$5`,
+        [name, username, password, role, id]
+      );
+    } else {
+      await db.query(
+        `UPDATE users
+         SET name=$1, username=$2, role=$3
+         WHERE id=$4`,
+        [name, username, role, id]
+      );
+    }
 
     res.json({ success: true });
-
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
