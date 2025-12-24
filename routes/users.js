@@ -42,7 +42,7 @@ router.get("/list", async (req, res) => {
   }
 });
 
-/* ================= FULL UPDATE USER ================= */
+/* ================= UPDATE USER ================= */
 router.post("/update", async (req, res) => {
   try {
     const { id, name, username, password, role } = req.body;
@@ -66,6 +66,20 @@ router.post("/update", async (req, res) => {
       );
     }
 
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+/* ================= DELETE USER (PASSWORD 786) ================= */
+router.delete("/delete/:id", async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (password !== "786")
+      return res.json({ success: false, error: "Wrong password" });
+
+    await db.query("DELETE FROM users WHERE id=$1", [req.params.id]);
     res.json({ success: true });
   } catch (err) {
     res.json({ success: false, error: err.message });
