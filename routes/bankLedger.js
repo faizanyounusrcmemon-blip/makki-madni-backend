@@ -3,7 +3,7 @@ const router = express.Router();
 const pool = require("../db");
 
 /* ======================================================
-   GET BANK LEDGER (AUTO + MANUAL)
+   GET BANK LEDGER (AUTO + MANUAL + REF NO)
 ====================================================== */
 router.get("/", async (req, res) => {
   try {
@@ -12,41 +12,46 @@ router.get("/", async (req, res) => {
 
         /* CUSTOMER PAYMENTS → BANK IN */
         SELECT
-          payment_date AS txn_date,
-          'Customer Payment' AS description,
-          amount AS credit,
-          NULL::numeric AS debit
-        FROM customer_payments
-        WHERE payment_method = 'Bank'
+          cp.id,
+          cp.payment_date AS txn_date,
+          'Customer Payment (Ref: ' || cp.ref_no || ')' AS description,
+          cp.amount AS credit,
+          NULL::numeric AS debit,
+          'customer' AS source
+        FROM customer_payments cp
+        WHERE cp.payment_method = 'Bank'
 
         UNION ALL
 
         /* PURCHASE PAYMENTS → BANK OUT */
         SELECT
-          payment_date AS txn_date,
-          'Supplier Payment' AS description,
+          pp.id,
+          pp.payment_date AS txn_date,
+          'Supplier Payment (Ref: ' || pp.ref_no || ')' AS description,
           NULL::numeric AS credit,
-          amount AS debit
-        FROM purchase_payments
-        WHERE payment_method = 'Bank'
+          pp.amount AS debit,
+          'purchase' AS source
+        FROM purchase_payments pp
+        WHERE pp.payment_method = 'Bank'
 
         UNION ALL
 
         /* MANUAL BANK TRANSACTIONS */
         SELECT
-          txn_date,
-          comment AS description,
-          CASE WHEN type = 'deposit' THEN amount END AS credit,
-          CASE WHEN type = 'withdraw' THEN amount END AS debit
-        FROM bank_transactions
+          bt.id,
+          bt.txn_date,
+          bt.comment AS description,
+          CASE WHEN bt.type = 'deposit' THEN bt.amount END AS credit,
+          CASE WHEN bt.type = 'withdraw' THEN bt.amount END AS debit,
+          'manual' AS source
+        FROM bank_transactions bt
       )
 
       SELECT *,
-        SUM(
-          COALESCE(credit,0) - COALESCE(debit,0)
-        ) OVER (ORDER BY txn_date, description) AS balance
+        SUM(COALESCE(credit,0) - COALESCE(debit,0))
+        OVER (ORDER BY txn_date, id) AS balance
       FROM all_entries
-      ORDER BY txn_date;
+      ORDER BY txn_date, id;
     `;
 
     const { rows } = await pool.query(sql);
@@ -59,7 +64,7 @@ router.get("/", async (req, res) => {
 });
 
 /* ======================================================
-   SAVE MANUAL BANK TRANSACTION (DEPOSIT / WITHDRAW)
+   SAVE MANUAL TRANSACTION
 ====================================================== */
 router.post("/transaction", async (req, res) => {
   try {
@@ -76,9 +81,22 @@ router.post("/transaction", async (req, res) => {
     );
 
     res.json({ success: true });
-
   } catch (err) {
-    console.error("BANK TXN ERROR:", err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
+/* ======================================================
+   DELETE MANUAL TRANSACTION
+====================================================== */
+router.delete("/transaction/:id", async (req, res) => {
+  try {
+    await pool.query(
+      "DELETE FROM bank_transactions WHERE id=$1",
+      [req.params.id]
+    );
+    res.json({ success: true });
+  } catch (err) {
     res.json({ success: false, error: err.message });
   }
 });
