@@ -462,11 +462,11 @@ router.get("/detail/:ref_no", async (req, res) => {
 
 
 /* =====================================================
-   PENDING + PARTIAL PURCHASE
+   PENDING + PARTIAL PURCHASE (FINAL SAFE)
 ===================================================== */
 router.get("/pending", async (req, res) => {
   try {
-    // 🔹 All refs that have ANY sale (date = booking_date)
+    // 🔹 refs from all sales tables (booking_date exists in all)
     const sales = await db.query(`
       SELECT ref_no, MIN(booking_date) AS created_at
       FROM (
@@ -483,7 +483,7 @@ router.get("/pending", async (req, res) => {
       GROUP BY ref_no
     `);
 
-    // 🔹 Purchase completeness
+    // 🔹 purchase completeness
     const purchase = await db.query(`
       SELECT
         ref_no,
@@ -509,7 +509,6 @@ router.get("/pending", async (req, res) => {
     for (const r of sales.rows) {
       const p = map[r.ref_no];
 
-      // 🔴 No purchase started
       if (!p) {
         result.push({
           ref_no: r.ref_no,
@@ -520,7 +519,6 @@ router.get("/pending", async (req, res) => {
         continue;
       }
 
-      // 🟡 Partial purchase
       if (Number(p.completed_items) < Number(p.total_items)) {
         result.push({
           ref_no: r.ref_no,
@@ -531,23 +529,19 @@ router.get("/pending", async (req, res) => {
       }
     }
 
-    res.json({ success: true, rows: result });
+    return res.json({ success: true, rows: result });
 
   } catch (err) {
     console.error("PENDING PURCHASE ERROR:", err);
-    res.json({ success: false, error: err.message });
-  }
-});
-
-    res.json({ success: true, rows: result });
-
-  } catch (err) {
-    console.error("PENDING PURCHASE ERROR:", err);
-    res.json({ success: false, error: err.message });
+    return res.status(500).json({
+      success: false,
+      error: err.message
+    });
   }
 });
 
 module.exports = router;
+
 
 
 
