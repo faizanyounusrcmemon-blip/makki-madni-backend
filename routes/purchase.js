@@ -258,24 +258,49 @@ router.get("/load/:ref_no", async (req, res) => {
 });
 
 /* =====================================================
-   SAVE PURCHASE (SAVE + EDIT)
+   SAVE PURCHASE (UPSERT - SAFE & FINAL)
 ===================================================== */
 router.post("/save", async (req, res) => {
   try {
     const { ref_no, items } = req.body;
-    if (!ref_no || !Array.isArray(items))
-      return res.json({ success: false });
 
-    await db.query(`DELETE FROM purchase_entries WHERE ref_no=$1`, [ref_no]);
+    if (!ref_no || !Array.isArray(items)) {
+      return res.json({ success: false, error: "Invalid payload" });
+    }
+
+    // 🔒 duplicate item safety (frontend bug guard)
+    const unique = [];
+    const seen = new Set();
 
     for (const r of items) {
+      if (!r.item) continue;
+      const key = r.item.trim();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(r);
+    }
+
+    // 🔥 UPSERT EACH ITEM
+    for (const r of unique) {
       await db.query(
         `
-        INSERT INTO purchase_entries
-        (ref_no, item,
-         sale_sar, sale_rate, sale_pkr,
-         purchase_sar, purchase_rate, purchase_pkr, profit)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        INSERT INTO purchase_entries (
+          ref_no, item,
+          sale_sar, sale_rate, sale_pkr,
+          purchase_sar, purchase_rate, purchase_pkr,
+          profit, is_deleted
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,false)
+        ON CONFLICT (ref_no, item)
+        DO UPDATE SET
+          sale_sar       = EXCLUDED.sale_sar,
+          sale_rate      = EXCLUDED.sale_rate,
+          sale_pkr       = EXCLUDED.sale_pkr,
+          purchase_sar   = EXCLUDED.purchase_sar,
+          purchase_rate  = EXCLUDED.purchase_rate,
+          purchase_pkr   = EXCLUDED.purchase_pkr,
+          profit         = EXCLUDED.profit,
+          is_deleted     = false
         `,
         [
           ref_no,
@@ -291,10 +316,13 @@ router.post("/save", async (req, res) => {
       );
     }
 
-    res.json({ success: true });
+    res.json({
+      success: true,
+      message: "Purchase saved successfully",
+    });
 
   } catch (err) {
-    console.error("PURCHASE SAVE ERROR:", err);
+    console.error("PURCHASE UPSERT ERROR:", err);
     res.json({ success: false, error: err.message });
   }
 });
@@ -512,6 +540,7 @@ router.get("/pending", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
