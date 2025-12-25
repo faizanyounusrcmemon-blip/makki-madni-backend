@@ -49,21 +49,21 @@ router.post("/save", async (req, res) => {
         WHERE ref_no=$1
         `,
         [
-          ref_no,
-          customer_name,
-          booking_date,
-          JSON.stringify(hotels.map(h => h.checkIn)),
-          JSON.stringify(hotels.map(h => h.checkOut)),
-          JSON.stringify(hotels.map(h => h.nights)),
-          JSON.stringify(hotels.map(h => h.location)),
-          JSON.stringify(hotels.map(h => h.hotel)),
-          JSON.stringify(hotels.map(h => h.rooms)),
-          JSON.stringify(hotels.map(h => h.type)),
-          JSON.stringify(hotels.map(h => h.rate)),
-          JSON.stringify(hotels.map(h => h.total)),
-          sar_rate,
-          hotels_total,
-          total_pkr,
+          ref_no,                                   // $1
+          customer_name,                            // $2
+          booking_date,                             // $3
+          JSON.stringify(hotels.map(h => h.checkIn)),   // $4
+          JSON.stringify(hotels.map(h => h.checkOut)),  // $5
+          JSON.stringify(hotels.map(h => h.nights)),    // $6
+          JSON.stringify(hotels.map(h => h.location)),  // $7
+          JSON.stringify(hotels.map(h => h.hotel)),     // $8
+          JSON.stringify(hotels.map(h => h.rooms)),     // $9
+          JSON.stringify(hotels.map(h => h.type)),      // $10
+          JSON.stringify(hotels.map(h => h.rate)),      // $11
+          JSON.stringify(hotels.map(h => h.total)),     // $12
+          hotels_total,                                 // ✅ $13
+          sar_rate,                                     // ✅ $14
+          total_pkr,                                    // $15
         ]
       );
 
@@ -134,7 +134,9 @@ router.get("/get/:ref", async (req, res) => {
     [req.params.ref]
   );
 
-  if (q.rows.length === 0) return res.json({ success: false });
+  if (q.rows.length === 0) {
+    return res.json({ success: false });
+  }
 
   const r = q.rows[0];
 
@@ -147,7 +149,6 @@ router.get("/get/:ref", async (req, res) => {
     rooms: r.hotel_rooms[i],
     type: r.hotel_type[i],
     rate: r.hotel_rate[i],
-    sar_rate: r.sar_rate[i],
     total: r.hotel_total[i],
   }));
 
@@ -159,32 +160,38 @@ router.get("/get/:ref", async (req, res) => {
       booking_date: r.booking_date,
       hotels,
       hotels_total: r.hotels_total,
-      sar_rate: r.sar_rate,
+      sar_rate: r.sar_rate,      // ✅ single value
       total_pkr: r.total_pkr,
     },
   });
 });
 
+// ===================================
+// DELETE (SOFT)
+// ===================================
 router.delete("/delete/:ref_no", async (req, res) => {
   try {
     const { ref_no } = req.params;
 
     const q = await db.query(
-      `UPDATE hotels
-       SET is_deleted = true
-       WHERE ref_no = $1
-       RETURNING ref_no`,
+      `
+      UPDATE hotels
+      SET is_deleted = true
+      WHERE ref_no = $1
+      RETURNING ref_no
+      `,
       [ref_no]
     );
 
-    if (!q.rows.length)
-      return res.json({ success: false, error: "hotels not found" });
+    if (!q.rows.length) {
+      return res.json({ success: false, error: "Hotel not found" });
+    }
 
     res.json({ success: true });
+
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
 });
 
 module.exports = router;
-
