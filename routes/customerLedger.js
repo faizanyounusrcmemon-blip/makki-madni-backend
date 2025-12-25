@@ -12,7 +12,7 @@ router.get("/:ref_no", async (req, res) => {
     let balance = 0;
 
     /* ===============================
-       👤 CUSTOMER NAME (ONLY BOOKINGS)
+       CUSTOMER NAME (ONLY BOOKINGS)
     =============================== */
     let customerName = "Customer";
     let baseDate = new Date();
@@ -45,33 +45,36 @@ router.get("/:ref_no", async (req, res) => {
     });
 
     /* ===============================
-       💰 SALES (ALL TABLES - OLD STRUCTURE SAFE)
+       SALES (ALL 5 TABLES — FIXED)
     =============================== */
     const sale = await db.query(
       `
-      SELECT booking_date AS date, SUM(total_pkr) AS amount FROM bookings WHERE ref_no=$1
+      SELECT MIN(booking_date) AS date, SUM(total_pkr) AS amount FROM bookings WHERE ref_no=$1
       UNION ALL
-      SELECT booking_date, SUM(total_pkr) FROM hotels WHERE ref_no=$1
+      SELECT MIN(booking_date), SUM(total_pkr) FROM hotels WHERE ref_no=$1
       UNION ALL
-      SELECT booking_date, SUM(total_pkr) FROM visa WHERE ref_no=$1
+      SELECT MIN(booking_date), SUM(total_pkr) FROM visa WHERE ref_no=$1
       UNION ALL
-      SELECT booking_date, SUM(total_pkr) FROM ticketing WHERE ref_no=$1
+      SELECT MIN(booking_date), SUM(total_pkr) FROM ticketing WHERE ref_no=$1
       UNION ALL
-      SELECT booking_date, SUM(total_pkr) FROM transport WHERE ref_no=$1
+      SELECT MIN(booking_date), SUM(total_pkr) FROM transport WHERE ref_no=$1
       `,
       [ref_no]
     );
 
     const totalSale = sale.rows.reduce(
-      (s, r) => s + Number(r.amount || 0),
+      (sum, r) => sum + Number(r.amount || 0),
       0
     );
+
+    const saleDate =
+      sale.rows.find(r => r.date)?.date || baseDate;
 
     if (totalSale > 0) {
       balance = totalSale;
       rows.push({
         id: "SALE",
-        date: sale.rows.find(r => r.date)?.date || baseDate,
+        date: saleDate,
         description: "Sale Entry",
         debit: 0,
         credit: totalSale,
@@ -80,7 +83,7 @@ router.get("/:ref_no", async (req, res) => {
     }
 
     /* ===============================
-       💵 PAYMENTS
+       PAYMENTS
     =============================== */
     const pays = await db.query(
       `
@@ -156,5 +159,6 @@ router.delete("/delete/:id", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
