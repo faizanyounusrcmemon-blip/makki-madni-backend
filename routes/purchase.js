@@ -466,24 +466,24 @@ router.get("/detail/:ref_no", async (req, res) => {
 ===================================================== */
 router.get("/pending", async (req, res) => {
   try {
-    // 🔹 All refs that have any sale
+    // 🔹 All refs that have ANY sale (date = booking_date)
     const sales = await db.query(`
-      SELECT ref_no, MIN(created_at) AS created_at
+      SELECT ref_no, MIN(booking_date) AS created_at
       FROM (
-        SELECT ref_no, created_at FROM bookings WHERE is_deleted=false
+        SELECT ref_no, booking_date FROM bookings WHERE is_deleted=false
         UNION ALL
-        SELECT ref_no, created_at FROM hotels WHERE is_deleted=false
+        SELECT ref_no, booking_date FROM hotels WHERE is_deleted=false
         UNION ALL
-        SELECT ref_no, created_at FROM visa WHERE is_deleted=false
+        SELECT ref_no, booking_date FROM visa WHERE is_deleted=false
         UNION ALL
-        SELECT ref_no, created_at FROM ticketing WHERE is_deleted=false
+        SELECT ref_no, booking_date FROM ticketing WHERE is_deleted=false
         UNION ALL
-        SELECT ref_no, created_at FROM transport WHERE is_deleted=false
+        SELECT ref_no, booking_date FROM transport WHERE is_deleted=false
       ) s
       GROUP BY ref_no
     `);
 
-    // 🔹 Purchase completeness per ref
+    // 🔹 Purchase completeness
     const purchase = await db.query(`
       SELECT
         ref_no,
@@ -509,7 +509,7 @@ router.get("/pending", async (req, res) => {
     for (const r of sales.rows) {
       const p = map[r.ref_no];
 
-      // 🔴 No purchase saved at all
+      // 🔴 No purchase started
       if (!p) {
         result.push({
           ref_no: r.ref_no,
@@ -520,7 +520,7 @@ router.get("/pending", async (req, res) => {
         continue;
       }
 
-      // 🟡 Partial purchase (ANY item incomplete)
+      // 🟡 Partial purchase
       if (Number(p.completed_items) < Number(p.total_items)) {
         result.push({
           ref_no: r.ref_no,
@@ -539,7 +539,16 @@ router.get("/pending", async (req, res) => {
   }
 });
 
+    res.json({ success: true, rows: result });
+
+  } catch (err) {
+    console.error("PENDING PURCHASE ERROR:", err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
+
 
 
 
