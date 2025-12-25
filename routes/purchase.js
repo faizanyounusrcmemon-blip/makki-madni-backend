@@ -466,28 +466,28 @@ router.get("/detail/:ref_no", async (req, res) => {
 ===================================================== */
 router.get("/pending", async (req, res) => {
   try {
-    // 🔹 All refs that have SALES
+    // 🔹 All refs that have any sale
     const sales = await db.query(`
       SELECT ref_no, MIN(created_at) AS created_at
       FROM (
         SELECT ref_no, created_at FROM bookings WHERE is_deleted=false
         UNION ALL
-        SELECT ref_no, created_at FROM ticketing WHERE is_deleted=false
-        UNION ALL
         SELECT ref_no, created_at FROM hotels WHERE is_deleted=false
         UNION ALL
         SELECT ref_no, created_at FROM visa WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, created_at FROM ticketing WHERE is_deleted=false
         UNION ALL
         SELECT ref_no, created_at FROM transport WHERE is_deleted=false
       ) s
       GROUP BY ref_no
     `);
 
-    // 🔹 Purchase summary per ref
+    // 🔹 Purchase completeness per ref
     const purchase = await db.query(`
       SELECT
         ref_no,
-        COUNT(*)                    AS total_items,
+        COUNT(*) AS total_items,
         SUM(
           CASE
             WHEN purchase_sar > 0 AND purchase_rate > 0 THEN 1
@@ -509,24 +509,24 @@ router.get("/pending", async (req, res) => {
     for (const r of sales.rows) {
       const p = map[r.ref_no];
 
-      // 🔴 No purchase at all
+      // 🔴 No purchase saved at all
       if (!p) {
         result.push({
           ref_no: r.ref_no,
           created_at: r.created_at,
           status: "PENDING",
-          note: "No purchase entry"
+          note: "Purchase not started"
         });
         continue;
       }
 
-      // 🟡 Partial purchase
+      // 🟡 Partial purchase (ANY item incomplete)
       if (Number(p.completed_items) < Number(p.total_items)) {
         result.push({
           ref_no: r.ref_no,
           created_at: r.created_at,
           status: "PARTIAL",
-          note: "Some items not purchased yet"
+          note: "Purchase incomplete"
         });
       }
     }
@@ -540,6 +540,7 @@ router.get("/pending", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
