@@ -11,9 +11,6 @@ router.get("/:ref_no", async (req, res) => {
     let rows = [];
     let balance = 0;
 
-    /* ===============================
-       CUSTOMER NAME (ONLY BOOKINGS)
-    =============================== */
     let customerName = "Customer";
     let baseDate = new Date();
 
@@ -32,9 +29,6 @@ router.get("/:ref_no", async (req, res) => {
       baseDate = bk.rows[0].booking_date;
     }
 
-    /* ===============================
-       CUSTOMER ROW
-    =============================== */
     rows.push({
       id: "CUSTOMER",
       date: baseDate,
@@ -44,9 +38,6 @@ router.get("/:ref_no", async (req, res) => {
       balance: null
     });
 
-    /* ===============================
-       SALES (ALL 5 TABLES — FIXED)
-    =============================== */
     const sale = await db.query(
       `
       SELECT MIN(booking_date) AS date, SUM(total_pkr) AS amount FROM bookings WHERE ref_no=$1
@@ -67,14 +58,11 @@ router.get("/:ref_no", async (req, res) => {
       0
     );
 
-    const saleDate =
-      sale.rows.find(r => r.date)?.date || baseDate;
-
     if (totalSale > 0) {
       balance = totalSale;
       rows.push({
         id: "SALE",
-        date: saleDate,
+        date: baseDate,
         description: "Sale Entry",
         debit: 0,
         credit: totalSale,
@@ -82,9 +70,6 @@ router.get("/:ref_no", async (req, res) => {
       });
     }
 
-    /* ===============================
-       PAYMENTS
-    =============================== */
     const pays = await db.query(
       `
       SELECT id, payment_date, amount, type
@@ -102,10 +87,7 @@ router.get("/:ref_no", async (req, res) => {
       rows.push({
         id: p.id,
         date: p.payment_date,
-        description:
-          p.type === "adjustment"
-            ? "Adjustment"
-            : "Payment Received",
+        description: p.type === "adjustment" ? "Adjustment" : "Payment Received",
         debit: amt,
         credit: 0,
         balance
@@ -115,34 +97,44 @@ router.get("/:ref_no", async (req, res) => {
     res.json({ success: true, rows });
 
   } catch (err) {
-    console.error("CUSTOMER LEDGER ERROR:", err);
     res.json({ success: false, error: err.message });
   }
 });
 
 /* ===============================
-   SAVE PAYMENT
+   SAVE PAYMENT (FINAL)
 ================================ */
 router.post("/payment", async (req, res) => {
-  const { ref_no, amount, payment_method, type, payment_date } = req.body;
+  try {
+    const { ref_no, amount, payment_method, type, payment_date } = req.body;
 
-  if (!amount || !payment_date)
-    return res.json({ success: false, error: "Amount & Date required" });
+    if (!ref_no)
+      return res.json({ success: false, error: "Ref No required" });
 
-  await db.query(
-    `
-    INSERT INTO customer_payments
-    (ref_no, amount, payment_method, type, payment_date)
-    VALUES ($1,$2,$3,$4,$5)
-    `,
-    [ref_no, amount, payment_method, type, payment_date]
-  );
+    if (!amount || Number(amount) <= 0)
+      return res.json({ success: false, error: "Invalid amount" });
 
-  res.json({ success: true });
+    if (!payment_date)
+      return res.json({ success: false, error: "Date required" });
+
+    await db.query(
+      `
+      INSERT INTO customer_payments
+      (ref_no, amount, payment_method, type, payment_date)
+      VALUES ($1,$2,$3,$4,$5)
+      `,
+      [ref_no, amount, payment_method, type, payment_date]
+    );
+
+    res.json({ success: true });
+
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
 });
 
 /* ===============================
-   DELETE ENTRY (PASSWORD)
+   DELETE ENTRY
 ================================ */
 router.delete("/delete/:id", async (req, res) => {
   const { password } = req.body;
@@ -159,6 +151,3 @@ router.delete("/delete/:id", async (req, res) => {
 });
 
 module.exports = router;
-
-
-
