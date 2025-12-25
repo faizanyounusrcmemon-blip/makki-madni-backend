@@ -11,83 +11,33 @@ router.get("/:ref_no", async (req, res) => {
     let rows = [];
     let balance = 0;
 
-    let customerName = "Customer";
-    let bookingDate = new Date();
-
     /* ===============================
-       🔎 FIND CUSTOMER + DATE
+       👤 CUSTOMER NAME (ONLY BOOKINGS)
     =============================== */
+    let customerName = "Customer";
+    let baseDate = new Date();
 
-    if (ref_no.startsWith("PKG-")) {
-      const q = await db.query(
-        `SELECT customer_name, booking_date FROM bookings WHERE ref_no=$1 LIMIT 1`,
-        [ref_no]
-      );
-      if (!q.rows.length)
-        return res.json({ success: false, error: "Booking not found" });
+    const bk = await db.query(
+      `
+      SELECT customer_name, booking_date
+      FROM bookings
+      WHERE ref_no=$1
+      LIMIT 1
+      `,
+      [ref_no]
+    );
 
-      customerName = q.rows[0].customer_name;
-      bookingDate = q.rows[0].booking_date;
-    }
-
-    else if (ref_no.startsWith("HOT-")) {
-      const q = await db.query(
-        `SELECT guest_name AS customer_name, booking_date FROM hotels WHERE ref_no=$1 LIMIT 1`,
-        [ref_no]
-      );
-      if (!q.rows.length)
-        return res.json({ success: false, error: "Hotel not found" });
-
-      customerName = q.rows[0].customer_name;
-      bookingDate = q.rows[0].booking_date;
-    }
-
-    else if (ref_no.startsWith("VISA-")) {
-      const q = await db.query(
-        `SELECT customer_name, visa_date AS booking_date FROM visa WHERE ref_no=$1 LIMIT 1`,
-        [ref_no]
-      );
-      if (!q.rows.length)
-        return res.json({ success: false, error: "Visa not found" });
-
-      customerName = q.rows[0].customer_name;
-      bookingDate = q.rows[0].booking_date;
-    }
-
-    else if (ref_no.startsWith("TRN-")) {
-      const q = await db.query(
-        `SELECT customer_name, travel_date AS booking_date FROM transport WHERE ref_no=$1 LIMIT 1`,
-        [ref_no]
-      );
-      if (!q.rows.length)
-        return res.json({ success: false, error: "Transport not found" });
-
-      customerName = q.rows[0].customer_name;
-      bookingDate = q.rows[0].booking_date;
-    }
-
-    else if (ref_no.startsWith("TIC-")) {
-      const q = await db.query(
-        `SELECT passenger_name AS customer_name, booking_date FROM ticketing WHERE ref_no=$1 LIMIT 1`,
-        [ref_no]
-      );
-      if (!q.rows.length)
-        return res.json({ success: false, error: "Ticket not found" });
-
-      customerName = q.rows[0].customer_name;
-      bookingDate = q.rows[0].booking_date;
-    }
-
-    else {
-      return res.json({ success: false, error: "Invalid Ref No" });
+    if (bk.rows.length) {
+      customerName = bk.rows[0].customer_name;
+      baseDate = bk.rows[0].booking_date;
     }
 
     /* ===============================
-       👤 CUSTOMER ROW
+       CUSTOMER ROW
     =============================== */
     rows.push({
       id: "CUSTOMER",
-      date: bookingDate,
+      date: baseDate,
       description: `Customer: ${customerName}`,
       debit: null,
       credit: null,
@@ -95,19 +45,19 @@ router.get("/:ref_no", async (req, res) => {
     });
 
     /* ===============================
-       💰 SALES (ALL TABLES)
+       💰 SALES (ALL TABLES - OLD STRUCTURE SAFE)
     =============================== */
     const sale = await db.query(
       `
-      SELECT SUM(total_pkr) AS amount FROM bookings WHERE ref_no=$1
+      SELECT booking_date AS date, SUM(total_pkr) AS amount FROM bookings WHERE ref_no=$1
       UNION ALL
-      SELECT SUM(total_pkr) FROM hotels WHERE ref_no=$1
+      SELECT booking_date, SUM(total_pkr) FROM hotels WHERE ref_no=$1
       UNION ALL
-      SELECT SUM(total_pkr) FROM visa WHERE ref_no=$1
+      SELECT booking_date, SUM(total_pkr) FROM visa WHERE ref_no=$1
       UNION ALL
-      SELECT SUM(total_pkr) FROM ticketing WHERE ref_no=$1
+      SELECT booking_date, SUM(total_pkr) FROM ticketing WHERE ref_no=$1
       UNION ALL
-      SELECT SUM(total_pkr) FROM transport WHERE ref_no=$1
+      SELECT booking_date, SUM(total_pkr) FROM transport WHERE ref_no=$1
       `,
       [ref_no]
     );
@@ -121,7 +71,7 @@ router.get("/:ref_no", async (req, res) => {
       balance = totalSale;
       rows.push({
         id: "SALE",
-        date: bookingDate,
+        date: sale.rows.find(r => r.date)?.date || baseDate,
         description: "Sale Entry",
         debit: 0,
         credit: totalSale,
@@ -149,9 +99,10 @@ router.get("/:ref_no", async (req, res) => {
       rows.push({
         id: p.id,
         date: p.payment_date,
-        description: p.type === "adjustment"
-          ? "Adjustment"
-          : "Payment Received",
+        description:
+          p.type === "adjustment"
+            ? "Adjustment"
+            : "Payment Received",
         debit: amt,
         credit: 0,
         balance
@@ -205,4 +156,5 @@ router.delete("/delete/:id", async (req, res) => {
 });
 
 module.exports = router;
+
 
