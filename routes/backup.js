@@ -228,6 +228,54 @@ router.post("/restore/full", async (req, res) => {
   }
 });
 
+/* ================= SINGLE TABLE RESTORE ================= */
+
+router.post("/restore/table", async (req, res) => {
+  const { file, table, password } = req.body;
+
+  if (password !== ACTION_PASSWORD)
+    return res.json({ success: false, error: "Wrong password" });
+
+  if (!file || !table)
+    return res.json({ success: false, error: "File & table required" });
+
+  try {
+    // download zip
+    const zipData = await supabase.storage.from(BUCKET).download(file);
+    if (!zipData.data)
+      return res.json({ success: false, error: "Backup file not found" });
+
+    const zip = new AdmZip(
+      Buffer.from(await zipData.data.arrayBuffer())
+    );
+
+    const entry = zip.getEntry(`${table}.csv`);
+    if (!entry)
+      return res.json({ success: false, error: `Table ${table} not found in backup` });
+
+    const csv = entry.getData().toString("utf8");
+
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+
+      await restoreTable(client, table, csv);
+
+      await client.query("COMMIT");
+      res.json({ success: true });
+    } catch (e) {
+      await client.query("ROLLBACK");
+      res.json({ success: false, error: e.message });
+    } finally {
+      client.release();
+    }
+
+  } catch (err) {
+    console.error("SINGLE RESTORE ERROR:", err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
 /* ================= DOWNLOAD BACKUP ================= */
 
 router.post("/download", async (req, res) => {
@@ -312,6 +360,7 @@ router.get("/last", async (_, res) => {
 });
 
 module.exports = router;
+
 
 
 
