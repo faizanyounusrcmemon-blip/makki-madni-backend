@@ -2,106 +2,69 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-/* =====================================================
-   PROFIT REPORT (MONTHLY / YEARLY)
-===================================================== */
 router.get("/", async (req, res) => {
   try {
     const { year, month } = req.query;
 
-    let dateFilter = "";
-    let params = [];
-    let idx = 1;
+    let where = "WHERE is_deleted = false";
+    const params = [];
 
     if (year) {
-      dateFilter += ` AND EXTRACT(YEAR FROM created_at) = $${idx}`;
       params.push(year);
-      idx++;
+      where += ` AND EXTRACT(YEAR FROM created_at) = $${params.length}`;
     }
 
     if (month) {
-      dateFilter += ` AND EXTRACT(MONTH FROM created_at) = $${idx}`;
       params.push(month);
-      idx++;
+      where += ` AND EXTRACT(MONTH FROM created_at) = $${params.length}`;
     }
 
-    /* ===============================
-       TOTAL SALES
-    =============================== */
-    const sales = await db.query(
+    /* ================= PROFIT FROM PURCHASE TABLE ================= */
+    const profitQ = await db.query(
       `
-      SELECT COALESCE(SUM(total_pkr),0) AS total
-      FROM (
-        SELECT total_pkr, created_at FROM bookings
-        UNION ALL
-        SELECT total_pkr, created_at FROM ticketing
-        UNION ALL
-        SELECT total_pkr, created_at FROM visa
-        UNION ALL
-        SELECT total_pkr, created_at FROM hotels
-        UNION ALL
-        SELECT total_pkr, created_at FROM transport
-      ) x
-      WHERE 1=1 ${dateFilter}
-      `,
-      params
-    );
-
-    /* ===============================
-       TOTAL PURCHASE
-    =============================== */
-    const purchase = await db.query(
-      `
-      SELECT COALESCE(SUM(purchase_pkr),0) AS total
+      SELECT COALESCE(SUM(profit),0) AS total_profit
       FROM purchase_entries
-      WHERE 1=1 ${dateFilter.replace(/created_at/g, "created_at")}
+      ${where}
       `,
       params
     );
 
-    /* ===============================
-       PURCHASE ADJUSTMENT (+)
-    =============================== */
-    const purchaseAdj = await db.query(
+    const totalProfit = Number(profitQ.rows[0].total_profit);
+
+    /* ================= TOTAL EXPENSE ================= */
+    let expWhere = "WHERE 1=1";
+    const expParams = [];
+
+    if (year) {
+      expParams.push(year);
+      expWhere += ` AND EXTRACT(YEAR FROM expense_date) = $${expParams.length}`;
+    }
+
+    if (month) {
+      expParams.push(month);
+      expWhere += ` AND EXTRACT(MONTH FROM expense_date) = $${expParams.length}`;
+    }
+
+    const expenseQ = await db.query(
       `
-      SELECT COALESCE(SUM(amount),0) AS total
-      FROM purchase_payments
-      WHERE type = 'adjustment' ${dateFilter.replace(/created_at/g, "payment_date")}
+      SELECT COALESCE(SUM(amount),0) AS total_expense
+      FROM expense_ledger
+      ${expWhere}
       `,
-      params
+      expParams
     );
 
-    /* ===============================
-       CUSTOMER ADJUSTMENT (-)
-    =============================== */
-    const customerAdj = await db.query(
-      `
-      SELECT COALESCE(SUM(amount),0) AS total
-      FROM customer_payments
-      WHERE type = 'adjustment' ${dateFilter.replace(/created_at/g, "payment_date")}
-      `,
-      params
-    );
+    const totalExpense = Number(expenseQ.rows[0].total_expense);
 
-    const totalSales = Number(sales.rows[0].total);
-    const totalPurchase = Number(purchase.rows[0].total);
-    const plusAdj = Number(purchaseAdj.rows[0].total);
-    const minusAdj = Number(customerAdj.rows[0].total);
+    /* ================= FINAL NET ================= */
+    const finalNetProfit = totalProfit - totalExpense;
 
-    const profit =
-      totalSales -
-      totalPurchase +
-      plusAdj -
-      minusAdj;
-
-    return res.json({
+    res.json({
       success: true,
       report: {
-        total_sales: totalSales,
-        total_purchase: totalPurchase,
-        purchase_adjustment: plusAdj,
-        customer_adjustment: minusAdj,
-        profit
+        purchase_profit: totalProfit,
+        total_expense: totalExpense,
+        final_profit: finalNetProfit
       }
     });
 
