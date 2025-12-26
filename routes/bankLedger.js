@@ -3,14 +3,14 @@ const router = express.Router();
 const pool = require("../db");
 
 /* ======================================================
-   GET BANK LEDGER
+   GET BANK LEDGER (ALL SOURCES)
 ====================================================== */
 router.get("/", async (req, res) => {
   try {
     const sql = `
       WITH all_entries AS (
 
-        -- CUSTOMER PAYMENTS (BANK)
+        -- CUSTOMER PAYMENTS (BANK CREDIT)
         SELECT
           cp.id,
           cp.payment_date AS txn_date,
@@ -20,10 +20,11 @@ router.get("/", async (req, res) => {
           'customer' AS source
         FROM customer_payments cp
         WHERE cp.payment_method = 'Bank'
+          AND cp.is_deleted = false
 
         UNION ALL
 
-        -- PURCHASE PAYMENTS (BANK)
+        -- PURCHASE PAYMENTS (BANK DEBIT)
         SELECT
           pp.id,
           pp.payment_date AS txn_date,
@@ -33,16 +34,17 @@ router.get("/", async (req, res) => {
           'purchase' AS source
         FROM purchase_payments pp
         WHERE pp.payment_method = 'Bank'
+          AND pp.is_deleted = false
 
         UNION ALL
 
-        -- MANUAL + EXPENSE BANK TRANSACTIONS
+        -- BANK TRANSACTIONS (MANUAL + EXPENSE)
         SELECT
           bt.id,
           bt.txn_date,
           bt.comment AS description,
-          CASE WHEN bt.type='deposit' THEN bt.amount END AS credit,
-          CASE WHEN bt.type='withdraw' THEN bt.amount END AS debit,
+          CASE WHEN bt.type = 'deposit' THEN bt.amount END AS credit,
+          CASE WHEN bt.type = 'withdraw' THEN bt.amount END AS debit,
           bt.source
         FROM bank_transactions bt
       )
@@ -56,21 +58,22 @@ router.get("/", async (req, res) => {
 
     const { rows } = await pool.query(sql);
     res.json({ success: true, rows });
+
   } catch (err) {
+    console.error("BANK LEDGER ERROR:", err);
     res.json({ success: false, error: err.message });
   }
 });
 
 /* ======================================================
-   SAVE MANUAL ENTRY
+   SAVE MANUAL ENTRY ONLY
 ====================================================== */
 router.post("/transaction", async (req, res) => {
   try {
     const { txn_date, type, amount, comment } = req.body;
 
-    if (!txn_date || !amount || !type) {
+    if (!txn_date || !amount || !type)
       return res.json({ success: false, error: "Required fields missing" });
-    }
 
     await pool.query(
       `
@@ -88,22 +91,21 @@ router.post("/transaction", async (req, res) => {
 });
 
 /* ======================================================
-   DELETE MANUAL ENTRY ONLY (PASSWORD = 786)
+   DELETE MANUAL ENTRY ONLY (PASSWORD 786)
 ====================================================== */
 router.delete("/transaction/:id", async (req, res) => {
   try {
     const { password } = req.body;
-    if (password !== "786") {
+    if (password !== "786")
       return res.json({ success: false, error: "Wrong password" });
-    }
 
-    // 🔒 ONLY manual allowed
+    // 🔒 only manual entries allowed
     const chk = await pool.query(
       "SELECT source FROM bank_transactions WHERE id=$1",
       [req.params.id]
     );
 
-    if (chk.rows[0]?.source !== "manual") {
+    if (!chk.rows.length || chk.rows[0].source !== "manual") {
       return res.json({
         success: false,
         error: "Auto entries cannot be deleted",
