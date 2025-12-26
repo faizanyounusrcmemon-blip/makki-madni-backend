@@ -6,7 +6,7 @@ const db = require("../db");
 router.get("/", async (req, res) => {
   try {
     const r = await db.query(
-      "SELECT * FROM expense_ledger ORDER BY expense_date DESC, id DESC"
+      `SELECT * FROM expense_ledger ORDER BY expense_date DESC, id DESC`
     );
     res.json({ success: true, rows: r.rows });
   } catch (err) {
@@ -16,19 +16,17 @@ router.get("/", async (req, res) => {
 
 /* ================= ADD ================= */
 router.post("/add", async (req, res) => {
-  const { expense_date, title, amount, remarks, payment_method } = req.body;
-
-  if (!expense_date || !title || !amount || !payment_method)
-    return res.json({ success: false, error: "Missing fields" });
-
-  const client = await db.connect();
   try {
-    await client.query("BEGIN");
+    const { expense_date, title, amount, remarks, payment_method } = req.body;
 
-    const r = await client.query(
+    if (!expense_date || !title || !amount || !payment_method)
+      return res.json({ success: false, error: "Missing fields" });
+
+    // 1️⃣ save expense
+    const r = await db.query(
       `
       INSERT INTO expense_ledger
-      (expense_date, title, amount, remarks, payment_method)
+        (expense_date, title, amount, remarks, payment_method)
       VALUES ($1,$2,$3,$4,$5)
       RETURNING id
       `,
@@ -37,67 +35,66 @@ router.post("/add", async (req, res) => {
 
     const expenseId = r.rows[0].id;
 
-    // 🔹 BANK → auto withdraw
+    // 2️⃣ if BANK → minus from bank ledger
     if (payment_method === "Bank") {
-      await client.query(
+      await db.query(
         `
         INSERT INTO bank_transactions
-        (txn_date, type, amount, comment, source, ref_id)
-        VALUES ($1,'withdraw',$2,$3,'expense',$4)
+          (txn_date, type, amount, comment)
+        VALUES ($1,'withdraw',$2,$3)
         `,
-        [expense_date, amount, `Expense: ${title}`, expenseId]
+        [
+          expense_date,
+          amount,
+          `Expense: ${title} (ID:${expenseId})`,
+        ]
       );
     }
 
-    await client.query("COMMIT");
-    res.json({ success: true });
+    res.json({ success: true, message: "Expense saved" });
   } catch (err) {
-    await client.query("ROLLBACK");
     res.json({ success: false, error: err.message });
-  } finally {
-    client.release();
   }
 });
 
 /* ================= DELETE ================= */
 router.delete("/delete/:id", async (req, res) => {
-  const { password } = req.body;
-  if (password !== "786")
-    return res.json({ success: false, error: "Wrong password" });
-
-  const client = await db.connect();
   try {
-    await client.query("BEGIN");
+    const { password } = req.body;
+    if (password !== "786")
+      return res.json({ success: false, error: "Wrong password" });
 
-    const r = await client.query(
-      "SELECT payment_method FROM expense_ledger WHERE id=$1",
+    // get expense first
+    const r = await db.query(
+      `SELECT * FROM expense_ledger WHERE id=$1`,
       [req.params.id]
     );
 
-    ifrow;
     if (r.rows.length === 0)
-      throw new Error("Expense not found");
+      return res.json({ success: false, error: "Not found" });
 
-    // 🔹 auto delete bank ledger
-    if (r.rows[0].payment_method === "Bank") {
-      await client.query(
-        "DELETE FROM bank_transactions WHERE source='expense' AND ref_id=$1",
-        [req.params.id]
+    const exp = r.rows[0];
+
+    // delete expense
+    await db.query(
+      `DELETE FROM expense_ledger WHERE id=$1`,
+      [req.params.id]
+    );
+
+    // if bank → delete linked bank transaction
+    if (exp.payment_method === "Bank") {
+      await db.query(
+        `
+        DELETE FROM bank_transactions
+        WHERE comment = $1
+        `,
+        [`Expense: ${exp.title} (ID:${exp.id})`]
       );
     }
 
-    await client.query(
-      "DELETE FROM expense_ledger WHERE id=$1",
-      [req.params.id]
-    );
-
-    await client.query("COMMIT");
-    res.json({ success: true });
+    res.json({ success: true, message: "Expense deleted" });
   } catch (err) {
-    await client.query("ROLLBACK");
     res.json({ success: false, error: err.message });
-  } finally {
-    client.release();
   }
 });
 
