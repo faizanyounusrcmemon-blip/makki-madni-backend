@@ -43,5 +43,7 @@ app.use("/api/users", require("../routes/users"));
 
 // ✅ BACKUP ENABLED
 app.use("/api/backup", require("../routes/backup"));
+app.use("/api/system", require("../routes/system"));
+
 
 module.exports = app;
