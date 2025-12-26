@@ -3,7 +3,7 @@ const router = express.Router();
 const pool = require("../db");
 
 /* ======================================================
-   GET BANK LEDGER (ALL SOURCES)
+   GET BANK LEDGER  ✅ FINAL FIX
 ====================================================== */
 router.get("/", async (req, res) => {
   try {
@@ -38,7 +38,7 @@ router.get("/", async (req, res) => {
 
         UNION ALL
 
-        /* ================= BANK TRANSACTIONS ================= */
+        /* ================= BANK TRANSACTIONS (MANUAL + EXPENSE) ================= */
         SELECT
           bt.id,
           bt.txn_date,
@@ -66,7 +66,7 @@ router.get("/", async (req, res) => {
 });
 
 /* ======================================================
-   SAVE MANUAL ENTRY ONLY
+   SAVE MANUAL BANK ENTRY
 ====================================================== */
 router.post("/transaction", async (req, res) => {
   try {
@@ -84,14 +84,14 @@ router.post("/transaction", async (req, res) => {
       [txn_date, type, amount, comment || ""]
     );
 
-    res.json({ success: true, message: "Transaction saved successfully" });
+    res.json({ success: true });
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
 });
 
 /* ======================================================
-   DELETE MANUAL ENTRY ONLY (PASSWORD 786)
+   DELETE MANUAL ENTRY (PASSWORD = 786)
 ====================================================== */
 router.delete("/transaction/:id", async (req, res) => {
   try {
@@ -99,29 +99,15 @@ router.delete("/transaction/:id", async (req, res) => {
     if (password !== "786")
       return res.json({ success: false, error: "Wrong password" });
 
-    // 🔒 only manual entries allowed
-    const chk = await pool.query(
-      "SELECT source FROM bank_transactions WHERE id=$1",
-      [req.params.id]
-    );
-
-    if (!chk.rows.length || chk.rows[0].source !== "manual") {
-      return res.json({
-        success: false,
-        error: "Auto entries cannot be deleted",
-      });
-    }
-
     await pool.query(
-      "DELETE FROM bank_transactions WHERE id=$1",
+      "DELETE FROM bank_transactions WHERE id=$1 AND source='manual'",
       [req.params.id]
     );
 
-    res.json({ success: true, message: "Transaction deleted successfully" });
+    res.json({ success: true });
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
 });
 
 module.exports = router;
-
