@@ -28,6 +28,7 @@ const TMP = "/tmp";
 
 const TABLES = [
   "bookings",
+  "expense_ledger",
   "hotels",
   "ticketing",
   "visa",
@@ -311,6 +312,7 @@ router.get("/last", async (_, res) => {
 });
 
 module.exports = router;
+
 
 
 
