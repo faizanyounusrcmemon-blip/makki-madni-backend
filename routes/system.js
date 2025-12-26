@@ -2,44 +2,56 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-const MAX_MB = 500;
+const DB_LIMIT_MB = 500;
 
-router.get("/storage-report", async (req, res) => {
+router.get("/capacity-rows", async (req, res) => {
   try {
     // total database size
-    const dbSizeQ = await db.query(`
+    const dbQ = await db.query(`
       SELECT pg_database_size(current_database()) AS size
     `);
 
-    const dbBytes = Number(dbSizeQ.rows[0].size);
-    const dbMB = +(dbBytes / 1024 / 1024).toFixed(2);
+    const usedMB = Number(dbQ.rows[0].size) / 1024 / 1024;
+    const remainingMB = DB_LIMIT_MB - usedMB;
 
-    // per table size
-    const tableQ = await db.query(`
+    // per table stats
+    const tablesQ = await db.query(`
       SELECT
         relname AS table,
-        pg_total_relation_size(relid) AS size
+        pg_total_relation_size(relid) AS bytes,
+        reltuples::bigint AS est_rows
       FROM pg_catalog.pg_statio_user_tables
-      ORDER BY size DESC
+      ORDER BY bytes DESC
     `);
 
-    const tables = tableQ.rows.map(t => ({
-      table: t.table,
-      sizeMB: +(Number(t.size) / 1024 / 1024).toFixed(2)
-    }));
+    const rows = tablesQ.rows.map(t => {
+      const tableMB = Number(t.bytes) / 1024 / 1024;
+      const totalRows = Math.max(Number(t.est_rows), 1);
 
-    const remainingMB = +(MAX_MB - dbMB).toFixed(2);
+      const avgRowMB = tableMB / totalRows;
+      const possibleRows =
+        avgRowMB > 0
+          ? Math.floor(remainingMB / avgRowMB)
+          : 0;
+
+      return {
+        table: t.table,
+        totalRows,
+        tableMB: +tableMB.toFixed(2),
+        avgRowKB: +(avgRowMB * 1024).toFixed(2),
+        possibleRows
+      };
+    });
 
     res.json({
       success: true,
-      limitMB: MAX_MB,
-      usedMB: dbMB,
-      remainingMB,
-      percentUsed: Math.min(100, Math.round((dbMB / MAX_MB) * 100)),
-      tables
+      dbLimitMB: DB_LIMIT_MB,
+      usedMB: +usedMB.toFixed(2),
+      remainingMB: +remainingMB.toFixed(2),
+      rows
     });
   } catch (err) {
-    console.error("STORAGE REPORT ERROR:", err);
+    console.error("CAPACITY ROWS ERROR:", err);
     res.json({ success: false, error: err.message });
   }
 });
