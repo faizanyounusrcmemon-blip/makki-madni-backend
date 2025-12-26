@@ -10,6 +10,7 @@ router.get("/", async (req, res) => {
     const sql = `
       WITH all_entries AS (
 
+        -- CUSTOMER PAYMENTS (BANK)
         SELECT
           cp.id,
           cp.payment_date AS txn_date,
@@ -22,6 +23,7 @@ router.get("/", async (req, res) => {
 
         UNION ALL
 
+        -- PURCHASE PAYMENTS (BANK)
         SELECT
           pp.id,
           pp.payment_date AS txn_date,
@@ -34,13 +36,14 @@ router.get("/", async (req, res) => {
 
         UNION ALL
 
+        -- MANUAL + EXPENSE BANK TRANSACTIONS
         SELECT
           bt.id,
           bt.txn_date,
           bt.comment AS description,
           CASE WHEN bt.type='deposit' THEN bt.amount END AS credit,
           CASE WHEN bt.type='withdraw' THEN bt.amount END AS debit,
-          'manual' AS source
+          bt.source
         FROM bank_transactions bt
       )
 
@@ -70,8 +73,11 @@ router.post("/transaction", async (req, res) => {
     }
 
     await pool.query(
-      `INSERT INTO bank_transactions (txn_date, type, amount, comment)
-       VALUES ($1,$2,$3,$4)`,
+      `
+      INSERT INTO bank_transactions
+      (txn_date, type, amount, comment, source)
+      VALUES ($1,$2,$3,$4,'manual')
+      `,
       [txn_date, type, amount, comment || ""]
     );
 
@@ -82,14 +88,26 @@ router.post("/transaction", async (req, res) => {
 });
 
 /* ======================================================
-   DELETE MANUAL ENTRY (PASSWORD = 786)
+   DELETE MANUAL ENTRY ONLY (PASSWORD = 786)
 ====================================================== */
 router.delete("/transaction/:id", async (req, res) => {
   try {
     const { password } = req.body;
-
     if (password !== "786") {
       return res.json({ success: false, error: "Wrong password" });
+    }
+
+    // 🔒 ONLY manual allowed
+    const chk = await pool.query(
+      "SELECT source FROM bank_transactions WHERE id=$1",
+      [req.params.id]
+    );
+
+    if (chk.rows[0]?.source !== "manual") {
+      return res.json({
+        success: false,
+        error: "Auto entries cannot be deleted",
+      });
     }
 
     await pool.query(
