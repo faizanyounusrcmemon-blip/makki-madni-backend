@@ -10,7 +10,7 @@ router.get("/", async (req, res) => {
     const sql = `
       WITH all_entries AS (
 
-        -- CUSTOMER PAYMENTS (BANK CREDIT)
+        /* ================= CUSTOMER PAYMENTS ================= */
         SELECT
           cp.id,
           cp.payment_date AS txn_date,
@@ -19,12 +19,12 @@ router.get("/", async (req, res) => {
           NULL::numeric AS debit,
           'customer' AS source
         FROM customer_payments cp
-        WHERE cp.payment_method = 'Bank'
-          AND cp.is_deleted = false
+        WHERE LOWER(cp.payment_method) = 'bank'
+          AND COALESCE(cp.is_deleted, false) = false
 
         UNION ALL
 
-        -- PURCHASE PAYMENTS (BANK DEBIT)
+        /* ================= PURCHASE PAYMENTS ================= */
         SELECT
           pp.id,
           pp.payment_date AS txn_date,
@@ -33,12 +33,12 @@ router.get("/", async (req, res) => {
           pp.amount AS debit,
           'purchase' AS source
         FROM purchase_payments pp
-        WHERE pp.payment_method = 'Bank'
-          AND pp.is_deleted = false
+        WHERE LOWER(pp.payment_method) = 'bank'
+          AND COALESCE(pp.is_deleted, false) = false
 
         UNION ALL
 
-        -- BANK TRANSACTIONS (MANUAL + EXPENSE)
+        /* ================= BANK TRANSACTIONS ================= */
         SELECT
           bt.id,
           bt.txn_date,
@@ -51,7 +51,7 @@ router.get("/", async (req, res) => {
 
       SELECT *,
         SUM(COALESCE(credit,0) - COALESCE(debit,0))
-        OVER (ORDER BY txn_date, id) AS balance
+          OVER (ORDER BY txn_date, id) AS balance
       FROM all_entries
       ORDER BY txn_date, id;
     `;
@@ -124,3 +124,4 @@ router.delete("/transaction/:id", async (req, res) => {
 });
 
 module.exports = router;
+
