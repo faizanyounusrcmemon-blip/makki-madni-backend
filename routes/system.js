@@ -12,47 +12,49 @@ router.get("/capacity-rows", async (req, res) => {
     `);
 
     const usedMB = Number(dbQ.rows[0].size) / 1024 / 1024;
-    const remainingMB = DB_LIMIT_MB - usedMB;
+    const freeMB = DB_LIMIT_MB - usedMB;
 
-    /* ================= TABLE STATS (SAFE) ================= */
+    /* ================= TOTAL ROW COUNT (ALL TABLES) ================= */
+    const rowsQ = await db.query(`
+      SELECT SUM(n_live_tup)::bigint AS total_rows
+      FROM pg_stat_user_tables
+    `);
+
+    const totalRows = Number(rowsQ.rows[0].total_rows || 0);
+
+    /* ================= GLOBAL AVERAGE ROW SIZE ================= */
+    const avgRowMB =
+      totalRows > 0 ? usedMB / totalRows : 0;
+
+    /* ================= POSSIBLE MORE ROWS ================= */
+    const possibleMoreRows =
+      avgRowMB > 0 ? Math.floor(freeMB / avgRowMB) : 0;
+
+    /* ================= OPTIONAL: PER TABLE BREAKDOWN ================= */
     const tablesQ = await db.query(`
       SELECT
         relname AS table,
-        pg_total_relation_size(relid) AS bytes,
         n_live_tup AS rows
       FROM pg_stat_user_tables
-      ORDER BY bytes DESC
+      ORDER BY rows DESC
     `);
-
-    const rows = tablesQ.rows.map(t => {
-      const tableMB = Number(t.bytes) / 1024 / 1024;
-      const totalRows = Math.max(Number(t.rows), 1);
-
-      const avgRowMB = tableMB / totalRows;
-      const possibleRows =
-        avgRowMB > 0
-          ? Math.floor(remainingMB / avgRowMB)
-          : 0;
-
-      return {
-        table: t.table,
-        totalRows,
-        tableMB: +tableMB.toFixed(2),
-        avgRowKB: +(avgRowMB * 1024).toFixed(2),
-        possibleRows
-      };
-    });
 
     res.json({
       success: true,
+
       dbLimitMB: DB_LIMIT_MB,
       usedMB: +usedMB.toFixed(2),
-      remainingMB: +remainingMB.toFixed(2),
-      rows
+      freeMB: +freeMB.toFixed(2),
+
+      totalRows,
+      avgRowKB: +(avgRowMB * 1024).toFixed(2),
+      possibleMoreRows,
+
+      tables: tablesQ.rows
     });
 
   } catch (err) {
-    console.error("CAPACITY ROWS ERROR:", err);
+    console.error("CAPACITY GLOBAL ERROR:", err);
     res.json({ success: false, error: err.message });
   }
 });
