@@ -13,9 +13,9 @@ router.post("/login", async (req, res) => {
     if (!username || !password)
       return res.json({ success: false, error: "Missing credentials" });
 
+    // 🔥 IMPORTANT: SELECT * (with permissions)
     const result = await db.query(
-      `SELECT id, name, username, role
-       FROM users
+      `SELECT * FROM users
        WHERE username=$1 AND password=$2`,
       [username, password]
     );
@@ -25,7 +25,7 @@ router.post("/login", async (req, res) => {
 
     res.json({
       success: true,
-      user: result.rows[0]
+      user: result.rows[0]   // 👈 FULL USER WITH PERMISSIONS
     });
 
   } catch (err) {
@@ -35,3 +35,4 @@ router.post("/login", async (req, res) => {
 });
 
 module.exports = router;
+
