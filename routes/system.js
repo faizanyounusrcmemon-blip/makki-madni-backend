@@ -2,94 +2,44 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-// safe estimate (Supabase free / normal usage)
-const MAX_ROWS = 500000;
+const MAX_MB = 500;
 
-// helper: detect date column
-async function getStats(table) {
-  // check possible date columns
-  const cols = await db.query(
-    `
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_name = $1
-      AND column_name IN ('created_at','at')
-    `,
-    [table]
-  );
-
-  const dateCol = cols.rows[0]?.column_name;
-
-  let q;
-  if (dateCol) {
-    q = await db.query(
-      `
-      SELECT
-        COUNT(*) AS total,
-        MIN(${dateCol}) AS first_row
-      FROM ${table}
-      `
-    );
-  } else {
-    q = await db.query(
-      `SELECT COUNT(*) AS total FROM ${table}`
-    );
-  }
-
-  return {
-    total: Number(q.rows[0].total),
-    first: q.rows[0].first_row || null
-  };
-}
-
-router.get("/capacity", async (req, res) => {
+router.get("/storage-report", async (req, res) => {
   try {
-    const tables = [
-      "users",
-      "bookings",
-      "hotels",
-      "purchase_entries",
-      "purchase_payments",
-      "customer_payments",
-      "bank_transactions",
-      "ticketing",
-      "transport",
-      "visa"
-    ];
+    // total database size
+    const dbSizeQ = await db.query(`
+      SELECT pg_database_size(current_database()) AS size
+    `);
 
-    const rows = [];
+    const dbBytes = Number(dbSizeQ.rows[0].size);
+    const dbMB = +(dbBytes / 1024 / 1024).toFixed(2);
 
-    for (const table of tables) {
-      const { total, first } = await getStats(table);
+    // per table size
+    const tableQ = await db.query(`
+      SELECT
+        relname AS table,
+        pg_total_relation_size(relid) AS size
+      FROM pg_catalog.pg_statio_user_tables
+      ORDER BY size DESC
+    `);
 
-      let avg = 0;
-      let daysLeft = null;
+    const tables = tableQ.rows.map(t => ({
+      table: t.table,
+      sizeMB: +(Number(t.size) / 1024 / 1024).toFixed(2)
+    }));
 
-      if (first) {
-        const days =
-          Math.max(
-            (Date.now() - new Date(first)) / (1000 * 60 * 60 * 24),
-            1
-          );
+    const remainingMB = +(MAX_MB - dbMB).toFixed(2);
 
-        avg = +(total / days).toFixed(2);
-        daysLeft = avg > 0
-          ? Math.round((MAX_ROWS - total) / avg)
-          : null;
-      }
-
-      rows.push({
-        table,
-        total,
-        avg,
-        remaining: MAX_ROWS - total,
-        daysLeft
-      });
-    }
-
-    res.json({ success: true, rows });
+    res.json({
+      success: true,
+      limitMB: MAX_MB,
+      usedMB: dbMB,
+      remainingMB,
+      percentUsed: Math.min(100, Math.round((dbMB / MAX_MB) * 100)),
+      tables
+    });
   } catch (err) {
-    console.error("CAPACITY ERROR:", err);
+    console.error("STORAGE REPORT ERROR:", err);
     res.json({ success: false, error: err.message });
   }
 });
