@@ -28,7 +28,7 @@ router.post("/create", async (req, res) => {
         customer_ledger, purchase_ledger, bank_ledger, balance_sheet,
         hotel_voucher, transport_voucher,
         all_reports, profit_report,
-        create_user, manage_users, deleted_reports, restore
+        create_user, manage_users, deleted_reports, restore, system_storage
       )
       VALUES (
         $1,$2,$3,$4,
@@ -37,7 +37,7 @@ router.post("/create", async (req, res) => {
         false,false,false,false,
         false,false,
         false,false,
-        false,false,false,false
+        false,false,false,false,false
       )
       `,
       [name, username, password, role || "user"]
@@ -123,7 +123,7 @@ router.post("/permissions/update", async (req, res) => {
       "customer_ledger","purchase_ledger","bank_ledger","balance_sheet",
       "hotel_voucher","transport_voucher",
       "all_reports","profit_report",
-      "create_user","manage_users","deleted_reports","restore"
+      "create_user","manage_users","deleted_reports","restore","system_storage"
     ];
 
     for (const u of users) {
@@ -143,5 +143,6 @@ router.post("/permissions/update", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
