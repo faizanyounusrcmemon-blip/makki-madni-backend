@@ -14,49 +14,34 @@ router.get("/capacity-rows", async (req, res) => {
     const usedMB = Number(dbQ.rows[0].size) / 1024 / 1024;
     const remainingMB = DB_LIMIT_MB - usedMB;
 
-    /* ================= TABLE LIST ================= */
+    /* ================= TABLE STATS (SAFE) ================= */
     const tablesQ = await db.query(`
-      SELECT relname
-      FROM pg_catalog.pg_statio_user_tables
-      ORDER BY relname
+      SELECT
+        relname AS table,
+        pg_total_relation_size(relid) AS bytes,
+        n_live_tup AS rows
+      FROM pg_stat_user_tables
+      ORDER BY bytes DESC
     `);
 
-    const rows = [];
+    const rows = tablesQ.rows.map(t => {
+      const tableMB = Number(t.bytes) / 1024 / 1024;
+      const totalRows = Math.max(Number(t.rows), 1);
 
-    for (const t of tablesQ.rows) {
-      const table = t.relname;
-
-      /* EXACT ROW COUNT */
-      const countQ = await db.query(
-        `SELECT COUNT(*) AS c FROM ${table}`
-      );
-      const totalRows = Number(countQ.rows[0].c);
-
-      /* TABLE SIZE */
-      const sizeQ = await db.query(
-        `SELECT pg_total_relation_size($1) AS bytes`,
-        [table]
-      );
-      const tableMB = Number(sizeQ.rows[0].bytes) / 1024 / 1024;
-
-      /* AVERAGE ROW SIZE */
-      const avgRowMB =
-        totalRows > 0 ? tableMB / totalRows : 0;
-
-      /* POSSIBLE ROWS (ESTIMATE) */
+      const avgRowMB = tableMB / totalRows;
       const possibleRows =
         avgRowMB > 0
           ? Math.floor(remainingMB / avgRowMB)
           : 0;
 
-      rows.push({
-        table,
+      return {
+        table: t.table,
         totalRows,
         tableMB: +tableMB.toFixed(2),
         avgRowKB: +(avgRowMB * 1024).toFixed(2),
         possibleRows
-      });
-    }
+      };
+    });
 
     res.json({
       success: true,
