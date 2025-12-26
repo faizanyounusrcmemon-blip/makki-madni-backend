@@ -6,14 +6,14 @@ router.get("/", async (req, res) => {
   try {
     const { year, month } = req.query;
 
-    const yCond = year ? `AND EXTRACT(YEAR FROM created_at) = ${year}` : "";
-    const mCond = month ? `AND EXTRACT(MONTH FROM created_at) = ${month}` : "";
+    const yCond = year ? `AND EXTRACT(YEAR FROM created_at)=${year}` : "";
+    const mCond = month ? `AND EXTRACT(MONTH FROM created_at)=${month}` : "";
 
     /* ================= SALES (DISPLAY ONLY) ================= */
     const salesQ = await db.query(`
       SELECT COALESCE(SUM(total_pkr),0) AS total
       FROM bookings
-      WHERE is_deleted = false ${yCond} ${mCond}
+      WHERE is_deleted=false ${yCond} ${mCond}
     `);
     const totalSales = Number(salesQ.rows[0].total);
 
@@ -21,23 +21,25 @@ router.get("/", async (req, res) => {
     const purchaseQ = await db.query(`
       SELECT COALESCE(SUM(purchase_pkr),0) AS total
       FROM purchase_entries
-      WHERE is_deleted = false ${yCond} ${mCond}
+      WHERE is_deleted=false ${yCond} ${mCond}
     `);
     const totalPurchase = Number(purchaseQ.rows[0].total);
 
-    /* ================= BASE PROFIT (MAIN SOURCE) ================= */
+    /* ================= BASE PROFIT ================= */
     const profitQ = await db.query(`
       SELECT COALESCE(SUM(profit),0) AS total
       FROM purchase_entries
-      WHERE is_deleted = false ${yCond} ${mCond}
+      WHERE is_deleted=false ${yCond} ${mCond}
     `);
     const baseProfit = Number(profitQ.rows[0].total);
 
     /* ================= PURCHASE ADJUSTMENT (+) ================= */
     const purAdjQ = await db.query(`
-      SELECT COALESCE(SUM(adjustment),0) AS total
-      FROM purchase_entries
-      WHERE is_deleted = false ${yCond} ${mCond}
+      SELECT COALESCE(SUM(amount),0) AS total
+      FROM purchase_payments
+      WHERE type='adjustment'
+      ${year ? `AND EXTRACT(YEAR FROM payment_date)=${year}` : ""}
+      ${month ? `AND EXTRACT(MONTH FROM payment_date)=${month}` : ""}
     `);
     const purchaseAdj = Number(purAdjQ.rows[0].total);
 
@@ -45,9 +47,9 @@ router.get("/", async (req, res) => {
     const custAdjQ = await db.query(`
       SELECT COALESCE(SUM(amount),0) AS total
       FROM customer_payments
-      WHERE type = 'adjustment'
-      ${year ? `AND EXTRACT(YEAR FROM payment_date) = ${year}` : ""}
-      ${month ? `AND EXTRACT(MONTH FROM payment_date) = ${month}` : ""}
+      WHERE type='adjustment'
+      ${year ? `AND EXTRACT(YEAR FROM payment_date)=${year}` : ""}
+      ${month ? `AND EXTRACT(MONTH FROM payment_date)=${month}` : ""}
     `);
     const customerAdj = Number(custAdjQ.rows[0].total);
 
@@ -55,8 +57,8 @@ router.get("/", async (req, res) => {
     const expQ = await db.query(`
       SELECT COALESCE(SUM(amount),0) AS total
       FROM expense_ledger
-      ${year ? `WHERE EXTRACT(YEAR FROM expense_date) = ${year}` : "WHERE 1=1"}
-      ${month ? `AND EXTRACT(MONTH FROM expense_date) = ${month}` : ""}
+      ${year ? `WHERE EXTRACT(YEAR FROM expense_date)=${year}` : "WHERE 1=1"}
+      ${month ? `AND EXTRACT(MONTH FROM expense_date)=${month}` : ""}
     `);
     const totalExpense = Number(expQ.rows[0].total);
 
@@ -79,6 +81,7 @@ router.get("/", async (req, res) => {
         net_profit: Math.round(netProfit),
       },
     });
+
   } catch (err) {
     console.error("PROFIT REPORT ERROR:", err);
     res.json({ success: false, error: err.message });
