@@ -33,6 +33,8 @@ app.use("/api/bank-ledger", require("../routes/bankLedger"));
 app.use("/api/ledger-delete", require("../routes/ledgerDelete"));
 app.use("/api/balance-sheet", require("../routes/balanceSheet"));
 app.use("/api/profit-report", require("../routes/profitReport"));
+app.use("/api/expense-ledger", require("../routes/expense-ledger"));
+
 
 // PURCHASE
 app.use("/api/purchase", require("../routes/purchase"));
