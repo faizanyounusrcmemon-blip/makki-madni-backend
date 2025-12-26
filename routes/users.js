@@ -19,8 +19,27 @@ router.post("/create", async (req, res) => {
       return res.json({ success: false, error: "Username already exists" });
 
     await db.query(
-      `INSERT INTO users (name, username, password, role)
-       VALUES ($1,$2,$3,$4)`,
+      `
+      INSERT INTO users (
+        name, username, password, role,
+
+        packages, ticketing, transport, visa, hotels,
+        purchase_entry, purchase_list,
+        customer_ledger, purchase_ledger, bank_ledger, balance_sheet,
+        hotel_voucher, transport_voucher,
+        all_reports, profit_report,
+        create_user, manage_users, deleted_reports, restore
+      )
+      VALUES (
+        $1,$2,$3,$4,
+        false,false,false,false,false,
+        false,false,
+        false,false,false,false,
+        false,false,
+        false,false,
+        false,false,false,false
+      )
+      `,
       [name, username, password, role || "user"]
     );
 
@@ -93,25 +112,36 @@ router.get("/permissions/list", async (req, res) => {
 });
 
 // UPDATE all users permissions
+// UPDATE all users permissions (SAFE)
 router.post("/permissions/update", async (req, res) => {
-  const { users } = req.body;
+  try {
+    const { users } = req.body;
 
-  for (const u of users) {
-    const { id, ...cols } = u;
+    const perms = [
+      "packages","ticketing","transport","visa","hotels",
+      "purchase_entry","purchase_list",
+      "customer_ledger","purchase_ledger","bank_ledger","balance_sheet",
+      "hotel_voucher","transport_voucher",
+      "all_reports","profit_report",
+      "create_user","manage_users","deleted_reports","restore"
+    ];
 
-    const keys = Object.keys(cols);
-    const vals = Object.values(cols);
+    for (const u of users) {
+      const values = perms.map(p => u[p] === true);
+      const setSQL = perms.map((p, i) => `${p}=$${i + 1}`).join(", ");
 
-    const setSQL = keys.map((k, i) => `${k}=$${i + 1}`).join(", ");
+      await db.query(
+        `UPDATE users SET ${setSQL} WHERE id=$${perms.length + 1}`,
+        [...values, u.id]
+      );
+    }
 
-    await db.query(
-      `UPDATE users SET ${setSQL} WHERE id=$${keys.length + 1}`,
-      [...vals, id]
-    );
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
   }
-
-  res.json({ success: true });
 });
 
 module.exports = router;
+
 
