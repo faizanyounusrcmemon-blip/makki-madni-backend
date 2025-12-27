@@ -3,13 +3,13 @@ const router = express.Router();
 const db = require("../db");
 
 /* =====================================================
-   PURCHASE LEDGER LOAD (MERGED + RUNNING BALANCE)
+   PURCHASE LEDGER LOAD (NO DECIMAL)
 ===================================================== */
 router.get("/:ref_no", async (req, res) => {
   try {
     const { ref_no } = req.params;
 
-    // 1️⃣ MERGED PURCHASE ENTRY (same ref ki sari rows)
+    // PURCHASE TOTAL
     const purchase = await db.query(
       `
       SELECT
@@ -21,7 +21,7 @@ router.get("/:ref_no", async (req, res) => {
       [ref_no]
     );
 
-    // 2️⃣ PAYMENTS + ADJUSTMENTS
+    // PAYMENTS
     const payments = await db.query(
       `
       SELECT
@@ -40,23 +40,25 @@ router.get("/:ref_no", async (req, res) => {
     let rows = [];
     let balance = 0;
 
-    // ➕ Purchase debit
+    // ➕ PURCHASE ENTRY (INTEGER)
     if (purchase.rows[0].total_purchase) {
-      balance += Number(purchase.rows[0].total_purchase);
+      const amt = Math.round(Number(purchase.rows[0].total_purchase));
+      balance += amt;
 
       rows.push({
         id: "PURCHASE",
         created_at: purchase.rows[0].created_at,
         description: "Purchase Entry",
-        debit: purchase.rows[0].total_purchase,
+        debit: amt,
         credit: null,
         balance
       });
     }
 
-    // ➖ Payments / Adjustments
+    // ➖ PAYMENTS / ADJUSTMENTS (INTEGER)
     for (const p of payments.rows) {
-      balance -= Number(p.amount);
+      const amt = Math.round(Number(p.amount || 0));
+      balance -= amt;
 
       rows.push({
         id: p.id,
@@ -66,7 +68,7 @@ router.get("/:ref_no", async (req, res) => {
             ? "Adjustment"
             : `Payment (${p.payment_method})`,
         debit: null,
-        credit: p.amount,
+        credit: amt,
         balance
       });
     }
@@ -80,23 +82,62 @@ router.get("/:ref_no", async (req, res) => {
 });
 
 /* =====================================================
-   PURCHASE PAYMENT / ADJUSTMENT SAVE
+   PENDING / PARTIAL PURCHASE LIST (LIKE CUSTOMER LEDGER)
+===================================================== */
+router.get("/pending/list", async (req, res) => {
+  try {
+    const purchase = await db.query(`
+      SELECT ref_no, SUM(purchase_pkr) AS total_purchase
+      FROM purchase_entries
+      WHERE is_deleted = false
+      GROUP BY ref_no
+    `);
+
+    const pay = await db.query(`
+      SELECT ref_no, SUM(amount) AS paid
+      FROM purchase_payments
+      GROUP BY ref_no
+    `);
+
+    const payMap = {};
+    pay.rows.forEach(p => {
+      payMap[p.ref_no] = Math.round(Number(p.paid || 0));
+    });
+
+    const rows = [];
+
+    for (const r of purchase.rows) {
+      const total = Math.round(Number(r.total_purchase || 0));
+      const paid = payMap[r.ref_no] || 0;
+
+      if (paid >= total) continue; // ✅ CLEARED HIDE
+
+      rows.push({
+        ref_no: r.ref_no,
+        status: paid > 0 ? "PARTIAL" : "PENDING",
+        note: paid > 0
+          ? "Payment partially made"
+          : "Payment not made"
+      });
+    }
+
+    res.json({ success: true, rows });
+
+  } catch (err) {
+    console.error("PURCHASE PENDING ERROR:", err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
+/* =====================================================
+   SAVE PAYMENT / ADJUSTMENT (NO DECIMAL)
 ===================================================== */
 router.post("/payment", async (req, res) => {
   try {
-    const {
-      ref_no,
-      payment_date,
-      amount,
-      payment_method,
-      type
-    } = req.body;
+    const { ref_no, payment_date, amount, payment_method, type } = req.body;
 
     if (!ref_no || !payment_date || !amount) {
-      return res.json({
-        success: false,
-        error: "Amount & Date required"
-      });
+      return res.json({ success: false, error: "Amount & Date required" });
     }
 
     await db.query(
@@ -108,61 +149,35 @@ router.post("/payment", async (req, res) => {
       [
         ref_no,
         payment_date,
-        amount,
+        Math.round(Number(amount)),
         payment_method || "Cash",
-        type || "payment" // payment | adjustment
+        type || "payment"
       ]
     );
 
-    return res.json({ success: true });
+    res.json({ success: true });
 
   } catch (err) {
     console.error("PURCHASE PAYMENT ERROR:", err);
-    return res.json({ success: false, error: err.message });
+    res.json({ success: false, error: err.message });
   }
 });
 
 /* =====================================================
-   PURCHASE LEDGER DELETE (PASSWORD PROTECTED)
+   DELETE PAYMENT
 ===================================================== */
 router.delete("/delete/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { password } = req.body;
+  const { password } = req.body;
 
-    if (password !== "786") {
-      return res.json({
-        success: false,
-        error: "Wrong password"
-      });
-    }
-
-    const q = await db.query(
-      `
-      DELETE FROM purchase_payments
-      WHERE id = $1
-      RETURNING id
-      `,
-      [id]
-    );
-
-    if (!q.rows.length) {
-      return res.json({
-        success: false,
-        error: "Entry not found"
-      });
-    }
-
-    return res.json({
-      success: true,
-      message: "Entry deleted"
-    });
-
-  } catch (err) {
-    console.error("PURCHASE DELETE ERROR:", err);
-    return res.json({ success: false, error: err.message });
+  if (password !== "786") {
+    return res.json({ success: false, error: "Wrong password" });
   }
+
+  await db.query(`DELETE FROM purchase_payments WHERE id=$1`, [
+    req.params.id
+  ]);
+
+  res.json({ success: true });
 });
 
 module.exports = router;
-
