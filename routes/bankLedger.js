@@ -4,12 +4,17 @@ const pool = require("../db");
 
 /* ======================================================
    GET BANK LEDGER
+   ❌ ADJUSTMENTS EXCLUDED (CASH / BANK BOTH)
 ====================================================== */
 router.get("/", async (req, res) => {
   try {
     const sql = `
       WITH all_entries AS (
 
+        /* ===============================
+           CUSTOMER PAYMENTS (BANK ONLY)
+           ❌ EXCLUDE ADJUSTMENTS
+        =============================== */
         SELECT
           cp.id,
           cp.payment_date AS txn_date,
@@ -19,9 +24,14 @@ router.get("/", async (req, res) => {
           'customer' AS source
         FROM customer_payments cp
         WHERE cp.payment_method = 'Bank'
+          AND cp.type != 'adjustment'
 
         UNION ALL
 
+        /* ===============================
+           PURCHASE PAYMENTS (BANK ONLY)
+           ❌ EXCLUDE ADJUSTMENTS
+        =============================== */
         SELECT
           pp.id,
           pp.payment_date AS txn_date,
@@ -31,9 +41,13 @@ router.get("/", async (req, res) => {
           'purchase' AS source
         FROM purchase_payments pp
         WHERE pp.payment_method = 'Bank'
+          AND pp.type != 'adjustment'
 
         UNION ALL
 
+        /* ===============================
+           MANUAL BANK TRANSACTIONS
+        =============================== */
         SELECT
           bt.id,
           bt.txn_date,
@@ -53,7 +67,9 @@ router.get("/", async (req, res) => {
 
     const { rows } = await pool.query(sql);
     res.json({ success: true, rows });
+
   } catch (err) {
+    console.error("BANK LEDGER ERROR:", err);
     res.json({ success: false, error: err.message });
   }
 });
@@ -70,12 +86,15 @@ router.post("/transaction", async (req, res) => {
     }
 
     await pool.query(
-      `INSERT INTO bank_transactions (txn_date, type, amount, comment)
-       VALUES ($1,$2,$3,$4)`,
+      `
+      INSERT INTO bank_transactions (txn_date, type, amount, comment)
+      VALUES ($1,$2,$3,$4)
+      `,
       [txn_date, type, amount, comment || ""]
     );
 
     res.json({ success: true, message: "Transaction saved successfully" });
+
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
@@ -98,6 +117,7 @@ router.delete("/transaction/:id", async (req, res) => {
     );
 
     res.json({ success: true, message: "Transaction deleted successfully" });
+
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
