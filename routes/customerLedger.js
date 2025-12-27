@@ -3,7 +3,7 @@ const router = express.Router();
 const db = require("../db");
 
 /* ===============================
-   CUSTOMER LEDGER (FINAL FIXED)
+   CUSTOMER LEDGER (FINAL)
 ================================ */
 router.get("/:ref_no", async (req, res) => {
   try {
@@ -11,36 +11,6 @@ router.get("/:ref_no", async (req, res) => {
 
     let rows = [];
     let balance = 0;
-
-    // =========================
-    // CUSTOMER INFO
-    // =========================
-    let customerName = "Customer";
-    let baseDate = new Date();
-
-    const bk = await db.query(
-      `
-      SELECT customer_name, booking_date
-      FROM bookings
-      WHERE ref_no = $1
-      LIMIT 1
-      `,
-      [ref_no]
-    );
-
-    if (bk.rows.length > 0) {
-      customerName = bk.rows[0].customer_name;
-      baseDate = bk.rows[0].booking_date;
-    }
-
-    rows.push({
-      id: "CUSTOMER",
-      date: baseDate,
-      description: `Customer: ${customerName}`,
-      debit: null,
-      credit: null,
-      balance: null,
-    });
 
     // =========================
     // TOTAL SALE (ALL MODULES)
@@ -57,25 +27,12 @@ router.get("/:ref_no", async (req, res) => {
     );
 
     const totalSale = sale.rows.reduce(
-      (sum, r) => sum + Number(r.amount || 0),
+      (s, r) => s + Number(r.amount || 0),
       0
     );
 
-    if (totalSale > 0) {
-      balance = totalSale;
-
-      rows.push({
-        id: "SALE",
-        date: baseDate,
-        description: "Sale Entry",
-        debit: 0,
-        credit: totalSale,
-        balance,
-      });
-    }
-
     // =========================
-    // PAYMENTS (DEFINE FIRST ✅)
+    // PAYMENTS
     // =========================
     const pays = await db.query(
       `
@@ -88,32 +45,28 @@ router.get("/:ref_no", async (req, res) => {
     );
 
     const totalPaid = pays.rows.reduce(
-      (sum, p) => sum + Number(p.amount || 0),
+      (s, p) => s + Number(p.amount || 0),
       0
     );
 
     const pending = totalSale - totalPaid;
 
     // =========================
-    // 🔥 SUMMARY ROW (TOP)
+    // LEDGER TABLE ROWS
     // =========================
-    rows.push({
-      id: "SUMMARY",
-      date: baseDate,
-      description:
-        pending > 0 && totalPaid > 0
-          ? "Partial Payment"
-          : pending > 0
-          ? "Pending Payment"
-          : "Payment Cleared",
-      debit: totalPaid || 0,
-      credit: null,
-      balance: pending,
-    });
+    balance = totalSale;
 
-    // =========================
-    // PAYMENT ROWS
-    // =========================
+    if (totalSale > 0) {
+      rows.push({
+        id: "SALE",
+        date: new Date(),
+        description: "Sale Entry",
+        debit: 0,
+        credit: totalSale,
+        balance,
+      });
+    }
+
     pays.rows.forEach((p) => {
       const amt = Number(p.amount || 0);
       balance -= amt;
@@ -131,9 +84,27 @@ router.get("/:ref_no", async (req, res) => {
       });
     });
 
-    return res.json({ success: true, rows });
+    // =========================
+    // SUMMARY LIST (ONLY IF NOT CLEARED)
+    // =========================
+    let summary = null;
+
+    if (pending > 0) {
+      summary = {
+        totalSale,
+        totalPaid,
+        pending,
+        status:
+          totalPaid > 0 ? "PARTIAL PAYMENT" : "FULL PENDING",
+      };
+    }
+
+    return res.json({
+      success: true,
+      summary,
+      rows,
+    });
   } catch (err) {
-    console.error("CUSTOMER LEDGER ERROR:", err);
     return res.json({ success: false, error: err.message });
   }
 });
@@ -175,14 +146,12 @@ router.post("/payment", async (req, res) => {
 router.delete("/delete/:id", async (req, res) => {
   const { password } = req.body;
 
-  if (password !== "786") {
+  if (password !== "786")
     return res.json({ success: false, error: "Wrong password" });
-  }
 
-  await db.query(
-    `DELETE FROM customer_payments WHERE id=$1`,
-    [req.params.id]
-  );
+  await db.query(`DELETE FROM customer_payments WHERE id=$1`, [
+    req.params.id,
+  ]);
 
   return res.json({ success: true });
 });
