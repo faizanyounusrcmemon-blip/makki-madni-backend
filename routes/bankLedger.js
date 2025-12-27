@@ -3,8 +3,7 @@ const router = express.Router();
 const pool = require("../db");
 
 /* ======================================================
-   GET BANK LEDGER
-   ❌ ADJUSTMENTS EXCLUDED (CASH / BANK BOTH)
+   GET BANK LEDGER (LIVE VIEW)
 ====================================================== */
 router.get("/", async (req, res) => {
   try {
@@ -13,7 +12,6 @@ router.get("/", async (req, res) => {
 
         /* ===============================
            CUSTOMER PAYMENTS (BANK ONLY)
-           ❌ EXCLUDE ADJUSTMENTS
         =============================== */
         SELECT
           cp.id,
@@ -30,7 +28,6 @@ router.get("/", async (req, res) => {
 
         /* ===============================
            PURCHASE PAYMENTS (BANK ONLY)
-           ❌ EXCLUDE ADJUSTMENTS
         =============================== */
         SELECT
           pp.id,
@@ -42,6 +39,21 @@ router.get("/", async (req, res) => {
         FROM purchase_payments pp
         WHERE pp.payment_method = 'Bank'
           AND pp.type != 'adjustment'
+
+        UNION ALL
+
+        /* ===============================
+           EXPENSES (BANK ONLY) ✅ LIVE
+        =============================== */
+        SELECT
+          e.id,
+          e.expense_date AS txn_date,
+          'Expense: ' || e.title AS description,
+          NULL::numeric AS credit,
+          e.amount AS debit,
+          'expense' AS source
+        FROM expense_ledger e
+        WHERE e.payment_method = 'Bank'
 
         UNION ALL
 
@@ -74,16 +86,13 @@ router.get("/", async (req, res) => {
   }
 });
 
-/* ======================================================
-   SAVE MANUAL ENTRY
-====================================================== */
+/* ================= SAVE MANUAL ENTRY ================= */
 router.post("/transaction", async (req, res) => {
   try {
     const { txn_date, type, amount, comment } = req.body;
 
-    if (!txn_date || !amount || !type) {
-      return res.json({ success: false, error: "Required fields missing" });
-    }
+    if (!txn_date || !amount || !type)
+      return res.json({ success: false, error: "Missing fields" });
 
     await pool.query(
       `
@@ -93,34 +102,25 @@ router.post("/transaction", async (req, res) => {
       [txn_date, type, amount, comment || ""]
     );
 
-    res.json({ success: true, message: "Transaction saved successfully" });
+    res.json({ success: true, message: "Transaction saved" });
 
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
 });
 
-/* ======================================================
-   DELETE MANUAL ENTRY (PASSWORD = 786)
-====================================================== */
+/* ================= DELETE MANUAL ================= */
 router.delete("/transaction/:id", async (req, res) => {
-  try {
-    const { password } = req.body;
+  const { password } = req.body;
+  if (password !== "786")
+    return res.json({ success: false, error: "Wrong password" });
 
-    if (password !== "786") {
-      return res.json({ success: false, error: "Wrong password" });
-    }
+  await pool.query(
+    "DELETE FROM bank_transactions WHERE id=$1",
+    [req.params.id]
+  );
 
-    await pool.query(
-      "DELETE FROM bank_transactions WHERE id=$1",
-      [req.params.id]
-    );
-
-    res.json({ success: true, message: "Transaction deleted successfully" });
-
-  } catch (err) {
-    res.json({ success: false, error: err.message });
-  }
+  res.json({ success: true, message: "Transaction deleted" });
 });
 
 module.exports = router;
