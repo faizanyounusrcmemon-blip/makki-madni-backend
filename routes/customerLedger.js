@@ -2,40 +2,66 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-/* =====================================================
+/* ===============================
    CUSTOMER LEDGER (DETAIL)
-===================================================== */
+================================ */
 router.get("/:ref_no", async (req, res) => {
   try {
     const { ref_no } = req.params;
     let rows = [];
     let balance = 0;
 
-    // -------------------------
-    // TOTAL SALE (ALL MODULES)
-    // -------------------------
-    const sale = await db.query(
+    let customerName = "Customer";
+    let baseDate = new Date();
+
+    const bk = await db.query(
       `
-      SELECT SUM(total_pkr) AS amount FROM bookings WHERE ref_no=$1 AND is_deleted=false
-      UNION ALL SELECT SUM(total_pkr) FROM hotels WHERE ref_no=$1 AND is_deleted=false
-      UNION ALL SELECT SUM(total_pkr) FROM visa WHERE ref_no=$1 AND is_deleted=false
-      UNION ALL SELECT SUM(total_pkr) FROM ticketing WHERE ref_no=$1 AND is_deleted=false
-      UNION ALL SELECT SUM(total_pkr) FROM transport WHERE ref_no=$1 AND is_deleted=false
+      SELECT customer_name, booking_date
+      FROM bookings
+      WHERE ref_no=$1
+      LIMIT 1
       `,
       [ref_no]
     );
 
-    const totalSale = sale.rows.reduce(
-      (s, r) => s + Number(r.amount || 0),
-      0
+    if (bk.rows.length) {
+      customerName = bk.rows[0].customer_name;
+      baseDate = bk.rows[0].booking_date;
+    }
+
+    rows.push({
+      id: "CUSTOMER",
+      date: baseDate,
+      description: `Customer: ${customerName}`,
+      debit: null,
+      credit: null,
+      balance: null,
+    });
+
+    /* =========================
+       TOTAL SALE (STANDARD)
+    ========================= */
+    const sale = await db.query(
+      `
+      SELECT SUM(total_pkr) AS amount FROM bookings WHERE ref_no=$1
+      UNION ALL SELECT SUM(total_pkr) FROM hotels WHERE ref_no=$1
+      UNION ALL SELECT SUM(total_pkr) FROM visa WHERE ref_no=$1
+      UNION ALL SELECT SUM(total_pkr) FROM ticketing WHERE ref_no=$1
+      UNION ALL SELECT SUM(total_pkr) FROM transport WHERE ref_no=$1
+      `,
+      [ref_no]
     );
 
-    balance = totalSale;
+    // 🔴 STANDARD SALE (NO DECIMAL)
+    const totalSale = Math.round(
+      sale.rows.reduce((sum, r) => sum + Number(r.amount || 0), 0)
+    );
 
     if (totalSale > 0) {
+      balance = totalSale;
       rows.push({
         id: "SALE",
-        date: new Date(),
+        date: baseDate,
         description: "Sale Entry",
         debit: 0,
         credit: totalSale,
@@ -43,9 +69,9 @@ router.get("/:ref_no", async (req, res) => {
       });
     }
 
-    // -------------------------
-    // PAYMENTS
-    // -------------------------
+    /* =========================
+       PAYMENTS
+    ========================= */
     const pays = await db.query(
       `
       SELECT id, payment_date, amount, type
@@ -57,7 +83,7 @@ router.get("/:ref_no", async (req, res) => {
     );
 
     pays.rows.forEach((p) => {
-      const amt = Number(p.amount || 0);
+      const amt = Math.round(Number(p.amount || 0));
       balance -= amt;
 
       rows.push({
@@ -75,34 +101,27 @@ router.get("/:ref_no", async (req, res) => {
 
     res.json({ success: true, rows });
   } catch (err) {
-    console.error("LEDGER ERROR:", err);
     res.json({ success: false, error: err.message });
   }
 });
 
 /* =====================================================
-   PENDING / PARTIAL LEDGER LIST (LIKE PURCHASE)
+   PENDING / PARTIAL LEDGER LIST (PURCHASE STYLE)
 ===================================================== */
 router.get("/pending/list", async (req, res) => {
   try {
-    // TOTAL SALE
     const sales = await db.query(`
       SELECT ref_no, SUM(total_pkr) AS total_sale
       FROM (
-        SELECT ref_no, total_pkr FROM bookings WHERE is_deleted=false
-        UNION ALL
-        SELECT ref_no, total_pkr FROM hotels WHERE is_deleted=false
-        UNION ALL
-        SELECT ref_no, total_pkr FROM visa WHERE is_deleted=false
-        UNION ALL
-        SELECT ref_no, total_pkr FROM ticketing WHERE is_deleted=false
-        UNION ALL
-        SELECT ref_no, total_pkr FROM transport WHERE is_deleted=false
+        SELECT ref_no, total_pkr FROM bookings
+        UNION ALL SELECT ref_no, total_pkr FROM hotels
+        UNION ALL SELECT ref_no, total_pkr FROM visa
+        UNION ALL SELECT ref_no, total_pkr FROM ticketing
+        UNION ALL SELECT ref_no, total_pkr FROM transport
       ) x
       GROUP BY ref_no
     `);
 
-    // TOTAL PAID
     const pays = await db.query(`
       SELECT ref_no, SUM(amount) AS paid
       FROM customer_payments
@@ -111,16 +130,16 @@ router.get("/pending/list", async (req, res) => {
 
     const paidMap = {};
     pays.rows.forEach((p) => {
-      paidMap[p.ref_no] = Number(p.paid || 0);
+      paidMap[p.ref_no] = Math.round(Number(p.paid || 0));
     });
 
     const result = [];
 
     for (const r of sales.rows) {
-      const totalSale = Number(r.total_sale || 0);
+      const totalSale = Math.round(Number(r.total_sale || 0));
       const totalPaid = paidMap[r.ref_no] || 0;
 
-      if (totalPaid >= totalSale) continue; // ✅ CLEARED HIDE
+      if (totalPaid >= totalSale) continue; // ✅ cleared hide
 
       result.push({
         ref_no: r.ref_no,
@@ -134,24 +153,21 @@ router.get("/pending/list", async (req, res) => {
 
     res.json({ success: true, rows: result });
   } catch (err) {
-    console.error("LEDGER PENDING ERROR:", err);
     res.json({ success: false, error: err.message });
   }
 });
 
-/* =====================================================
+/* ===============================
    SAVE PAYMENT
-===================================================== */
+================================ */
 router.post("/payment", async (req, res) => {
   try {
     const { ref_no, amount, payment_method, type, payment_date } = req.body;
 
     if (!ref_no)
       return res.json({ success: false, error: "Ref No required" });
-
     if (!amount || Number(amount) <= 0)
       return res.json({ success: false, error: "Invalid amount" });
-
     if (!payment_date)
       return res.json({ success: false, error: "Date required" });
 
@@ -170,9 +186,9 @@ router.post("/payment", async (req, res) => {
   }
 });
 
-/* =====================================================
+/* ===============================
    DELETE PAYMENT
-===================================================== */
+================================ */
 router.delete("/delete/:id", async (req, res) => {
   const { password } = req.body;
 
