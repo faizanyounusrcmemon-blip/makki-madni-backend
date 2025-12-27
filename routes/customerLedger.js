@@ -2,26 +2,25 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-/* ===============================
-   CUSTOMER LEDGER (FINAL)
-================================ */
+/* =====================================================
+   CUSTOMER LEDGER (DETAIL)
+===================================================== */
 router.get("/:ref_no", async (req, res) => {
   try {
     const { ref_no } = req.params;
-
     let rows = [];
     let balance = 0;
 
-    // =========================
+    // -------------------------
     // TOTAL SALE (ALL MODULES)
-    // =========================
+    // -------------------------
     const sale = await db.query(
       `
-      SELECT SUM(total_pkr) AS amount FROM bookings WHERE ref_no=$1
-      UNION ALL SELECT SUM(total_pkr) FROM hotels WHERE ref_no=$1
-      UNION ALL SELECT SUM(total_pkr) FROM visa WHERE ref_no=$1
-      UNION ALL SELECT SUM(total_pkr) FROM ticketing WHERE ref_no=$1
-      UNION ALL SELECT SUM(total_pkr) FROM transport WHERE ref_no=$1
+      SELECT SUM(total_pkr) AS amount FROM bookings WHERE ref_no=$1 AND is_deleted=false
+      UNION ALL SELECT SUM(total_pkr) FROM hotels WHERE ref_no=$1 AND is_deleted=false
+      UNION ALL SELECT SUM(total_pkr) FROM visa WHERE ref_no=$1 AND is_deleted=false
+      UNION ALL SELECT SUM(total_pkr) FROM ticketing WHERE ref_no=$1 AND is_deleted=false
+      UNION ALL SELECT SUM(total_pkr) FROM transport WHERE ref_no=$1 AND is_deleted=false
       `,
       [ref_no]
     );
@@ -31,29 +30,6 @@ router.get("/:ref_no", async (req, res) => {
       0
     );
 
-    // =========================
-    // PAYMENTS
-    // =========================
-    const pays = await db.query(
-      `
-      SELECT id, payment_date, amount, type
-      FROM customer_payments
-      WHERE ref_no=$1
-      ORDER BY payment_date, id
-      `,
-      [ref_no]
-    );
-
-    const totalPaid = pays.rows.reduce(
-      (s, p) => s + Number(p.amount || 0),
-      0
-    );
-
-    const pending = totalSale - totalPaid;
-
-    // =========================
-    // LEDGER TABLE ROWS
-    // =========================
     balance = totalSale;
 
     if (totalSale > 0) {
@@ -66,6 +42,19 @@ router.get("/:ref_no", async (req, res) => {
         balance,
       });
     }
+
+    // -------------------------
+    // PAYMENTS
+    // -------------------------
+    const pays = await db.query(
+      `
+      SELECT id, payment_date, amount, type
+      FROM customer_payments
+      WHERE ref_no=$1
+      ORDER BY payment_date, id
+      `,
+      [ref_no]
+    );
 
     pays.rows.forEach((p) => {
       const amt = Number(p.amount || 0);
@@ -84,34 +73,75 @@ router.get("/:ref_no", async (req, res) => {
       });
     });
 
-    // =========================
-    // SUMMARY LIST (ONLY IF NOT CLEARED)
-    // =========================
-    let summary = null;
-
-    if (pending > 0) {
-      summary = {
-        totalSale,
-        totalPaid,
-        pending,
-        status:
-          totalPaid > 0 ? "PARTIAL PAYMENT" : "FULL PENDING",
-      };
-    }
-
-    return res.json({
-      success: true,
-      summary,
-      rows,
-    });
+    res.json({ success: true, rows });
   } catch (err) {
-    return res.json({ success: false, error: err.message });
+    console.error("LEDGER ERROR:", err);
+    res.json({ success: false, error: err.message });
   }
 });
 
-/* ===============================
+/* =====================================================
+   PENDING / PARTIAL LEDGER LIST (LIKE PURCHASE)
+===================================================== */
+router.get("/pending/list", async (req, res) => {
+  try {
+    // TOTAL SALE
+    const sales = await db.query(`
+      SELECT ref_no, SUM(total_pkr) AS total_sale
+      FROM (
+        SELECT ref_no, total_pkr FROM bookings WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, total_pkr FROM hotels WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, total_pkr FROM visa WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, total_pkr FROM ticketing WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, total_pkr FROM transport WHERE is_deleted=false
+      ) x
+      GROUP BY ref_no
+    `);
+
+    // TOTAL PAID
+    const pays = await db.query(`
+      SELECT ref_no, SUM(amount) AS paid
+      FROM customer_payments
+      GROUP BY ref_no
+    `);
+
+    const paidMap = {};
+    pays.rows.forEach((p) => {
+      paidMap[p.ref_no] = Number(p.paid || 0);
+    });
+
+    const result = [];
+
+    for (const r of sales.rows) {
+      const totalSale = Number(r.total_sale || 0);
+      const totalPaid = paidMap[r.ref_no] || 0;
+
+      if (totalPaid >= totalSale) continue; // ✅ CLEARED HIDE
+
+      result.push({
+        ref_no: r.ref_no,
+        status: totalPaid > 0 ? "PARTIAL" : "PENDING",
+        note:
+          totalPaid > 0
+            ? "Payment partially received"
+            : "Payment not received",
+      });
+    }
+
+    res.json({ success: true, rows: result });
+  } catch (err) {
+    console.error("LEDGER PENDING ERROR:", err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
+/* =====================================================
    SAVE PAYMENT
-================================ */
+===================================================== */
 router.post("/payment", async (req, res) => {
   try {
     const { ref_no, amount, payment_method, type, payment_date } = req.body;
@@ -134,15 +164,15 @@ router.post("/payment", async (req, res) => {
       [ref_no, amount, payment_method, type, payment_date]
     );
 
-    return res.json({ success: true });
+    res.json({ success: true });
   } catch (err) {
-    return res.json({ success: false, error: err.message });
+    res.json({ success: false, error: err.message });
   }
 });
 
-/* ===============================
+/* =====================================================
    DELETE PAYMENT
-================================ */
+===================================================== */
 router.delete("/delete/:id", async (req, res) => {
   const { password } = req.body;
 
@@ -153,7 +183,7 @@ router.delete("/delete/:id", async (req, res) => {
     req.params.id,
   ]);
 
-  return res.json({ success: true });
+  res.json({ success: true });
 });
 
 module.exports = router;
