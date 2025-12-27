@@ -150,4 +150,30 @@ router.delete("/delete/:id", async (req, res) => {
   res.json({ success: true });
 });
 
+// ===============================
+// PAYMENT SUMMARY (PENDING / PARTIAL)
+// ===============================
+const totalPaid = pays.rows.reduce(
+  (s, p) => s + Number(p.amount || 0),
+  0
+);
+
+const pending = totalSale - totalPaid;
+
+rows.push({
+  id: "SUMMARY",
+  date: baseDate,
+  description:
+    pending > 0 && totalPaid > 0
+      ? "Partial Payment"
+      : pending > 0
+      ? "Pending Payment"
+      : "Payment Cleared",
+  debit: totalPaid || 0,
+  credit: null,
+  balance: pending
+});
+
+
 module.exports = router;
+
