@@ -18,7 +18,7 @@ router.get("/:ref_no", async (req, res) => {
       `
       SELECT customer_name, booking_date
       FROM bookings
-      WHERE ref_no=$1
+      WHERE ref_no=$1 AND is_deleted=false
       LIMIT 1
       `,
       [ref_no]
@@ -43,16 +43,15 @@ router.get("/:ref_no", async (req, res) => {
     ========================= */
     const sale = await db.query(
       `
-      SELECT SUM(total_pkr) AS amount FROM bookings WHERE ref_no=$1
-      UNION ALL SELECT SUM(total_pkr) FROM hotels WHERE ref_no=$1
-      UNION ALL SELECT SUM(total_pkr) FROM visa WHERE ref_no=$1
-      UNION ALL SELECT SUM(total_pkr) FROM ticketing WHERE ref_no=$1
-      UNION ALL SELECT SUM(total_pkr) FROM transport WHERE ref_no=$1
+      SELECT SUM(total_pkr) AS amount FROM bookings WHERE ref_no=$1 AND is_deleted=false
+      UNION ALL SELECT SUM(total_pkr) FROM hotels WHERE ref_no=$1 AND is_deleted=false
+      UNION ALL SELECT SUM(total_pkr) FROM visa WHERE ref_no=$1 AND is_deleted=false
+      UNION ALL SELECT SUM(total_pkr) FROM ticketing WHERE ref_no=$1 AND is_deleted=false
+      UNION ALL SELECT SUM(total_pkr) FROM transport WHERE ref_no=$1 AND is_deleted=false
       `,
       [ref_no]
     );
 
-    // 🔴 STANDARD SALE (NO DECIMAL)
     const totalSale = Math.round(
       sale.rows.reduce((sum, r) => sum + Number(r.amount || 0), 0)
     );
@@ -106,18 +105,23 @@ router.get("/:ref_no", async (req, res) => {
 });
 
 /* =====================================================
-   PENDING / PARTIAL LEDGER LIST (PURCHASE STYLE)
+   ✅ PENDING / PARTIAL LEDGER LIST (FIXED)
+   ❌ DELETED DATA EXCLUDED
 ===================================================== */
 router.get("/pending/list", async (req, res) => {
   try {
     const sales = await db.query(`
       SELECT ref_no, SUM(total_pkr) AS total_sale
       FROM (
-        SELECT ref_no, total_pkr FROM bookings
-        UNION ALL SELECT ref_no, total_pkr FROM hotels
-        UNION ALL SELECT ref_no, total_pkr FROM visa
-        UNION ALL SELECT ref_no, total_pkr FROM ticketing
-        UNION ALL SELECT ref_no, total_pkr FROM transport
+        SELECT ref_no, total_pkr FROM bookings WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, total_pkr FROM hotels WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, total_pkr FROM visa WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, total_pkr FROM ticketing WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, total_pkr FROM transport WHERE is_deleted=false
       ) x
       GROUP BY ref_no
     `);
@@ -139,6 +143,7 @@ router.get("/pending/list", async (req, res) => {
       const totalSale = Math.round(Number(r.total_sale || 0));
       const totalPaid = paidMap[r.ref_no] || 0;
 
+      if (totalSale <= 0) continue;        // 🔒 safety
       if (totalPaid >= totalSale) continue; // ✅ cleared hide
 
       result.push({
