@@ -462,7 +462,7 @@ router.get("/detail/:ref_no", async (req, res) => {
 
 
 /* =====================================================
-   PENDING + PARTIAL PURCHASE (FINAL SAFE)
+   PENDING + PARTIAL PURCHASE (FINAL SAFE – FIXED)
 ===================================================== */
 router.get("/pending", async (req, res) => {
   try {
@@ -483,17 +483,13 @@ router.get("/pending", async (req, res) => {
       GROUP BY ref_no
     `);
 
-    // 🔹 purchase completeness
+    // 🔹 purchase completeness (ITEM NAME INDEPENDENT)
     const purchase = await db.query(`
       SELECT
         ref_no,
-        COUNT(*) AS total_items,
-        SUM(
-          CASE
-            WHEN purchase_sar > 0 AND purchase_rate > 0 THEN 1
-            ELSE 0
-          END
-        ) AS completed_items
+        BOOL_AND(
+          purchase_sar > 0 AND purchase_rate > 0
+        ) AS completed
       FROM purchase_entries
       WHERE is_deleted=false
       GROUP BY ref_no
@@ -501,15 +497,16 @@ router.get("/pending", async (req, res) => {
 
     const map = {};
     purchase.rows.forEach(r => {
-      map[r.ref_no] = r;
+      map[r.ref_no] = r.completed; // true / false
     });
 
     const result = [];
 
     for (const r of sales.rows) {
-      const p = map[r.ref_no];
+      const done = map[r.ref_no];
 
-      if (!p) {
+      // 🔴 Purchase not started
+      if (done === undefined) {
         result.push({
           ref_no: r.ref_no,
           created_at: r.created_at,
@@ -519,7 +516,8 @@ router.get("/pending", async (req, res) => {
         continue;
       }
 
-      if (Number(p.completed_items) < Number(p.total_items)) {
+      // 🟡 Purchase incomplete
+      if (done === false) {
         result.push({
           ref_no: r.ref_no,
           created_at: r.created_at,
@@ -540,7 +538,9 @@ router.get("/pending", async (req, res) => {
   }
 });
 
+
 module.exports = router;
+
 
 
 
