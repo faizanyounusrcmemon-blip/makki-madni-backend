@@ -28,7 +28,7 @@ router.get("/list", async (req, res) => {
       FROM transport WHERE is_deleted = true
 
       UNION ALL
-      SELECT 'PURCHASE' AS type, ref_no, '-' AS customer_name, MIN(created_at)::date
+      SELECT 'PURCHASE' AS type, ref_no, '-' AS customer_name, MIN(created_at)::date AS booking_date
       FROM purchase_entries
       WHERE is_deleted = true
       GROUP BY ref_no
@@ -46,6 +46,7 @@ router.get("/list", async (req, res) => {
 
 /* =====================================================
    RESTORE RECORD
+   👉 sirf deleted (is_deleted=true) ko restore kare
 ===================================================== */
 router.post("/restore", async (req, res) => {
   try {
@@ -61,10 +62,23 @@ router.post("/restore", async (req, res) => {
     else if (type === "PURCHASE") table = "purchase_entries";
     else return res.json({ success: false, error: "Invalid type" });
 
-    await db.query(
-      `UPDATE ${table} SET is_deleted = false WHERE ref_no = $1`,
+    const q = await db.query(
+      `
+      UPDATE ${table}
+      SET is_deleted = false
+      WHERE ref_no = $1
+        AND is_deleted = true
+      RETURNING ref_no
+      `,
       [ref_no]
     );
+
+    if (!q.rows.length) {
+      return res.json({
+        success: false,
+        error: "No deleted record found to restore"
+      });
+    }
 
     res.json({ success: true });
 
@@ -75,14 +89,16 @@ router.post("/restore", async (req, res) => {
 });
 
 /* =====================================================
-   PERMANENT DELETE (PASSWORD REQUIRED)
+   PERMANENT DELETE (🔥 FIXED & SAFE)
+   👉 sirf is_deleted=true wali rows delete hongi
 ===================================================== */
 router.post("/permanent-delete", async (req, res) => {
   try {
     const { type, ref_no, password } = req.body;
 
-    if (password !== "7865")
+    if (password !== "7865") {
       return res.json({ success: false, error: "Invalid password" });
+    }
 
     let table = "";
 
@@ -94,10 +110,25 @@ router.post("/permanent-delete", async (req, res) => {
     else if (type === "PURCHASE") table = "purchase_entries";
     else return res.json({ success: false, error: "Invalid type" });
 
-    await db.query(
-      `DELETE FROM ${table} WHERE ref_no = $1`,
+    // 🔥 CRITICAL FIX
+    // ❌ active rows (is_deleted=false) untouched
+    // ✅ sirf deleted rows permanently remove
+    const q = await db.query(
+      `
+      DELETE FROM ${table}
+      WHERE ref_no = $1
+        AND is_deleted = true
+      RETURNING ref_no
+      `,
       [ref_no]
     );
+
+    if (!q.rows.length) {
+      return res.json({
+        success: false,
+        error: "No deleted record found to permanently delete"
+      });
+    }
 
     res.json({ success: true });
 
