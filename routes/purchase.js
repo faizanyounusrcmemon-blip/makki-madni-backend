@@ -162,36 +162,39 @@ router.get("/load/:ref_no", async (req, res) => {
     ========================= */
     else if (ref_no.startsWith("TRN-")) {
       const q = await db.query(
-      `
-      SELECT rows, pkr_rate
-      FROM transport
-      WHERE ref_no=$1 AND is_deleted=false
-      `,
-      [ref_no]
-    );
+        `
+        SELECT rows, pkr_rate
+        FROM transport
+        WHERE ref_no=$1 AND is_deleted=false
+        `,
+        [ref_no]
+      );
 
-    if (!q.rows.length)
-      return res.json({ success: false, error: "Transport not found" });
+      if (!q.rows.length)
+        return res.json({ success: false, error: "Transport not found" });
 
-    const r = q.rows[0];
+      const r = q.rows[0];
 
-    if (Array.isArray(r.rows)) {
-      r.rows.forEach((t, i) => {
-        const baseItem = `Transport ${i + 1}`;
-        const label = t.text || t.route || t.description || "";
+      if (Array.isArray(r.rows)) {
+        r.rows.forEach((t, i) => {
+          const baseItem = `Transport ${i + 1}`;
+          const label = t.text || t.route || t.description || "";
 
-        rows.push({
-          item: baseItem, // 🔒 stable DB key
-          item_label: label ? `${baseItem} - ${label}` : baseItem,
-          sale_sar: Number(t.amount) || 0,
-          sale_rate: r.pkr_rate || 0,
-          sale_pkr:
-            (Number(t.amount) || 0) *
-            (r.pkr_rate || 0),
+          const sar = Number(t.amount) || 0;
+          const rate = Number(r.pkr_rate) || 0;
+
+          rows.push({
+            item: baseItem, // 🔒 stable DB key
+            item_label: label ? `${baseItem} - ${label}` : baseItem,
+
+            sale_sar: sar,          // ✅ amount
+            sale_rate: rate,        // ✅ pkr_rate
+            sale_pkr: sar * rate,   // ✅ correct PKR
+          });
         });
-      });
+      }
     }
-  }
+
     /* =========================
        TICKETING ONLY (TIC-)
     ========================= */
@@ -556,6 +559,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
