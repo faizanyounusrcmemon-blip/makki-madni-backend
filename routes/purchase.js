@@ -86,7 +86,7 @@ router.get("/load/:ref_no", async (req, res) => {
       if (Array.isArray(r.transport))
         r.transport.forEach((t, i) =>
           rows.push({
-            item: `Transport ${i + 1}`,
+            item: `Transport ${i + 1} - ${t.text || t.route || t.description || ""}`,
             sale_sar: Number(t.amount) || 0,
             sale_rate: r.transport_sar_rate || 0,
             sale_pkr:
@@ -541,6 +541,7 @@ router.get("/pending", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
