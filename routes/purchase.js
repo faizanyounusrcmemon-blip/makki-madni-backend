@@ -101,7 +101,7 @@ router.get("/load/:ref_no", async (req, res) => {
           });
         });
       }
-
+    }
 
     /* =========================
        HOTEL ONLY (HOT-)
@@ -547,6 +547,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
