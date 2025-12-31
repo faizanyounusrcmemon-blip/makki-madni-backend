@@ -178,18 +178,18 @@ router.get("/load/:ref_no", async (req, res) => {
       if (Array.isArray(r.rows)) {
         r.rows.forEach((t, i) => {
           const baseItem = `Transport ${i + 1}`;
-          const label = t.text || t.route || t.description || "";
+          const label = t.description || t.text || t.route || "";
 
-          const sar = Number(t.amount) || 0;
+          const sar = Number(t.sar) || 0;     // ✅ FIX HERE
           const rate = Number(r.pkr_rate) || 0;
 
           rows.push({
             item: baseItem, // 🔒 stable DB key
             item_label: label ? `${baseItem} - ${label}` : baseItem,
 
-            sale_sar: sar,          // ✅ amount
-            sale_rate: rate,        // ✅ pkr_rate
-            sale_pkr: sar * rate,   // ✅ correct PKR
+            sale_sar: sar,        // ✅ now works
+            sale_rate: rate,
+            sale_pkr: sar * rate,
           });
         });
       }
@@ -559,6 +559,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
