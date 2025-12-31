@@ -83,24 +83,25 @@ router.get("/load/:ref_no", async (req, res) => {
       }
 
       // ---- TRANSPORT ----
-      if (Array.isArray(r.transport))
+      if (Array.isArray(r.transport)) {
         r.transport.forEach((t, i) => {
-           const baseItem = `Transport ${i + 1}`; // 🔒 stable key
-           const label = t.text || t.route || t.description || "";
-       
+          const baseItem = `Transport ${i + 1}`; // 🔒 stable key
+          const label = t.text || t.route || t.description || "";
+
           rows.push({
-            item: baseItem,       // ❗ DB key (never changes)
+            item: baseItem, // ✅ DB key (kabhi change nahi hogi)
             item_label: label
-              ? `${baseItem} - ${label}`           // 👁️ UI display
+              ? `${baseItem} - ${label}` // 👁️ sirf display ke liye
               : baseItem,
             sale_sar: Number(t.amount) || 0,
             sale_rate: r.transport_sar_rate || 0,
             sale_pkr:
               (Number(t.amount) || 0) *
               (r.transport_sar_rate || 0),
-          })
-        );
-    }
+          });
+        });
+      }
+
 
     /* =========================
        HOTEL ONLY (HOT-)
@@ -546,6 +547,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
