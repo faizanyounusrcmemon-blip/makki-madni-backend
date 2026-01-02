@@ -61,10 +61,10 @@ const normalize = (v) => {
       .replace("T", " ");
   }
 
-  // boolean safe
+  // boolean
   if (v === true || v === false) return v;
 
-  // numeric only
+  // numeric string
   if (typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v)) {
     return Number(v);
   }
@@ -100,7 +100,7 @@ async function createBackupCSV() {
         });
       }
 
-      // FIX: is_deleted never empty
+      // is_deleted fix
       if ("is_deleted" in obj) {
         obj.is_deleted = obj.is_deleted ? "TRUE" : "FALSE";
       }
@@ -116,6 +116,7 @@ async function createBackupCSV() {
   await new Promise((r) => output.on("close", r));
 
   const buffer = await fs.readFile(zipPath);
+
   await supabase.storage.from(BUCKET).upload(zipName, buffer, {
     upsert: true,
     contentType: "application/zip",
@@ -125,15 +126,28 @@ async function createBackupCSV() {
   return zipName;
 }
 
-/* ================= AUTO BACKUP ================= */
+/* ================= AUTO BACKUP (CRON) ================= */
 
-cron.schedule("0 23 * * *", async () => {
-  try {
-    await createBackupCSV();
-    console.log("✅ Auto backup done");
-  } catch (e) {
-    console.error("❌ Auto backup error:", e.message);
+console.log("🔥 BACKUP ROUTE LOADED – CRON REGISTERING");
+
+cron.schedule(
+  "0 23 * * *", // 11:00 PM Pakistan Time
+  async () => {
+    try {
+      await createBackupCSV();
+      console.log("✅ Auto backup done");
+    } catch (e) {
+      console.error("❌ Auto backup error:", e.message);
+    }
+  },
+  {
+    timezone: "Asia/Karachi",
   }
+);
+
+// 🧪 DEBUG (remove later if you want)
+cron.schedule("* * * * *", () => {
+  console.log("⏰ CRON ALIVE", new Date().toISOString());
 });
 
 /* ================= MANUAL BACKUP ================= */
@@ -156,6 +170,7 @@ router.get("/list", async (_, res) => {
   const { data } = await supabase.storage.from(BUCKET).list("", {
     sortBy: { column: "name", order: "desc" },
   });
+
   res.json({ success: true, files: data || [] });
 });
 
@@ -209,13 +224,11 @@ router.post("/restore/full", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    let done = 0;
     for (const table of TABLES) {
       const entry = zip.getEntry(`${table}.csv`);
       if (!entry) continue;
 
       await restoreTable(client, table, entry.getData().toString("utf8"));
-      done++;
     }
 
     await client.query("COMMIT");
@@ -240,7 +253,6 @@ router.post("/restore/table", async (req, res) => {
     return res.json({ success: false, error: "File & table required" });
 
   try {
-    // download zip
     const zipData = await supabase.storage.from(BUCKET).download(file);
     if (!zipData.data)
       return res.json({ success: false, error: "Backup file not found" });
@@ -251,16 +263,17 @@ router.post("/restore/table", async (req, res) => {
 
     const entry = zip.getEntry(`${table}.csv`);
     if (!entry)
-      return res.json({ success: false, error: `Table ${table} not found in backup` });
+      return res.json({
+        success: false,
+        error: `Table ${table} not found in backup`,
+      });
 
     const csv = entry.getData().toString("utf8");
 
     const client = await db.connect();
     try {
       await client.query("BEGIN");
-
       await restoreTable(client, table, csv);
-
       await client.query("COMMIT");
       res.json({ success: true });
     } catch (e) {
@@ -269,7 +282,6 @@ router.post("/restore/table", async (req, res) => {
     } finally {
       client.release();
     }
-
   } catch (err) {
     console.error("SINGLE RESTORE ERROR:", err);
     res.json({ success: false, error: err.message });
@@ -282,18 +294,16 @@ router.post("/download", async (req, res) => {
   try {
     const { file, password } = req.body;
 
-    if (password !== ACTION_PASSWORD) {
+    if (password !== ACTION_PASSWORD)
       return res.status(401).json({ success: false, error: "Wrong password" });
-    }
 
     const { data, error } = await supabase
       .storage
       .from(BUCKET)
       .download(file);
 
-    if (error || !data) {
+    if (error || !data)
       return res.status(404).json({ success: false, error: "File not found" });
-    }
 
     const buffer = Buffer.from(await data.arrayBuffer());
 
@@ -303,41 +313,36 @@ router.post("/download", async (req, res) => {
       `attachment; filename="${file}"`
     );
 
-    return res.end(buffer); // 🔥 IMPORTANT
+    return res.end(buffer);
   } catch (e) {
-    console.error("DOWNLOAD ERROR:", e);
     return res.status(500).json({ success: false, error: e.message });
   }
 });
 
 /* ================= DELETE BACKUP ================= */
+
 router.post("/delete", async (req, res) => {
   try {
     const { file, password } = req.body;
 
-    if (password !== ACTION_PASSWORD) {
+    if (password !== ACTION_PASSWORD)
       return res.json({ success: false, error: "Wrong password" });
-    }
 
-    if (!file) {
+    if (!file)
       return res.json({ success: false, error: "File required" });
-    }
 
     const { error } = await supabase.storage
       .from(BUCKET)
       .remove([file]);
 
-    if (error) {
+    if (error)
       return res.json({ success: false, error: error.message });
-    }
 
     res.json({ success: true });
   } catch (e) {
     res.json({ success: false, error: e.message });
   }
 });
-
-
 
 /* ================= LAST BACKUP ================= */
 
@@ -360,9 +365,3 @@ router.get("/last", async (_, res) => {
 });
 
 module.exports = router;
-
-
-
-
-
-
