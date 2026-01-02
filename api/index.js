@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
-require("./db"); // 🔥 DB INIT (IMPORTANT)
+require("../db"); // ✅ ROOT db.js (Vercel FIX)
 
 const app = express();
 
@@ -55,9 +55,8 @@ app.use("/api/auth", require("../routes/auth"));
 app.use("/api/users", require("../routes/users"));
 
 // ==========================
-// 🔥 BACKUP (CRON REGISTER HERE)
+// BACKUP (MANUAL ONLY – VERCEL SAFE)
 // ==========================
-require("../routes/backup"); // 🔴 CRON KE LIYE ZAROORI
 app.use("/api/backup", require("../routes/backup"));
 
 // ==========================
