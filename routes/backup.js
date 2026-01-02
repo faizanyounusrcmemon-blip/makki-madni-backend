@@ -5,7 +5,6 @@ const fs = require("fs-extra");
 const path = require("path");
 const archiver = require("archiver");
 const AdmZip = require("adm-zip");
-const cron = require("node-cron");
 const db = require("../db");
 const { stringify } = require("csv-stringify/sync");
 const { parse } = require("csv-parse/sync");
@@ -53,7 +52,6 @@ const JSON_COLUMNS = {
 const normalize = (v) => {
   if (v === "" || v === undefined) return null;
 
-  // timestamp (ms → datetime)
   if (/^\d{13}$/.test(String(v))) {
     return new Date(Number(v))
       .toISOString()
@@ -61,10 +59,8 @@ const normalize = (v) => {
       .replace("T", " ");
   }
 
-  // boolean
   if (v === true || v === false) return v;
 
-  // numeric string
   if (typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v)) {
     return Number(v);
   }
@@ -91,7 +87,6 @@ async function createBackupCSV() {
     const safeRows = rows.map((r) => {
       const obj = { ...r };
 
-      // JSON stringify
       if (JSON_COLUMNS[table]) {
         JSON_COLUMNS[table].forEach((c) => {
           if (obj[c] && typeof obj[c] === "object") {
@@ -100,7 +95,6 @@ async function createBackupCSV() {
         });
       }
 
-      // is_deleted fix
       if ("is_deleted" in obj) {
         obj.is_deleted = obj.is_deleted ? "TRUE" : "FALSE";
       }
@@ -125,30 +119,6 @@ async function createBackupCSV() {
   await fs.remove(zipPath);
   return zipName;
 }
-
-/* ================= AUTO BACKUP (CRON) ================= */
-
-console.log("🔥 BACKUP ROUTE LOADED – CRON REGISTERING");
-
-cron.schedule(
-  "0 23 * * *", // 11:00 PM Pakistan Time
-  async () => {
-    try {
-      await createBackupCSV();
-      console.log("✅ Auto backup done");
-    } catch (e) {
-      console.error("❌ Auto backup error:", e.message);
-    }
-  },
-  {
-    timezone: "Asia/Karachi",
-  }
-);
-
-// 🧪 DEBUG (remove later if you want)
-cron.schedule("* * * * *", () => {
-  console.log("⏰ CRON ALIVE", new Date().toISOString());
-});
 
 /* ================= MANUAL BACKUP ================= */
 
@@ -227,7 +197,6 @@ router.post("/restore/full", async (req, res) => {
     for (const table of TABLES) {
       const entry = zip.getEntry(`${table}.csv`);
       if (!entry) continue;
-
       await restoreTable(client, table, entry.getData().toString("utf8"));
     }
 
@@ -257,11 +226,9 @@ router.post("/restore/table", async (req, res) => {
     if (!zipData.data)
       return res.json({ success: false, error: "Backup file not found" });
 
-    const zip = new AdmZip(
-      Buffer.from(await zipData.data.arrayBuffer())
-    );
-
+    const zip = new AdmZip(Buffer.from(await zipData.data.arrayBuffer()));
     const entry = zip.getEntry(`${table}.csv`);
+
     if (!entry)
       return res.json({
         success: false,
@@ -283,7 +250,6 @@ router.post("/restore/table", async (req, res) => {
       client.release();
     }
   } catch (err) {
-    console.error("SINGLE RESTORE ERROR:", err);
     res.json({ success: false, error: err.message });
   }
 });
@@ -291,57 +257,41 @@ router.post("/restore/table", async (req, res) => {
 /* ================= DOWNLOAD BACKUP ================= */
 
 router.post("/download", async (req, res) => {
-  try {
-    const { file, password } = req.body;
+  const { file, password } = req.body;
 
-    if (password !== ACTION_PASSWORD)
-      return res.status(401).json({ success: false, error: "Wrong password" });
+  if (password !== ACTION_PASSWORD)
+    return res.status(401).json({ success: false, error: "Wrong password" });
 
-    const { data, error } = await supabase
-      .storage
-      .from(BUCKET)
-      .download(file);
+  const { data, error } = await supabase.storage.from(BUCKET).download(file);
 
-    if (error || !data)
-      return res.status(404).json({ success: false, error: "File not found" });
+  if (error || !data)
+    return res.status(404).json({ success: false, error: "File not found" });
 
-    const buffer = Buffer.from(await data.arrayBuffer());
+  const buffer = Buffer.from(await data.arrayBuffer());
 
-    res.setHeader("Content-Type", "application/zip");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${file}"`
-    );
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader("Content-Disposition", `attachment; filename="${file}"`);
 
-    return res.end(buffer);
-  } catch (e) {
-    return res.status(500).json({ success: false, error: e.message });
-  }
+  res.end(buffer);
 });
 
 /* ================= DELETE BACKUP ================= */
 
 router.post("/delete", async (req, res) => {
-  try {
-    const { file, password } = req.body;
+  const { file, password } = req.body;
 
-    if (password !== ACTION_PASSWORD)
-      return res.json({ success: false, error: "Wrong password" });
+  if (password !== ACTION_PASSWORD)
+    return res.json({ success: false, error: "Wrong password" });
 
-    if (!file)
-      return res.json({ success: false, error: "File required" });
+  if (!file)
+    return res.json({ success: false, error: "File required" });
 
-    const { error } = await supabase.storage
-      .from(BUCKET)
-      .remove([file]);
+  const { error } = await supabase.storage.from(BUCKET).remove([file]);
 
-    if (error)
-      return res.json({ success: false, error: error.message });
+  if (error)
+    return res.json({ success: false, error: error.message });
 
-    res.json({ success: true });
-  } catch (e) {
-    res.json({ success: false, error: e.message });
-  }
+  res.json({ success: true });
 });
 
 /* ================= LAST BACKUP ================= */
