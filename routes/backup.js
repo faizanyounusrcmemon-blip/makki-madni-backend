@@ -314,4 +314,54 @@ router.get("/last", async (_, res) => {
   });
 });
 
+/* ================= CLEAN OLD BACKUPS (60 DAYS) ================= */
+
+router.post("/cleanup", async (req, res) => {
+  try {
+    const { password } = req.body;
+
+    if (password !== ACTION_PASSWORD) {
+      return res.json({ success: false, error: "Wrong password" });
+    }
+
+    const DAYS = 60;
+    const cutoff = Date.now() - DAYS * 24 * 60 * 60 * 1000;
+
+    const { data: files, error } = await supabase
+      .storage
+      .from(BUCKET)
+      .list("");
+
+    if (error) {
+      return res.json({ success: false, error: error.message });
+    }
+
+    const toDelete = [];
+
+    for (const f of files) {
+      if (!f.created_at) continue;
+
+      const created = new Date(f.created_at).getTime();
+      if (created < cutoff) {
+        toDelete.push(f.name);
+      }
+    }
+
+    if (toDelete.length) {
+      await supabase.storage.from(BUCKET).remove(toDelete);
+    }
+
+    res.json({
+      success: true,
+      deleted: toDelete.length,
+      files: toDelete,
+    });
+
+  } catch (e) {
+    res.json({ success: false, error: e.message });
+  }
+});
+
+
 module.exports = router;
+
