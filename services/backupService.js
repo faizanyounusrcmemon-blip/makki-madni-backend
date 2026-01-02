@@ -14,6 +14,7 @@ const BUCKET = "mmtbackups";
 
 const TABLES = [
   "bookings",
+  "expense_ledger",
   "hotels",
   "ticketing",
   "visa",
@@ -129,3 +130,4 @@ module.exports = {
   restoreTable,
   TABLES,
 };
+
