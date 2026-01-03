@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
 require("dotenv").config();
 require("../db"); // ✅ ROOT db.js (Vercel FIX)
 
@@ -64,7 +65,12 @@ app.use("/api/backup", require("../routes/backup"));
 // ==========================
 app.use("/api/system", require("../routes/system"));
 
-// ✅ PING ROUTE
-app.use("/ping", require("../routes/ping"));
+// ==========================
+// ✅ PING ROUTE (VERCEL SAFE FIX)
+// ==========================
+app.use(
+  "/ping",
+  require(path.join(__dirname, "..", "routes", "ping"))
+);
 
 module.exports = app;
