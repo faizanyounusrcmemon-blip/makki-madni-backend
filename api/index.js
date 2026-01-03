@@ -68,9 +68,7 @@ app.use("/api/system", require("../routes/system"));
 // ==========================
 // ✅ PING ROUTE (VERCEL SAFE FIX)
 // ==========================
-app.use(
-  "/ping",
-  require(path.join(__dirname, "..", "routes", "ping"))
-);
+app.use("/ping", require("../routes/ping"));
+
 
 module.exports = app;
