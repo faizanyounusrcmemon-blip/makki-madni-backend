@@ -1,12 +1,7 @@
-const express = require("express");
-const router = express.Router();
-
-router.get("/", (req, res) => {
-  res.json({
+export default function handler(req, res) {
+  res.status(200).json({
     success: true,
     message: "Server alive",
     time: new Date()
   });
-});
-
-module.exports = router;
+}
