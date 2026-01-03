@@ -22,7 +22,7 @@ app.get("/", (req, res) => {
 });
 
 // ==========================
-// ✅ PING (FINAL – CORRECT)
+// ✅ PING
 // ==========================
 app.get("/ping", (req, res) => {
   res.json({
@@ -36,43 +36,75 @@ app.get("/ping", (req, res) => {
 // SALES
 // ==========================
 app.use("/bookings", require("../routes/bookings"));
+app.use("/api/bookings", require("../routes/bookings"));
+
 app.use("/hotels", require("../routes/hotels"));
+app.use("/api/hotels", require("../routes/hotels"));
+
 app.use("/ticketing", require("../routes/ticketing"));
+app.use("/api/ticketing", require("../routes/ticketing"));
+
 app.use("/visa", require("../routes/visa"));
+app.use("/api/visa", require("../routes/visa"));
+
 app.use("/transport", require("../routes/transport"));
+app.use("/api/transport", require("../routes/transport"));
+
 app.use("/reports", require("../routes/reports"));
+app.use("/api/reports", require("../routes/reports"));
+
 app.use("/deleted", require("../routes/deleted"));
+app.use("/api/deleted", require("../routes/deleted"));
 
 // ==========================
 // LEDGERS
 // ==========================
 app.use("/customer-ledger", require("../routes/customerLedger"));
+app.use("/api/customer-ledger", require("../routes/customerLedger"));
+
 app.use("/purchase-ledger", require("../routes/purchaseLedger"));
+app.use("/api/purchase-ledger", require("../routes/purchaseLedger"));
+
 app.use("/bank-ledger", require("../routes/bankLedger"));
+app.use("/api/bank-ledger", require("../routes/bankLedger"));
+
 app.use("/ledger-delete", require("../routes/ledgerDelete"));
+app.use("/api/ledger-delete", require("../routes/ledgerDelete"));
+
 app.use("/balance-sheet", require("../routes/balanceSheet"));
+app.use("/api/balance-sheet", require("../routes/balanceSheet"));
+
 app.use("/profit-report", require("../routes/profitReport"));
+app.use("/api/profit-report", require("../routes/profitReport"));
+
 app.use("/expenseledger", require("../routes/expenseledger"));
+app.use("/api/expenseledger", require("../routes/expenseledger"));
 
 // ==========================
 // PURCHASE
 // ==========================
 app.use("/purchase", require("../routes/purchase"));
+app.use("/api/purchase", require("../routes/purchase"));
 
 // ==========================
 // AUTH
 // ==========================
 app.use("/auth", require("../routes/auth"));
+app.use("/api/auth", require("../routes/auth"));
+
 app.use("/users", require("../routes/users"));
+app.use("/api/users", require("../routes/users"));
 
 // ==========================
-// BACKUP (MANUAL ONLY – VERCEL SAFE)
+// BACKUP
 // ==========================
 app.use("/backup", require("../routes/backup"));
+app.use("/api/backup", require("../routes/backup"));
 
 // ==========================
 // SYSTEM
 // ==========================
 app.use("/system", require("../routes/system"));
+app.use("/api/system", require("../routes/system"));
 
 module.exports = app;
