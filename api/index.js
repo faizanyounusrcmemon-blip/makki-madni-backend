@@ -65,10 +65,6 @@ app.use("/api/backup", require("../routes/backup"));
 // ==========================
 app.use("/api/system", require("../routes/system"));
 
-// ==========================
-// ✅ PING ROUTE (VERCEL SAFE FIX)
-// ==========================
-app.use("/ping", require("../routes/ping"));
 
 
 module.exports = app;
