@@ -3,12 +3,24 @@ const router = express.Router();
 const pool = require("../db");
 
 /* ======================================================
-   GET BANK LEDGER (LIVE VIEW)
+   GET BANK LEDGER (LIVE VIEW WITH CUSTOMER NAME)
 ====================================================== */
 router.get("/", async (req, res) => {
   try {
     const sql = `
-      WITH all_entries AS (
+      WITH customers AS (
+        SELECT ref_no, customer_name FROM bookings
+        UNION ALL
+        SELECT ref_no, customer_name FROM hotels
+        UNION ALL
+        SELECT ref_no, customer_name FROM visa
+        UNION ALL
+        SELECT ref_no, customer_name FROM ticketing
+        UNION ALL
+        SELECT ref_no, customer_name FROM transport
+      ),
+
+      all_entries AS (
 
         /* ===============================
            CUSTOMER PAYMENTS (BANK ONLY)
@@ -16,11 +28,14 @@ router.get("/", async (req, res) => {
         SELECT
           cp.id,
           cp.payment_date AS txn_date,
-          'Customer Payment (Ref: ' || cp.ref_no || ')' AS description,
+          'Customer Payment - ' ||
+            COALESCE(c.customer_name,'') ||
+            ' (Ref: ' || cp.ref_no || ')' AS description,
           cp.amount AS credit,
           NULL::numeric AS debit,
           'customer' AS source
         FROM customer_payments cp
+        LEFT JOIN customers c ON c.ref_no = cp.ref_no
         WHERE cp.payment_method = 'Bank'
           AND cp.type != 'adjustment'
 
@@ -32,18 +47,21 @@ router.get("/", async (req, res) => {
         SELECT
           pp.id,
           pp.payment_date AS txn_date,
-          'Supplier Payment (Ref: ' || pp.ref_no || ')' AS description,
+          'Supplier Payment - ' ||
+            COALESCE(c.customer_name,'') ||
+            ' (Ref: ' || pp.ref_no || ')' AS description,
           NULL::numeric AS credit,
           pp.amount AS debit,
           'purchase' AS source
         FROM purchase_payments pp
+        LEFT JOIN customers c ON c.ref_no = pp.ref_no
         WHERE pp.payment_method = 'Bank'
           AND pp.type != 'adjustment'
 
         UNION ALL
 
         /* ===============================
-           EXPENSES (BANK ONLY) ✅ LIVE
+           EXPENSES (BANK ONLY)
         =============================== */
         SELECT
           e.id,
