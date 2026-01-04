@@ -40,7 +40,7 @@ router.get("/:ref_no", async (req, res) => {
     let rows = [];
     let balance = 0;
 
-    // ➕ PURCHASE ENTRY (INTEGER)
+    // ➕ PURCHASE ENTRY
     if (purchase.rows[0].total_purchase) {
       const amt = Math.round(Number(purchase.rows[0].total_purchase));
       balance += amt;
@@ -55,7 +55,7 @@ router.get("/:ref_no", async (req, res) => {
       });
     }
 
-    // ➖ PAYMENTS / ADJUSTMENTS (INTEGER)
+    // ➖ PAYMENTS / ADJUSTMENTS
     for (const p of payments.rows) {
       const amt = Math.round(Number(p.amount || 0));
       balance -= amt;
@@ -82,17 +82,33 @@ router.get("/:ref_no", async (req, res) => {
 });
 
 /* =====================================================
-   PENDING / PARTIAL PURCHASE LIST (LIKE CUSTOMER LEDGER)
+   ✅ PENDING / PARTIAL PURCHASE LIST (WITH CUSTOMER NAME)
 ===================================================== */
 router.get("/pending/list", async (req, res) => {
   try {
+    // 🔹 purchase total + customer name
     const purchase = await db.query(`
-      SELECT ref_no, SUM(purchase_pkr) AS total_purchase
-      FROM purchase_entries
-      WHERE is_deleted = false
-      GROUP BY ref_no
+      SELECT
+        p.ref_no,
+        MAX(s.customer_name) AS customer_name,
+        SUM(p.purchase_pkr) AS total_purchase
+      FROM purchase_entries p
+      LEFT JOIN (
+        SELECT ref_no, customer_name FROM bookings
+        UNION ALL
+        SELECT ref_no, customer_name FROM hotels
+        UNION ALL
+        SELECT ref_no, customer_name FROM visa
+        UNION ALL
+        SELECT ref_no, customer_name FROM ticketing
+        UNION ALL
+        SELECT ref_no, customer_name FROM transport
+      ) s ON s.ref_no = p.ref_no
+      WHERE p.is_deleted = false
+      GROUP BY p.ref_no
     `);
 
+    // 🔹 payments
     const pay = await db.query(`
       SELECT ref_no, SUM(amount) AS paid
       FROM purchase_payments
@@ -110,14 +126,17 @@ router.get("/pending/list", async (req, res) => {
       const total = Math.round(Number(r.total_purchase || 0));
       const paid = payMap[r.ref_no] || 0;
 
-      if (paid >= total) continue; // ✅ CLEARED HIDE
+      if (total <= 0) continue;
+      if (paid >= total) continue; // ✅ cleared hide
 
       rows.push({
         ref_no: r.ref_no,
+        customer_name: r.customer_name || "",
         status: paid > 0 ? "PARTIAL" : "PENDING",
-        note: paid > 0
-          ? "Payment partially made"
-          : "Payment not made"
+        note:
+          paid > 0
+            ? "Payment partially made"
+            : "Payment not made"
       });
     }
 
