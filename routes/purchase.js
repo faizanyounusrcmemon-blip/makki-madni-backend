@@ -346,39 +346,51 @@ router.post("/save", async (req, res) => {
   }
 });
 
-     /* =====================================================
-   PURCHASE LIST (DATE FILTER + SEARCH)
+/* =====================================================
+   PURCHASE LIST (WITH CUSTOMER NAME)
 ===================================================== */
 router.get("/list", async (req, res) => {
   try {
     const { from, to, ref } = req.query;
 
-    let where = `WHERE is_deleted = false`;
+    let where = `WHERE p.is_deleted=false`;
     let params = [];
     let i = 1;
 
     if (from && to) {
-      where += ` AND DATE(created_at) BETWEEN $${i} AND $${i + 1}`;
+      where += ` AND DATE(p.created_at) BETWEEN $${i} AND $${i + 1}`;
       params.push(from, to);
       i += 2;
     }
 
     if (ref) {
-      where += ` AND ref_no ILIKE $${i}`;
+      where += ` AND p.ref_no ILIKE $${i}`;
       params.push(`%${ref}%`);
     }
 
     const q = await db.query(
       `
       SELECT
-        ref_no,
-        SUM(sale_pkr)     AS sale_pkr,
-        SUM(purchase_pkr) AS purchase_pkr,
-        SUM(profit)       AS profit,
-        MIN(created_at)   AS created_at
-      FROM purchase_entries
+        p.ref_no,
+        MAX(s.customer_name) AS customer_name,
+        SUM(p.sale_pkr)      AS sale_pkr,
+        SUM(p.purchase_pkr)  AS purchase_pkr,
+        SUM(p.profit)        AS profit,
+        MIN(p.created_at)    AS created_at
+      FROM purchase_entries p
+      LEFT JOIN (
+        SELECT ref_no, customer_name FROM bookings
+        UNION ALL
+        SELECT ref_no, customer_name FROM hotels
+        UNION ALL
+        SELECT ref_no, customer_name FROM visa
+        UNION ALL
+        SELECT ref_no, customer_name FROM ticketing
+        UNION ALL
+        SELECT ref_no, customer_name FROM transport
+      ) s ON s.ref_no = p.ref_no
       ${where}
-      GROUP BY ref_no
+      GROUP BY p.ref_no
       ORDER BY created_at DESC
       `,
       params
@@ -422,7 +434,7 @@ router.delete("/delete/:ref_no", async (req, res) => {
 });
 
 /* =====================================================
-   PURCHASE DETAIL (BY REF NO) - FINAL
+   PURCHASE DETAIL (WITH CUSTOMER NAME)
 ===================================================== */
 router.get("/detail/:ref_no", async (req, res) => {
   try {
@@ -431,19 +443,31 @@ router.get("/detail/:ref_no", async (req, res) => {
     const q = await db.query(
       `
       SELECT
-        ref_no,
-        item,
-        sale_sar,
-        sale_rate,
-        sale_pkr,
-        purchase_sar,
-        purchase_rate,
-        purchase_pkr,
-        profit,
-        created_at
-      FROM purchase_entries
-      WHERE ref_no=$1 AND is_deleted=false
-      ORDER BY item
+        p.ref_no,
+        p.item,
+        p.sale_sar,
+        p.sale_rate,
+        p.sale_pkr,
+        p.purchase_sar,
+        p.purchase_rate,
+        p.purchase_pkr,
+        p.profit,
+        p.created_at,
+        s.customer_name
+      FROM purchase_entries p
+      LEFT JOIN (
+        SELECT ref_no, customer_name FROM bookings
+        UNION ALL
+        SELECT ref_no, customer_name FROM hotels
+        UNION ALL
+        SELECT ref_no, customer_name FROM visa
+        UNION ALL
+        SELECT ref_no, customer_name FROM ticketing
+        UNION ALL
+        SELECT ref_no, customer_name FROM transport
+      ) s ON s.ref_no = p.ref_no
+      WHERE p.ref_no=$1 AND p.is_deleted=false
+      ORDER BY p.item
       `,
       [ref_no]
     );
@@ -451,18 +475,20 @@ router.get("/detail/:ref_no", async (req, res) => {
     if (!q.rows.length) {
       return res.json({
         success: false,
-        error: "Purchase entry not saved yet"
+        error: "Purchase entry not found"
       });
     }
 
     const totals = q.rows.reduce(
       (a, r) => {
+        a.sale_sar += Number(r.sale_sar || 0);
         a.sale_pkr += Number(r.sale_pkr || 0);
+        a.purchase_sar += Number(r.purchase_sar || 0);
         a.purchase_pkr += Number(r.purchase_pkr || 0);
         a.profit += Number(r.profit || 0);
         return a;
       },
-      { sale_pkr: 0, purchase_pkr: 0, profit: 0 }
+      { sale_sar: 0, sale_pkr: 0, purchase_sar: 0, purchase_pkr: 0, profit: 0 }
     );
 
     res.json({
@@ -586,6 +612,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
