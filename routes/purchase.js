@@ -481,28 +481,49 @@ router.get("/detail/:ref_no", async (req, res) => {
 
 
 /* =====================================================
-   PENDING + PARTIAL PURCHASE (FINAL SAFE – FIXED)
+   PENDING + PARTIAL PURCHASE (FINAL SAFE – WITH CUSTOMER NAME)
 ===================================================== */
 router.get("/pending", async (req, res) => {
   try {
-    // 🔹 refs from all sales tables (booking_date exists in all)
+    // 🔹 refs + customer_name from all sales tables
     const sales = await db.query(`
-      SELECT ref_no, MIN(booking_date) AS created_at
+      SELECT
+        ref_no,
+        MAX(customer_name) AS customer_name,
+        MIN(booking_date)  AS created_at
       FROM (
-        SELECT ref_no, booking_date FROM bookings WHERE is_deleted=false
+        SELECT ref_no, customer_name, booking_date
+        FROM bookings
+        WHERE is_deleted=false
+
         UNION ALL
-        SELECT ref_no, booking_date FROM hotels WHERE is_deleted=false
+
+        SELECT ref_no, customer_name, booking_date
+        FROM hotels
+        WHERE is_deleted=false
+
         UNION ALL
-        SELECT ref_no, booking_date FROM visa WHERE is_deleted=false
+
+        SELECT ref_no, customer_name, booking_date
+        FROM visa
+        WHERE is_deleted=false
+
         UNION ALL
-        SELECT ref_no, booking_date FROM ticketing WHERE is_deleted=false
+
+        SELECT ref_no, customer_name, booking_date
+        FROM ticketing
+        WHERE is_deleted=false
+
         UNION ALL
-        SELECT ref_no, booking_date FROM transport WHERE is_deleted=false
+
+        SELECT ref_no, customer_name, booking_date
+        FROM transport
+        WHERE is_deleted=false
       ) s
       GROUP BY ref_no
     `);
 
-    // 🔹 purchase completeness (ITEM NAME INDEPENDENT)
+    // 🔹 purchase completeness check
     const purchase = await db.query(`
       SELECT
         ref_no,
@@ -514,6 +535,7 @@ router.get("/pending", async (req, res) => {
       GROUP BY ref_no
     `);
 
+    // 🔹 map for quick lookup
     const map = {};
     purchase.rows.forEach(r => {
       map[r.ref_no] = r.completed; // true / false
@@ -528,6 +550,7 @@ router.get("/pending", async (req, res) => {
       if (done === undefined) {
         result.push({
           ref_no: r.ref_no,
+          customer_name: r.customer_name || "",
           created_at: r.created_at,
           status: "PENDING",
           note: "Purchase not started"
@@ -539,6 +562,7 @@ router.get("/pending", async (req, res) => {
       if (done === false) {
         result.push({
           ref_no: r.ref_no,
+          customer_name: r.customer_name || "",
           created_at: r.created_at,
           status: "PARTIAL",
           note: "Purchase incomplete"
@@ -546,7 +570,10 @@ router.get("/pending", async (req, res) => {
       }
     }
 
-    return res.json({ success: true, rows: result });
+    return res.json({
+      success: true,
+      rows: result
+    });
 
   } catch (err) {
     console.error("PENDING PURCHASE ERROR:", err);
@@ -559,6 +586,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
