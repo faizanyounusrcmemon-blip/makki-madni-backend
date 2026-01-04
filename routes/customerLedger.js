@@ -105,27 +105,46 @@ router.get("/:ref_no", async (req, res) => {
 });
 
 /* =====================================================
-   ✅ PENDING / PARTIAL LEDGER LIST (FIXED)
+   ✅ PENDING / PARTIAL LEDGER LIST (WITH CUSTOMER NAME)
    ❌ DELETED DATA EXCLUDED
 ===================================================== */
 router.get("/pending/list", async (req, res) => {
   try {
+    // 🔹 total sale + customer name
     const sales = await db.query(`
-      SELECT ref_no, SUM(total_pkr) AS total_sale
+      SELECT
+        ref_no,
+        MAX(customer_name) AS customer_name,
+        SUM(total_pkr) AS total_sale
       FROM (
-        SELECT ref_no, total_pkr FROM bookings WHERE is_deleted=false
+        SELECT ref_no, customer_name, total_pkr
+        FROM bookings
+        WHERE is_deleted=false
+
         UNION ALL
-        SELECT ref_no, total_pkr FROM hotels WHERE is_deleted=false
+        SELECT ref_no, customer_name, total_pkr
+        FROM hotels
+        WHERE is_deleted=false
+
         UNION ALL
-        SELECT ref_no, total_pkr FROM visa WHERE is_deleted=false
+        SELECT ref_no, customer_name, total_pkr
+        FROM visa
+        WHERE is_deleted=false
+
         UNION ALL
-        SELECT ref_no, total_pkr FROM ticketing WHERE is_deleted=false
+        SELECT ref_no, customer_name, total_pkr
+        FROM ticketing
+        WHERE is_deleted=false
+
         UNION ALL
-        SELECT ref_no, total_pkr FROM transport WHERE is_deleted=false
+        SELECT ref_no, customer_name, total_pkr
+        FROM transport
+        WHERE is_deleted=false
       ) x
       GROUP BY ref_no
     `);
 
+    // 🔹 payments
     const pays = await db.query(`
       SELECT ref_no, SUM(amount) AS paid
       FROM customer_payments
@@ -143,11 +162,12 @@ router.get("/pending/list", async (req, res) => {
       const totalSale = Math.round(Number(r.total_sale || 0));
       const totalPaid = paidMap[r.ref_no] || 0;
 
-      if (totalSale <= 0) continue;        // 🔒 safety
+      if (totalSale <= 0) continue;          // 🔒 safety
       if (totalPaid >= totalSale) continue; // ✅ cleared hide
 
       result.push({
         ref_no: r.ref_no,
+        customer_name: r.customer_name || "",
         status: totalPaid > 0 ? "PARTIAL" : "PENDING",
         note:
           totalPaid > 0
@@ -208,3 +228,4 @@ router.delete("/delete/:id", async (req, res) => {
 });
 
 module.exports = router;
+
