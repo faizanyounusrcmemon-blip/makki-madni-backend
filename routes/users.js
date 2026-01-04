@@ -31,20 +31,23 @@ router.post("/create", async (req, res) => {
         create_user, manage_users, deleted_reports, restore, system_storage
       )
       VALUES (
-        $1,$2,$3,$4,
-        false,false,false,false,false,
-        false,false,
-        false,false,false,false,false
-        false,false,
-        false,false,
-        false,false,false,false,false
+        $1, $2, $3, $4,
+
+        false, false, false, false, false,
+        false, false,
+        false, false, false, false, false,
+        false, false,
+        false, false,
+        false, false, false, false, false
       )
       `,
       [name, username, password, role || "user"]
     );
 
     res.json({ success: true });
+
   } catch (err) {
+    console.error("CREATE USER ERROR:", err);
     res.json({ success: false, error: err.message });
   }
 });
@@ -71,27 +74,32 @@ router.post("/update", async (req, res) => {
 
     if (password) {
       await db.query(
-        `UPDATE users
-         SET name=$1, username=$2, password=$3, role=$4
-         WHERE id=$5`,
+        `
+        UPDATE users
+        SET name=$1, username=$2, password=$3, role=$4
+        WHERE id=$5
+        `,
         [name, username, password, role, id]
       );
     } else {
       await db.query(
-        `UPDATE users
-         SET name=$1, username=$2, role=$3
-         WHERE id=$4`,
+        `
+        UPDATE users
+        SET name=$1, username=$2, role=$3
+        WHERE id=$4
+        `,
         [name, username, role, id]
       );
     }
 
     res.json({ success: true });
+
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
 });
 
-/* ================= DELETE USER (PASSWORD 786) ================= */
+/* ================= DELETE USER ================= */
 router.delete("/delete/:id", async (req, res) => {
   try {
     const { password } = req.body;
@@ -100,19 +108,19 @@ router.delete("/delete/:id", async (req, res) => {
 
     await db.query("DELETE FROM users WHERE id=$1", [req.params.id]);
     res.json({ success: true });
+
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
 });
 
-// GET all users with permissions
+/* ================= PERMISSIONS LIST ================= */
 router.get("/permissions/list", async (req, res) => {
   const r = await db.query("SELECT * FROM users ORDER BY id");
   res.json({ success: true, rows: r.rows });
 });
 
-// UPDATE all users permissions
-// UPDATE all users permissions (SAFE)
+/* ================= PERMISSIONS UPDATE ================= */
 router.post("/permissions/update", async (req, res) => {
   try {
     const { users } = req.body;
@@ -137,13 +145,10 @@ router.post("/permissions/update", async (req, res) => {
     }
 
     res.json({ success: true });
+
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
 });
 
 module.exports = router;
-
-
-
-
