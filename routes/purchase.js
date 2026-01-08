@@ -419,6 +419,15 @@ router.get("/list", async (req, res) => {
 router.delete("/delete/:ref_no", async (req, res) => {
   try {
     const { ref_no } = req.params;
+    const { password } = req.body; // 🔐 password frontend se aayega
+
+    // 🔒 PASSWORD CHECK
+    if (password !== "786") {
+      return res.json({
+        success: false,
+        error: "Invalid password",
+      });
+    }
 
     const q = await db.query(
       `
@@ -430,8 +439,12 @@ router.delete("/delete/:ref_no", async (req, res) => {
       [ref_no]
     );
 
-    if (!q.rows.length)
-      return res.json({ success: false, error: "Purchase not found" });
+    if (!q.rows.length) {
+      return res.json({
+        success: false,
+        error: "Purchase not found",
+      });
+    }
 
     res.json({ success: true });
 
@@ -620,6 +633,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
