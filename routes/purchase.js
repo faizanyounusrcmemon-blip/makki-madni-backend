@@ -353,19 +353,27 @@ router.get("/list", async (req, res) => {
   try {
     const { from, to, ref } = req.query;
 
-    let where = `WHERE p.is_deleted=false`;
+    let where = `WHERE p.is_deleted = false`;
     let params = [];
     let i = 1;
 
+    // DATE FILTER
     if (from && to) {
       where += ` AND DATE(p.created_at) BETWEEN $${i} AND $${i + 1}`;
       params.push(from, to);
       i += 2;
     }
 
+    // 🔥 PARTIAL SEARCH (REF NO OR CUSTOMER NAME)
     if (ref) {
-      where += ` AND p.ref_no ILIKE $${i}`;
+      where += `
+        AND (
+          p.ref_no ILIKE $${i}
+          OR s.customer_name ILIKE $${i}
+        )
+      `;
       params.push(`%${ref}%`);
+      i += 1;
     }
 
     const q = await db.query(
@@ -612,6 +620,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
