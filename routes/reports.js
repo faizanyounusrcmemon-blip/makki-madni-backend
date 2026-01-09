@@ -29,10 +29,19 @@ router.get("/sale-adjustments", async (req, res) => {
         cp.ref_no,
         c.customer_name,
         cp.payment_method,
-        cp.amount
+        cp.received_amount AS amount   -- ✅ FIX HERE
       FROM customer_payments cp
-      LEFT JOIN (${CUSTOMER_SQL}) c
-        ON c.ref_no = cp.ref_no
+      LEFT JOIN (
+        SELECT ref_no, customer_name FROM bookings
+        UNION ALL
+        SELECT ref_no, customer_name FROM hotels
+        UNION ALL
+        SELECT ref_no, customer_name FROM visa
+        UNION ALL
+        SELECT ref_no, customer_name FROM ticketing
+        UNION ALL
+        SELECT ref_no, customer_name FROM transport
+      ) c ON c.ref_no = cp.ref_no
       WHERE cp.type = 'adjustment'
       ORDER BY cp.payment_date DESC, cp.id DESC
     `;
@@ -111,3 +120,4 @@ router.get("/all", async (req, res) => {
 });
 
 module.exports = router;
+
