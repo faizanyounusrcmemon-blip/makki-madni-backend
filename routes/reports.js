@@ -2,81 +2,110 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-// ==================================
-// ALL REPORTS (PKR BASED)
-// ==================================
+/* =====================================================
+   🔹 COMMON CUSTOMER SOURCE (ALL MODULES)
+===================================================== */
+const CUSTOMER_SQL = `
+  SELECT ref_no, customer_name FROM bookings
+  UNION ALL
+  SELECT ref_no, customer_name FROM hotels
+  UNION ALL
+  SELECT ref_no, customer_name FROM visa
+  UNION ALL
+  SELECT ref_no, customer_name FROM ticketing
+  UNION ALL
+  SELECT ref_no, customer_name FROM transport
+`;
+
+/* =====================================================
+   ✅ SALE ADJUSTMENT REPORT (BANK + CASH)
+===================================================== */
+router.get("/sale-adjustments", async (req, res) => {
+  try {
+    const sql = `
+      SELECT
+        cp.id,
+        cp.payment_date AS date,
+        cp.ref_no,
+        c.customer_name,
+        cp.payment_method,
+        cp.amount
+      FROM customer_payments cp
+      LEFT JOIN (${CUSTOMER_SQL}) c
+        ON c.ref_no = cp.ref_no
+      WHERE cp.type = 'adjustment'
+      ORDER BY cp.payment_date DESC, cp.id DESC
+    `;
+
+    const { rows } = await db.query(sql);
+    res.json({ success: true, rows });
+
+  } catch (err) {
+    console.error("SALE ADJUSTMENT ERROR:", err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
+/* =====================================================
+   ✅ PURCHASE ADJUSTMENT REPORT (BANK + CASH)
+===================================================== */
+router.get("/purchase-adjustments", async (req, res) => {
+  try {
+    const sql = `
+      SELECT
+        pp.id,
+        pp.payment_date AS date,
+        pp.ref_no,
+        c.customer_name,
+        pp.payment_method,
+        pp.amount
+      FROM purchase_payments pp
+      LEFT JOIN (${CUSTOMER_SQL}) c
+        ON c.ref_no = pp.ref_no
+      WHERE pp.type = 'adjustment'
+      ORDER BY pp.payment_date DESC, pp.id DESC
+    `;
+
+    const { rows } = await db.query(sql);
+    res.json({ success: true, rows });
+
+  } catch (err) {
+    console.error("PURCHASE ADJUSTMENT ERROR:", err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
+/* =====================================================
+   🔹 EXISTING ALL REPORT (UNCHANGED)
+===================================================== */
 router.get("/all", async (req, res) => {
   try {
     const q = await db.query(`
       SELECT 'Packages' AS type, id, ref_no, customer_name, booking_date, total_pkr
       FROM bookings WHERE is_deleted = false
+
       UNION ALL
-      SELECT 'Ticketing' AS type, id, ref_no, customer_name, booking_date, total_pkr
+      SELECT 'Ticketing', id, ref_no, customer_name, booking_date, total_pkr
       FROM ticketing WHERE is_deleted = false
+
       UNION ALL
-      SELECT 'Hotels' AS type, id, ref_no, customer_name, booking_date, total_pkr
+      SELECT 'Hotels', id, ref_no, customer_name, booking_date, total_pkr
       FROM hotels WHERE is_deleted = false
+
       UNION ALL
-      SELECT 'Visa' AS type, id, ref_no, customer_name, booking_date, total_pkr
+      SELECT 'Visa', id, ref_no, customer_name, booking_date, total_pkr
       FROM visa WHERE is_deleted = false
+
       UNION ALL
-      SELECT 'Transport' AS type, id, ref_no, customer_name, booking_date, total_pkr
+      SELECT 'Transport', id, ref_no, customer_name, booking_date, total_pkr
       FROM transport WHERE is_deleted = false
+
       ORDER BY booking_date DESC
     `);
+
     res.json(q.rows);
   } catch (err) {
     console.error("REPORTS ERROR:", err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// ==================================
-// PURCHASE ADJUSTMENTS REPORT
-// ==================================
-router.get("/purchase-adjustments", async (req, res) => {
-  try {
-    const q = await db.query(`
-      SELECT 
-        pa.id,
-        pa.ref_no,
-        pa.amount,
-        pa.payment_method,
-        pa.date,
-        p.customer_name
-      FROM purchase_adjustments pa
-      LEFT JOIN purchases p ON p.id = pa.purchase_id
-      WHERE pa.is_deleted = false
-      ORDER BY pa.date DESC
-    `);
-    res.json({ rows: q.rows });
-  } catch (err) {
-    console.error("PURCHASE ADJUSTMENTS ERROR:", err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// ==================================
-// SALE ADJUSTMENTS REPORT
-// ==================================
-router.get("/sale-adjustments", async (req, res) => {
-  try {
-    const q = await db.query(`
-      SELECT 
-        sa.id,
-        sa.ref_no,
-        sa.amount,
-        sa.payment_method,
-        sa.date,
-        b.customer_name
-      FROM sale_adjustments sa
-      LEFT JOIN bookings b ON b.id = sa.booking_id
-      WHERE sa.is_deleted = false
-      ORDER BY sa.date DESC
-    `);
-    res.json({ rows: q.rows });
-  } catch (err) {
-    console.error("SALE ADJUSTMENTS ERROR:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
