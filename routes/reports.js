@@ -17,13 +17,9 @@ const CUSTOMER_SQL = `
   SELECT ref_no, customer_name FROM transport
 `;
 
+
 /* =====================================================
-   ✅ SALE ADJUSTMENT REPORT
-   🔹 amount = TOTAL_PKR
-   🔹 adjustment_amount = customer_payments.received_amount
-===================================================== */
-/* =====================================================
-   ✅ SALE ADJUSTMENT REPORT (FIXED)
+   ✅ SALE ADJUSTMENT REPORT (FINAL FIX)
 ===================================================== */
 router.get("/sale-adjustments", async (req, res) => {
   try {
@@ -50,8 +46,9 @@ router.get("/sale-adjustments", async (req, res) => {
         cp.ref_no,
         c.customer_name,
         cp.payment_method,
-        ss.amount,
-        cp.received_amount AS adjustment_amount
+        COALESCE(ss.amount, 0)        AS amount,
+        COALESCE(cp.amount, 0)        AS adjustment_amount,
+        COALESCE(ss.amount, 0) - COALESCE(cp.amount, 0) AS net_amount
       FROM customer_payments cp
 
       LEFT JOIN sale_sum ss
@@ -159,4 +156,5 @@ router.get("/all", async (req, res) => {
 });
 
 module.exports = router;
+
 
