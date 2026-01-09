@@ -18,7 +18,8 @@ const CUSTOMER_SQL = `
 `;
 
 /* =====================================================
-   ✅ SALE ADJUSTMENT REPORT (BANK + CASH)
+   ✅ SALE ADJUSTMENT REPORT
+   🔹 Amount = TOTAL_PKR (like ALL REPORTS)
 ===================================================== */
 router.get("/sale-adjustments", async (req, res) => {
   try {
@@ -29,19 +30,23 @@ router.get("/sale-adjustments", async (req, res) => {
         cp.ref_no,
         c.customer_name,
         cp.payment_method,
-        cp.received_amount AS amount   -- ✅ FIX HERE
+        s.total_pkr AS amount
       FROM customer_payments cp
+
       LEFT JOIN (
-        SELECT ref_no, customer_name FROM bookings
+        SELECT ref_no, SUM(total_pkr) AS total_pkr FROM bookings WHERE is_deleted=false GROUP BY ref_no
         UNION ALL
-        SELECT ref_no, customer_name FROM hotels
+        SELECT ref_no, SUM(total_pkr) FROM hotels WHERE is_deleted=false GROUP BY ref_no
         UNION ALL
-        SELECT ref_no, customer_name FROM visa
+        SELECT ref_no, SUM(total_pkr) FROM visa WHERE is_deleted=false GROUP BY ref_no
         UNION ALL
-        SELECT ref_no, customer_name FROM ticketing
+        SELECT ref_no, SUM(total_pkr) FROM ticketing WHERE is_deleted=false GROUP BY ref_no
         UNION ALL
-        SELECT ref_no, customer_name FROM transport
-      ) c ON c.ref_no = cp.ref_no
+        SELECT ref_no, SUM(total_pkr) FROM transport WHERE is_deleted=false GROUP BY ref_no
+      ) s ON s.ref_no = cp.ref_no
+
+      LEFT JOIN (${CUSTOMER_SQL}) c ON c.ref_no = cp.ref_no
+
       WHERE cp.type = 'adjustment'
       ORDER BY cp.payment_date DESC, cp.id DESC
     `;
@@ -56,7 +61,8 @@ router.get("/sale-adjustments", async (req, res) => {
 });
 
 /* =====================================================
-   ✅ PURCHASE ADJUSTMENT REPORT (BANK + CASH)
+   ✅ PURCHASE ADJUSTMENT REPORT
+   🔹 Amount = SUM(purchase_entries.purchase_pkr)
 ===================================================== */
 router.get("/purchase-adjustments", async (req, res) => {
   try {
@@ -67,10 +73,18 @@ router.get("/purchase-adjustments", async (req, res) => {
         pp.ref_no,
         c.customer_name,
         pp.payment_method,
-        pp.amount
+        p.purchase_pkr AS amount
       FROM purchase_payments pp
-      LEFT JOIN (${CUSTOMER_SQL}) c
-        ON c.ref_no = pp.ref_no
+
+      LEFT JOIN (
+        SELECT ref_no, SUM(purchase_pkr) AS purchase_pkr
+        FROM purchase_entries
+        WHERE is_deleted = false
+        GROUP BY ref_no
+      ) p ON p.ref_no = pp.ref_no
+
+      LEFT JOIN (${CUSTOMER_SQL}) c ON c.ref_no = pp.ref_no
+
       WHERE pp.type = 'adjustment'
       ORDER BY pp.payment_date DESC, pp.id DESC
     `;
@@ -85,7 +99,7 @@ router.get("/purchase-adjustments", async (req, res) => {
 });
 
 /* =====================================================
-   🔹 EXISTING ALL REPORT (UNCHANGED)
+   🔹 ALL REPORTS (UNCHANGED)
 ===================================================== */
 router.get("/all", async (req, res) => {
   try {
@@ -120,4 +134,3 @@ router.get("/all", async (req, res) => {
 });
 
 module.exports = router;
-
