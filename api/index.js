@@ -68,6 +68,9 @@ app.use("/api/purchase-ledger", require("../routes/purchaseLedger"));
 app.use("/bank-ledger", require("../routes/bankLedger"));
 app.use("/api/bank-ledger", require("../routes/bankLedger"));
 
+app.use("/cash-ledger", require("../routes/cashLedger"));
+app.use("/api/cash-ledger", require("../routes/cashLedger"));
+
 app.use("/ledger-delete", require("../routes/ledgerDelete"));
 app.use("/api/ledger-delete", require("../routes/ledgerDelete"));
 
@@ -79,6 +82,8 @@ app.use("/api/profit-report", require("../routes/profitReport"));
 
 app.use("/expenseledger", require("../routes/expenseledger"));
 app.use("/api/expenseledger", require("../routes/expenseledger"));
+
+
 
 // ==========================
 // PURCHASE
