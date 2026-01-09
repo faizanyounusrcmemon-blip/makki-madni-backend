@@ -19,7 +19,8 @@ const CUSTOMER_SQL = `
 
 /* =====================================================
    ✅ SALE ADJUSTMENT REPORT
-   🔹 Amount = TOTAL_PKR (like ALL REPORTS)
+   🔹 amount = TOTAL_PKR
+   🔹 adjustment_amount = customer_payments.received_amount
 ===================================================== */
 router.get("/sale-adjustments", async (req, res) => {
   try {
@@ -30,22 +31,29 @@ router.get("/sale-adjustments", async (req, res) => {
         cp.ref_no,
         c.customer_name,
         cp.payment_method,
-        s.total_pkr AS amount
+        s.total_pkr AS amount,
+        cp.received_amount AS adjustment_amount
       FROM customer_payments cp
 
       LEFT JOIN (
-        SELECT ref_no, SUM(total_pkr) AS total_pkr FROM bookings WHERE is_deleted=false GROUP BY ref_no
+        SELECT ref_no, SUM(total_pkr) AS total_pkr
+        FROM bookings WHERE is_deleted=false GROUP BY ref_no
         UNION ALL
-        SELECT ref_no, SUM(total_pkr) FROM hotels WHERE is_deleted=false GROUP BY ref_no
+        SELECT ref_no, SUM(total_pkr)
+        FROM hotels WHERE is_deleted=false GROUP BY ref_no
         UNION ALL
-        SELECT ref_no, SUM(total_pkr) FROM visa WHERE is_deleted=false GROUP BY ref_no
+        SELECT ref_no, SUM(total_pkr)
+        FROM visa WHERE is_deleted=false GROUP BY ref_no
         UNION ALL
-        SELECT ref_no, SUM(total_pkr) FROM ticketing WHERE is_deleted=false GROUP BY ref_no
+        SELECT ref_no, SUM(total_pkr)
+        FROM ticketing WHERE is_deleted=false GROUP BY ref_no
         UNION ALL
-        SELECT ref_no, SUM(total_pkr) FROM transport WHERE is_deleted=false GROUP BY ref_no
+        SELECT ref_no, SUM(total_pkr)
+        FROM transport WHERE is_deleted=false GROUP BY ref_no
       ) s ON s.ref_no = cp.ref_no
 
-      LEFT JOIN (${CUSTOMER_SQL}) c ON c.ref_no = cp.ref_no
+      LEFT JOIN (${CUSTOMER_SQL}) c
+        ON c.ref_no = cp.ref_no
 
       WHERE cp.type = 'adjustment'
       ORDER BY cp.payment_date DESC, cp.id DESC
@@ -62,7 +70,8 @@ router.get("/sale-adjustments", async (req, res) => {
 
 /* =====================================================
    ✅ PURCHASE ADJUSTMENT REPORT
-   🔹 Amount = SUM(purchase_entries.purchase_pkr)
+   🔹 amount = SUM(purchase_entries.purchase_pkr)
+   🔹 adjustment_amount = purchase_payments.amount
 ===================================================== */
 router.get("/purchase-adjustments", async (req, res) => {
   try {
@@ -73,17 +82,19 @@ router.get("/purchase-adjustments", async (req, res) => {
         pp.ref_no,
         c.customer_name,
         pp.payment_method,
-        p.purchase_pkr AS amount
+        p.purchase_pkr AS amount,
+        pp.amount AS adjustment_amount
       FROM purchase_payments pp
 
       LEFT JOIN (
         SELECT ref_no, SUM(purchase_pkr) AS purchase_pkr
         FROM purchase_entries
-        WHERE is_deleted = false
+        WHERE is_deleted=false
         GROUP BY ref_no
       ) p ON p.ref_no = pp.ref_no
 
-      LEFT JOIN (${CUSTOMER_SQL}) c ON c.ref_no = pp.ref_no
+      LEFT JOIN (${CUSTOMER_SQL}) c
+        ON c.ref_no = pp.ref_no
 
       WHERE pp.type = 'adjustment'
       ORDER BY pp.payment_date DESC, pp.id DESC
@@ -105,23 +116,23 @@ router.get("/all", async (req, res) => {
   try {
     const q = await db.query(`
       SELECT 'Packages' AS type, id, ref_no, customer_name, booking_date, total_pkr
-      FROM bookings WHERE is_deleted = false
+      FROM bookings WHERE is_deleted=false
 
       UNION ALL
       SELECT 'Ticketing', id, ref_no, customer_name, booking_date, total_pkr
-      FROM ticketing WHERE is_deleted = false
+      FROM ticketing WHERE is_deleted=false
 
       UNION ALL
       SELECT 'Hotels', id, ref_no, customer_name, booking_date, total_pkr
-      FROM hotels WHERE is_deleted = false
+      FROM hotels WHERE is_deleted=false
 
       UNION ALL
       SELECT 'Visa', id, ref_no, customer_name, booking_date, total_pkr
-      FROM visa WHERE is_deleted = false
+      FROM visa WHERE is_deleted=false
 
       UNION ALL
       SELECT 'Transport', id, ref_no, customer_name, booking_date, total_pkr
-      FROM transport WHERE is_deleted = false
+      FROM transport WHERE is_deleted=false
 
       ORDER BY booking_date DESC
     `);
