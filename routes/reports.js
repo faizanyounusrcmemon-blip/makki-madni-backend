@@ -22,38 +22,52 @@ const CUSTOMER_SQL = `
    🔹 amount = TOTAL_PKR
    🔹 adjustment_amount = customer_payments.received_amount
 ===================================================== */
+/* =====================================================
+   ✅ SALE ADJUSTMENT REPORT (FIXED)
+===================================================== */
 router.get("/sale-adjustments", async (req, res) => {
   try {
     const sql = `
+      WITH sales AS (
+        SELECT ref_no, total_pkr FROM bookings WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, total_pkr FROM hotels WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, total_pkr FROM visa WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, total_pkr FROM ticketing WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, total_pkr FROM transport WHERE is_deleted=false
+      ),
+      sale_sum AS (
+        SELECT ref_no, SUM(total_pkr) AS amount
+        FROM sales
+        GROUP BY ref_no
+      )
       SELECT
         cp.id,
         cp.payment_date AS date,
         cp.ref_no,
         c.customer_name,
         cp.payment_method,
-        s.total_pkr AS amount,
+        ss.amount,
         cp.received_amount AS adjustment_amount
       FROM customer_payments cp
 
-      LEFT JOIN (
-        SELECT ref_no, SUM(total_pkr) AS total_pkr
-        FROM bookings WHERE is_deleted=false GROUP BY ref_no
-        UNION ALL
-        SELECT ref_no, SUM(total_pkr)
-        FROM hotels WHERE is_deleted=false GROUP BY ref_no
-        UNION ALL
-        SELECT ref_no, SUM(total_pkr)
-        FROM visa WHERE is_deleted=false GROUP BY ref_no
-        UNION ALL
-        SELECT ref_no, SUM(total_pkr)
-        FROM ticketing WHERE is_deleted=false GROUP BY ref_no
-        UNION ALL
-        SELECT ref_no, SUM(total_pkr)
-        FROM transport WHERE is_deleted=false GROUP BY ref_no
-      ) s ON s.ref_no = cp.ref_no
+      LEFT JOIN sale_sum ss
+        ON ss.ref_no = cp.ref_no
 
-      LEFT JOIN (${CUSTOMER_SQL}) c
-        ON c.ref_no = cp.ref_no
+      LEFT JOIN (
+        SELECT ref_no, customer_name FROM bookings
+        UNION ALL
+        SELECT ref_no, customer_name FROM hotels
+        UNION ALL
+        SELECT ref_no, customer_name FROM visa
+        UNION ALL
+        SELECT ref_no, customer_name FROM ticketing
+        UNION ALL
+        SELECT ref_no, customer_name FROM transport
+      ) c ON c.ref_no = cp.ref_no
 
       WHERE cp.type = 'adjustment'
       ORDER BY cp.payment_date DESC, cp.id DESC
@@ -145,3 +159,4 @@ router.get("/all", async (req, res) => {
 });
 
 module.exports = router;
+
