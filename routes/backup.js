@@ -35,6 +35,7 @@ const TABLES = [
   "purchase_entries",
   "users",
   "bank_transactions",
+  "cash_transactions",
   "customer_payments",
   "purchase_payments",
 ];
@@ -364,4 +365,5 @@ router.post("/cleanup", async (req, res) => {
 
 
 module.exports = router;
+
 
