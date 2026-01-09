@@ -22,6 +22,7 @@ const TABLES = [
   "purchase_entries",
   "users",
   "bank_transactions",
+  "cash_transactions",
   "customer_payments",
   "purchase_payments",
 ];
@@ -130,4 +131,5 @@ module.exports = {
   restoreTable,
   TABLES,
 };
+
 
