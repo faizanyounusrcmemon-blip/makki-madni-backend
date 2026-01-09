@@ -25,9 +25,9 @@ router.post("/create", async (req, res) => {
 
         packages, ticketing, transport, visa, hotels,
         purchase_entry, purchase_list,
-        customer_ledger, purchase_ledger, bank_ledger, expense_ledger, balance_sheet,
+        customer_ledger, purchase_ledger, bank_ledger, expense_ledger, balance_sheet, cash_ledger,
         hotel_voucher, transport_voucher,
-        all_reports, profit_report,
+        all_reports, profit_report, sale_adjustment_report, purchase_adjustment_report,
         create_user, manage_users, deleted_reports, restore, system_storage
       )
       VALUES (
@@ -35,9 +35,9 @@ router.post("/create", async (req, res) => {
 
         false, false, false, false, false,
         false, false,
-        false, false, false, false, false,
+        false, false, false, false, false, false,
         false, false,
-        false, false,
+        false, false, false, false,
         false, false, false, false, false
       )
       `,
@@ -128,9 +128,9 @@ router.post("/permissions/update", async (req, res) => {
     const perms = [
       "packages","ticketing","transport","visa","hotels",
       "purchase_entry","purchase_list",
-      "customer_ledger","purchase_ledger","bank_ledger","expense_ledger","balance_sheet",
+      "customer_ledger","purchase_ledger","bank_ledger","expense_ledger","balance_sheet","cash_ledger",
       "hotel_voucher","transport_voucher",
-      "all_reports","profit_report",
+      "all_reports","profit_report","sale_adjustment_report","purchase_adjustment_report",
       "create_user","manage_users","deleted_reports","restore","system_storage"
     ];
 
@@ -152,3 +152,4 @@ router.post("/permissions/update", async (req, res) => {
 });
 
 module.exports = router;
+
