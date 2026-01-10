@@ -24,7 +24,7 @@ router.post("/create", async (req, res) => {
         name, username, password, role,
 
         packages, ticketing, transport, visa, hotels,
-        purchase_entry, purchase_list,
+        purchase_entry, purchase_list, pending_purchase,
         customer_ledger, purchase_ledger, bank_ledger, expense_ledger, balance_sheet, cash_ledger,
         hotel_voucher, transport_voucher,
         all_reports, profit_report, sale_adjustment_report, purchase_adjustment_report,
@@ -34,7 +34,7 @@ router.post("/create", async (req, res) => {
         $1, $2, $3, $4,
 
         false, false, false, false, false,
-        false, false,
+        false, false, false,
         false, false, false, false, false, false,
         false, false,
         false, false, false, false,
@@ -127,7 +127,7 @@ router.post("/permissions/update", async (req, res) => {
 
     const perms = [
       "packages","ticketing","transport","visa","hotels",
-      "purchase_entry","purchase_list",
+      "purchase_entry","purchase_list","pending_purchase",
       "customer_ledger","purchase_ledger","bank_ledger","expense_ledger","balance_sheet","cash_ledger",
       "hotel_voucher","transport_voucher",
       "all_reports","profit_report","sale_adjustment_report","purchase_adjustment_report",
@@ -152,4 +152,5 @@ router.post("/permissions/update", async (req, res) => {
 });
 
 module.exports = router;
+
 
