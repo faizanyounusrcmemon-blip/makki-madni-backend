@@ -91,10 +91,50 @@ router.get("/get/:ref", async (req, res) => {
   res.json({ success: true, row: q.rows[0] });
 });
 
+// ===================================
+// SOFT DELETE WITH PURCHASE / PAYMENT CHECK (TRANSPORT)
+// ===================================
 router.delete("/delete/:ref_no", async (req, res) => {
   try {
     const { ref_no } = req.params;
 
+    // ===============================
+    // CHECK IF PURCHASE ENTRIES EXIST
+    // ===============================
+    const purchaseCheck = await db.query(
+      `SELECT SUM(purchase_pkr) AS total
+       FROM purchase_entries
+       WHERE ref_no = $1 AND is_deleted = false`,
+      [ref_no]
+    );
+
+    if (purchaseCheck.rows[0].total > 0) {
+      return res.json({
+        success: false,
+        message: "❌ Cannot delete. Purchase entries exist for this ref. Delete purchases first."
+      });
+    }
+
+    // ===============================
+    // CHECK IF PAYMENT RECEIVED
+    // ===============================
+    const paymentCheck = await db.query(
+      `SELECT SUM(amount) AS total
+       FROM customer_payments
+       WHERE ref_no = $1 AND type = 'payment'`,
+      [ref_no]
+    );
+
+    if (paymentCheck.rows[0].total > 0) {
+      return res.json({
+        success: false,
+        message: "❌ Cannot delete. Payment has been received for this ref. Adjust/delete payments first."
+      });
+    }
+
+    // ===============================
+    // SOFT DELETE
+    // ===============================
     const q = await db.query(
       `UPDATE transport
        SET is_deleted = true
@@ -103,14 +143,18 @@ router.delete("/delete/:ref_no", async (req, res) => {
       [ref_no]
     );
 
-    if (!q.rows.length)
+    if (!q.rows.length) {
       return res.json({ success: false, error: "Transport not found" });
+    }
 
-    res.json({ success: true });
+    res.json({ success: true, message: "✅ Soft deleted successfully" });
+
   } catch (err) {
+    console.error("DELETE ERROR:", err);
     res.json({ success: false, error: err.message });
   }
 });
 
 
 module.exports = router;
+
