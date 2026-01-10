@@ -414,7 +414,7 @@ router.get("/list", async (req, res) => {
 
 
 /* =====================================================
-   PURCHASE SOFT DELETE
+   PURCHASE SOFT DELETE WITH PAYMENT CHECK
 ===================================================== */
 router.delete("/delete/:ref_no", async (req, res) => {
   try {
@@ -429,6 +429,26 @@ router.delete("/delete/:ref_no", async (req, res) => {
       });
     }
 
+    // ===============================
+    // CHECK IF PAYMENT EXISTS
+    // ===============================
+    const paymentCheck = await db.query(
+      `SELECT SUM(amount) AS total
+       FROM purchase_payments
+       WHERE ref_no = $1 AND is_deleted = false`,
+      [ref_no]
+    );
+
+    if (paymentCheck.rows[0].total > 0) {
+      return res.json({
+        success: false,
+        error: "❌ Cannot delete purchase. Payment has been received for this ref. Delete payments first."
+      });
+    }
+
+    // ===============================
+    // SOFT DELETE PURCHASE ENTRIES
+    // ===============================
     const q = await db.query(
       `
       UPDATE purchase_entries
@@ -446,13 +466,14 @@ router.delete("/delete/:ref_no", async (req, res) => {
       });
     }
 
-    res.json({ success: true });
+    res.json({ success: true, message: "✅ Purchase soft deleted successfully" });
 
   } catch (err) {
     console.error("PURCHASE DELETE ERROR:", err);
     res.json({ success: false, error: err.message });
   }
 });
+
 
 /* =====================================================
    PURCHASE DETAIL (WITH CUSTOMER NAME)
@@ -633,6 +654,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
