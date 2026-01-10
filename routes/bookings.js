@@ -265,76 +265,66 @@ router.get("/voucher/:ref", async (req, res) => {
 });
 
 // ============================================
-// SOFT DELETE WITH PURCHASE / PAYMENT CHECK
+// SOFT DELETE WITH PURCHASE / PAYMENT CHECK (BOOKINGS)
 // ============================================
 router.delete("/delete/:ref", async (req, res) => {
-  const ref_no = req.params.ref;
-
   try {
-    // =========================
-    // 1️⃣ CHECK PURCHASE ENTRIES
-    // =========================
+    const { ref } = req.params;
+
+    // ===============================
+    // CHECK IF PURCHASE ENTRIES EXIST
+    // ===============================
     const purchaseCheck = await db.query(
-      `SELECT 1 FROM purchase_entries 
-       WHERE ref_no=$1 AND is_deleted=false LIMIT 1`,
-      [ref_no]
+      `SELECT SUM(purchase_pkr) AS total
+       FROM purchase_entries
+       WHERE ref_no = $1 AND is_deleted = false`,
+      [ref]
     );
 
-    if (purchaseCheck.rowCount > 0) {
+    if (purchaseCheck.rows[0].total > 0) {
       return res.json({
         success: false,
-        reason: "PURCHASE_EXISTS",
-        message: "Purchase entry exists. Please delete purchase first."
+        message: "❌ Cannot delete. Purchase entries exist for this ref. Delete purchases first."
       });
     }
 
-    // =========================
-    // 2️⃣ CHECK PURCHASE PAYMENTS
-    // =========================
-    const purchasePaymentCheck = await db.query(
-      `SELECT 1 FROM purchase_payments 
-       WHERE ref_no=$1 AND is_deleted=false LIMIT 1`,
-      [ref_no]
-    );
-
-    if (purchasePaymentCheck.rowCount > 0) {
-      return res.json({
-        success: false,
-        reason: "PURCHASE_PAYMENT_EXISTS",
-        message: "Purchase payment exists. Please delete payment first."
-      });
-    }
-
-    // =========================
-    // 3️⃣ CHECK CUSTOMER PAYMENTS
-    // =========================
+    // ===============================
+    // CHECK IF PAYMENT RECEIVED
+    // ===============================
     const paymentCheck = await db.query(
-      `SELECT 1 FROM customer_payments 
-       WHERE ref_no=$1 AND is_deleted=false LIMIT 1`,
-      [ref_no]
+      `SELECT SUM(amount) AS total
+       FROM customer_payments
+       WHERE ref_no = $1 AND type = 'payment'`,
+      [ref]
     );
 
-    if (paymentCheck.rowCount > 0) {
+    if (paymentCheck.rows[0].total > 0) {
       return res.json({
         success: false,
-        reason: "PAYMENT_EXISTS",
-        message: "Payment already received. Please delete payment first."
+        message: "❌ Cannot delete. Payment has been received for this ref. Adjust/delete payments first."
       });
     }
 
-    // =========================
-    // 4️⃣ SAFE SOFT DELETE
-    // =========================
-    await db.query(
-      "UPDATE bookings SET is_deleted=true WHERE ref_no=$1",
-      [ref_no]
+    // ===============================
+    // SOFT DELETE
+    // ===============================
+    const q = await db.query(
+      `UPDATE bookings
+       SET is_deleted = true
+       WHERE ref_no = $1
+       RETURNING ref_no`,
+      [ref]
     );
 
-    res.json({ success: true });
+    if (!q.rows.length) {
+      return res.json({ success: false, error: "Booking not found" });
+    }
+
+    res.json({ success: true, message: "✅ Soft deleted successfully" });
 
   } catch (err) {
     console.error("DELETE ERROR:", err);
-    res.status(500).json({ success: false, error: err.message });
+    res.json({ success: false, error: err.message });
   }
 });
 
