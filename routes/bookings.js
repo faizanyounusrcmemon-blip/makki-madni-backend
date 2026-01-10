@@ -265,14 +265,77 @@ router.get("/voucher/:ref", async (req, res) => {
 });
 
 // ============================================
-// SOFT DELETE
+// SOFT DELETE WITH PURCHASE / PAYMENT CHECK
 // ============================================
 router.delete("/delete/:ref", async (req, res) => {
-  await db.query(
-    "UPDATE bookings SET is_deleted=true WHERE ref_no=$1",
-    [req.params.ref]
-  );
-  res.json({ success: true });
+  const ref_no = req.params.ref;
+
+  try {
+    // =========================
+    // 1️⃣ CHECK PURCHASE ENTRIES
+    // =========================
+    const purchaseCheck = await db.query(
+      `SELECT 1 FROM purchase_entries 
+       WHERE ref_no=$1 AND is_deleted=false LIMIT 1`,
+      [ref_no]
+    );
+
+    if (purchaseCheck.rowCount > 0) {
+      return res.json({
+        success: false,
+        reason: "PURCHASE_EXISTS",
+        message: "Purchase entry exists. Please delete purchase first."
+      });
+    }
+
+    // =========================
+    // 2️⃣ CHECK PURCHASE PAYMENTS
+    // =========================
+    const purchasePaymentCheck = await db.query(
+      `SELECT 1 FROM purchase_payments 
+       WHERE ref_no=$1 AND is_deleted=false LIMIT 1`,
+      [ref_no]
+    );
+
+    if (purchasePaymentCheck.rowCount > 0) {
+      return res.json({
+        success: false,
+        reason: "PURCHASE_PAYMENT_EXISTS",
+        message: "Purchase payment exists. Please delete payment first."
+      });
+    }
+
+    // =========================
+    // 3️⃣ CHECK CUSTOMER PAYMENTS
+    // =========================
+    const paymentCheck = await db.query(
+      `SELECT 1 FROM customer_payments 
+       WHERE ref_no=$1 AND is_deleted=false LIMIT 1`,
+      [ref_no]
+    );
+
+    if (paymentCheck.rowCount > 0) {
+      return res.json({
+        success: false,
+        reason: "PAYMENT_EXISTS",
+        message: "Payment already received. Please delete payment first."
+      });
+    }
+
+    // =========================
+    // 4️⃣ SAFE SOFT DELETE
+    // =========================
+    await db.query(
+      "UPDATE bookings SET is_deleted=true WHERE ref_no=$1",
+      [ref_no]
+    );
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("DELETE ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 module.exports = router;
