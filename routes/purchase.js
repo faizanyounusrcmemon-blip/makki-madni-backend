@@ -337,7 +337,7 @@ router.post("/save", async (req, res) => {
 
     res.json({
       success: true,
-      message: "Purchase saved successfully",
+      message: "✅ Purchase saved successfully",
     });
 
   } catch (err) {
@@ -654,6 +654,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
