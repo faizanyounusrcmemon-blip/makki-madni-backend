@@ -2,16 +2,30 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-/* =================================================
-   SUPPLIER LEDGER
-================================================= */
+/* =========================================
+   SUPPLIER LEDGER + PAYMENT ENTRY
+========================================= */
+
+/* ---------- GET LEDGER ---------- */
 router.get("/:supplierCode", async (req, res) => {
   try {
     const { supplierCode } = req.params;
     const { from, to } = req.query;
 
-    /* ================= PURCHASE (DEBIT) ================= */
-    const purchaseQuery = `
+    const supplier = await db.query(
+      "SELECT id, supplier_name FROM suppliers WHERE supplier_code = $1",
+      [supplierCode]
+    );
+
+    if (!supplier.rows.length) {
+      return res.json({ success: false, error: "Supplier not found" });
+    }
+
+    const supplierId = supplier.rows[0].id;
+
+    /* ===== PURCHASE (DEBIT) ===== */
+    const purchases = await db.query(
+      `
       SELECT
         pe.created_at::date AS date,
         'PURCHASE' AS type,
@@ -24,36 +38,36 @@ router.get("/:supplierCode", async (req, res) => {
         ${from ? "AND pe.created_at::date >= $2" : ""}
         ${to ? `AND pe.created_at::date <= $${from ? 3 : 2}` : ""}
       GROUP BY pe.created_at::date
-    `;
+      `,
+      from && to
+        ? [supplierCode, from, to]
+        : from
+        ? [supplierCode, from]
+        : [supplierCode]
+    );
 
-    const purchaseParams = [supplierCode];
-    if (from) purchaseParams.push(from);
-    if (to) purchaseParams.push(to);
-
-    const purchases = await db.query(purchaseQuery, purchaseParams);
-
-    /* ================= PAYMENTS (CREDIT) ================= */
-    const paymentQuery = `
+    /* ===== PAYMENTS (CREDIT) ===== */
+    const payments = await db.query(
+      `
       SELECT
-        sp.payment_date AS date,
+        payment_date AS date,
         'PAYMENT' AS type,
-        sp.payment_method,
+        payment_method,
         0 AS debit,
-        sp.amount AS credit
-      FROM supplier_payments sp
-      JOIN suppliers s ON s.id = sp.supplier_id
-      WHERE s.supplier_code = $1
-        ${from ? "AND sp.payment_date >= $2" : ""}
-        ${to ? `AND sp.payment_date <= $${from ? 3 : 2}` : ""}
-    `;
+        amount AS credit
+      FROM supplier_payments
+      WHERE supplier_id = $1
+        ${from ? "AND payment_date >= $2" : ""}
+        ${to ? `AND payment_date <= $${from ? 3 : 2}` : ""}
+      `,
+      from && to
+        ? [supplierId, from, to]
+        : from
+        ? [supplierId, from]
+        : [supplierId]
+    );
 
-    const paymentParams = [supplierCode];
-    if (from) paymentParams.push(from);
-    if (to) paymentParams.push(to);
-
-    const payments = await db.query(paymentQuery, paymentParams);
-
-    /* ================= MERGE + BALANCE ================= */
+    /* ===== MERGE + BALANCE ===== */
     const ledger = [...purchases.rows, ...payments.rows].sort(
       (a, b) => new Date(a.date) - new Date(b.date)
     );
@@ -64,44 +78,31 @@ router.get("/:supplierCode", async (req, res) => {
       return { ...r, balance };
     });
 
-    /* ================= PENDING / PARTIAL ================= */
-    const pendingQuery = `
-      SELECT
-        pe.ref_no,
-        pe.supplier_name,
-        CASE
-          WHEN SUM(pe.purchase_pkr) >
-               COALESCE(SUM(sp.amount),0)
-          THEN
-            CASE
-              WHEN COALESCE(SUM(sp.amount),0) = 0
-              THEN 'PENDING'
-              ELSE 'PARTIAL'
-            END
-        END AS status
-      FROM purchase_entries pe
-      LEFT JOIN suppliers s ON s.supplier_code = pe.supplier_code
-      LEFT JOIN supplier_payments sp ON sp.supplier_id = s.id
-      WHERE pe.supplier_code = $1
-        AND pe.is_deleted = false
-      GROUP BY pe.ref_no, pe.supplier_name
-      HAVING SUM(pe.purchase_pkr) > COALESCE(SUM(sp.amount),0)
-      ORDER BY pe.ref_no DESC
-    `;
-
-    const pending = await db.query(pendingQuery, [supplierCode]);
+    /* ===== PENDING / PARTIAL ===== */
+    const pending = await db.query(
+      `
+      SELECT DISTINCT ref_no, supplier_name, status
+      FROM purchase_entries
+      WHERE supplier_code = $1
+        AND status IN ('PENDING','PARTIAL')
+      ORDER BY ref_no DESC
+      `,
+      [supplierCode]
+    );
 
     res.json({
       success: true,
+      supplier: supplier.rows[0],
       ledger: finalLedger,
       pending: pending.rows,
     });
-  } catch (err) {
-    console.error("SUPPLIER LEDGER ERROR:", err);
-    res.status(500).json({ success: false, error: err.message });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ success: false, error: e.message });
   }
 });
 
+/* ---------- SAVE PAYMENT ---------- */
 router.post("/payment", async (req, res) => {
   try {
     const { supplier_code, payment_date, payment_method, amount } = req.body;
@@ -116,9 +117,11 @@ router.post("/payment", async (req, res) => {
     }
 
     await db.query(
-      `INSERT INTO supplier_payments
-       (supplier_id, payment_date, payment_method, amount)
-       VALUES ($1,$2,$3,$4)`,
+      `
+      INSERT INTO supplier_payments
+      (supplier_id, payment_date, payment_method, amount)
+      VALUES ($1,$2,$3,$4)
+      `,
       [
         supplier.rows[0].id,
         payment_date,
@@ -132,6 +135,5 @@ router.post("/payment", async (req, res) => {
     res.status(500).json({ success: false, error: e.message });
   }
 });
-
 
 module.exports = router;
