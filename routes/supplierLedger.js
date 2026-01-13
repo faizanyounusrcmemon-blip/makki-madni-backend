@@ -2,19 +2,18 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-/* =========================
-   GET LEDGER FOR SUPPLIER
-========================= */
+/* ==========================
+   GET LEDGER BY SUPPLIER CODE
+========================== */
 router.get("/:supplierCode", async (req, res) => {
   try {
     const { supplierCode } = req.params;
 
     const supplier = await db.query(
-      "SELECT id, supplier_name FROM suppliers WHERE supplier_code=$1",
+      "SELECT id, supplier_name, supplier_code FROM suppliers WHERE supplier_code = $1",
       [supplierCode]
     );
-    if (!supplier.rows.length)
-      return res.json({ success: false, error: "Supplier not found" });
+    if (!supplier.rows.length) return res.json({ success: false, error: "Supplier not found" });
 
     const supplierId = supplier.rows[0].id;
 
@@ -25,36 +24,36 @@ router.get("/:supplierCode", async (req, res) => {
               '-' AS payment_method,
               SUM(pe.purchase_pkr) AS debit,
               0 AS credit,
-              pe.ref_no,
+              pe.supplier_code,
               pe.supplier_name,
-              SUM(pe.purchase_pkr) - COALESCE(sp.total_paid,0) AS pending_amount
+              SUM(pe.purchase_pkr) - COALESCE(SUM(sp.amount),0) AS pending_amount
        FROM purchase_entries pe
-       LEFT JOIN (
-         SELECT supplier_id, ref_no, SUM(amount) AS total_paid
-         FROM supplier_payments
-         WHERE supplier_id=$1
-         GROUP BY supplier_id, ref_no
-       ) sp ON sp.ref_no=pe.ref_no AND sp.supplier_id=$1
-       WHERE pe.supplier_code=$2 AND pe.is_deleted=false
-       GROUP BY pe.created_at::date, pe.ref_no, pe.supplier_name
+       LEFT JOIN supplier_payments sp
+         ON sp.supplier_id = $2 AND sp.supplier_code = pe.supplier_code
+       WHERE pe.supplier_code = $1
+         AND pe.is_deleted = false
+       GROUP BY pe.created_at::date, pe.supplier_code, pe.supplier_name
        ORDER BY pe.created_at::date`,
-      [supplierId, supplierCode]
+      [supplierCode, supplierId]
     );
 
-    // PAYMENTS / ADJUSTMENTS (CREDIT)
+    // PAYMENTS (CREDIT)
     const payments = await db.query(
       `SELECT payment_date AS date,
-              type,
+              'PAYMENT' AS type,
               payment_method,
               0 AS debit,
-              amount AS credit
-       FROM supplier_payments
-       WHERE supplier_id=$1
+              amount AS credit,
+              s.supplier_code,
+              s.supplier_name
+       FROM supplier_payments sp
+       JOIN suppliers s ON s.id = sp.supplier_id
+       WHERE sp.supplier_id = $1
        ORDER BY payment_date`,
       [supplierId]
     );
 
-    // MERGE LEDGER + CALCULATE BALANCE
+    // MERGE + BALANCE CALCULATION
     const ledgerAll = [...purchases.rows, ...payments.rows].sort(
       (a, b) => new Date(a.date) - new Date(b.date)
     );
@@ -65,76 +64,60 @@ router.get("/:supplierCode", async (req, res) => {
       return { ...r, balance };
     });
 
-    // PENDING LIST (always)
+    // PENDING LIST (always show)
     const pending = purchases.rows.map(r => ({
-      ref_no: r.ref_no,
+      supplier_code: r.supplier_code,
       supplier_name: r.supplier_name,
       status: r.pending_amount > 0 ? "PENDING" : "PAID"
-    })).filter(r => r.status === "PENDING");
+    }));
 
     res.json({ success: true, ledger: finalLedger, pending });
-
   } catch (e) {
     console.error(e);
     res.status(500).json({ success: false, error: e.message });
   }
 });
 
-/* =========================
+/* ==========================
    SAVE PAYMENT / ADJUSTMENT
-========================= */
+========================== */
 router.post("/payment", async (req, res) => {
   try {
     const { supplier_code, payment_date, payment_method, amount, type } = req.body;
-
-    const supplier = await db.query(
-      "SELECT id FROM suppliers WHERE supplier_code=$1",
-      [supplier_code]
-    );
-    if (!supplier.rows.length)
-      return res.json({ success: false, error: "Supplier not found" });
+    const supplier = await db.query("SELECT id FROM suppliers WHERE supplier_code=$1", [supplier_code]);
+    if (!supplier.rows.length) return res.json({ success: false, error: "Supplier not found" });
 
     await db.query(
-      `INSERT INTO supplier_payments
-       (supplier_id, payment_date, payment_method, amount, type)
-       VALUES ($1,$2,$3,$4,$5)`,
-      [supplier.rows[0].id, payment_date, payment_method, amount, type]
+      `INSERT INTO supplier_payments (supplier_id, supplier_code, payment_date, payment_method, amount, type)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [supplier.rows[0].id, supplier_code, payment_date, payment_method, amount, type]
     );
 
     res.json({ success: true });
   } catch (e) {
+    console.error(e);
     res.status(500).json({ success: false, error: e.message });
   }
 });
 
-/* =========================
-   ALWAYS RETURN PENDING LIST
-========================= */
+/* ==========================
+   GET ALL PENDING (for always visible list)
+========================== */
 router.get("/pending", async (req, res) => {
   try {
     const pending = await db.query(
-      `SELECT pe.ref_no, pe.supplier_name,
-              SUM(pe.purchase_pkr) - COALESCE(sp.total_paid,0) AS pending_amount
+      `SELECT pe.supplier_code, pe.supplier_name,
+              SUM(pe.purchase_pkr) - COALESCE(SUM(sp.amount),0) AS pending_amount,
+              CASE WHEN SUM(pe.purchase_pkr) - COALESCE(SUM(sp.amount),0) > 0 THEN 'PENDING' ELSE 'PAID' END AS status
        FROM purchase_entries pe
-       LEFT JOIN (
-         SELECT supplier_id, ref_no, SUM(amount) AS total_paid
-         FROM supplier_payments
-         GROUP BY supplier_id, ref_no
-       ) sp ON sp.ref_no=pe.ref_no
+       LEFT JOIN supplier_payments sp
+         ON sp.supplier_code = pe.supplier_code
        WHERE pe.is_deleted=false
-       GROUP BY pe.ref_no, pe.supplier_name
-       HAVING SUM(pe.purchase_pkr) - COALESCE(sp.total_paid,0) > 0
-       ORDER BY pe.ref_no DESC`
+       GROUP BY pe.supplier_code, pe.supplier_name
+       ORDER BY pe.supplier_name`
     );
 
-    res.json({
-      success: true,
-      pending: pending.rows.map(r => ({
-        ref_no: r.ref_no,
-        supplier_name: r.supplier_name,
-        status: "PENDING"
-      }))
-    });
+    res.json({ success: true, pending: pending.rows });
   } catch (e) {
     console.error(e);
     res.status(500).json({ success: false, error: e.message });
