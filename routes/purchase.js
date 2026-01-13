@@ -3,14 +3,13 @@ const router = express.Router();
 const db = require("../db");
 
 /* =====================================================
-   LOAD PURCHASE (SAVE + EDIT AUTO)
+   LOAD PURCHASE (SAVE + EDIT AUTO) ✅ SUPPLIER INCLUDED
 ===================================================== */
 router.get("/load/:ref_no", async (req, res) => {
   try {
     const { ref_no } = req.params;
     let rows = [];
 
-    // 🔥 CHECK EDIT MODE
     const chk = await db.query(
       `SELECT COUNT(*) FROM purchase_entries WHERE ref_no=$1 AND is_deleted=false`,
       [ref_no]
@@ -246,11 +245,18 @@ router.get("/load/:ref_no", async (req, res) => {
 
 
     /* =========================
-       MERGE PURCHASE (EDIT)
+       MERGE PURCHASE (EDIT) ✅
     ========================= */
     const p = await db.query(
       `
-      SELECT item, purchase_sar, purchase_rate, purchase_pkr, profit
+      SELECT
+        item,
+        purchase_sar,
+        purchase_rate,
+        purchase_pkr,
+        profit,
+        supplier_code,
+        supplier_name
       FROM purchase_entries
       WHERE ref_no=$1 AND is_deleted=false
       `,
@@ -265,6 +271,8 @@ router.get("/load/:ref_no", async (req, res) => {
         purchase_rate: x?.purchase_rate || 0,
         purchase_pkr: x?.purchase_pkr || 0,
         profit: x?.profit || 0,
+        supplier_code: x?.supplier_code || "",
+        supplier_name: x?.supplier_name || "",
       };
     });
 
@@ -277,7 +285,7 @@ router.get("/load/:ref_no", async (req, res) => {
 });
 
 /* =====================================================
-   SAVE PURCHASE (UPSERT - SAFE & FINAL)
+   SAVE PURCHASE (UPSERT) ✅ SUPPLIER INCLUDED
 ===================================================== */
 router.post("/save", async (req, res) => {
   try {
@@ -287,7 +295,6 @@ router.post("/save", async (req, res) => {
       return res.json({ success: false, error: "Invalid payload" });
     }
 
-    // 🔒 duplicate item safety (frontend bug guard)
     const unique = [];
     const seen = new Set();
 
@@ -299,7 +306,6 @@ router.post("/save", async (req, res) => {
       unique.push(r);
     }
 
-    // 🔥 UPSERT EACH ITEM
     for (const r of unique) {
       await db.query(
         `
@@ -307,9 +313,12 @@ router.post("/save", async (req, res) => {
           ref_no, item,
           sale_sar, sale_rate, sale_pkr,
           purchase_sar, purchase_rate, purchase_pkr,
-          profit, is_deleted
+          profit,
+          supplier_code,
+          supplier_name,
+          is_deleted
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,false)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false)
         ON CONFLICT (ref_no, item)
         DO UPDATE SET
           sale_sar       = EXCLUDED.sale_sar,
@@ -319,6 +328,8 @@ router.post("/save", async (req, res) => {
           purchase_rate  = EXCLUDED.purchase_rate,
           purchase_pkr   = EXCLUDED.purchase_pkr,
           profit         = EXCLUDED.profit,
+          supplier_code  = EXCLUDED.supplier_code,
+          supplier_name  = EXCLUDED.supplier_name,
           is_deleted     = false
         `,
         [
@@ -331,14 +342,13 @@ router.post("/save", async (req, res) => {
           r.purchase_rate || 0,
           r.purchase_pkr || 0,
           r.profit || 0,
+          r.supplier_code || "",
+          r.supplier_name || "",
         ]
       );
     }
 
-    res.json({
-      success: true,
-      message: "✅ Purchase saved successfully",
-    });
+    res.json({ success: true, message: "✅ Purchase saved / updated" });
 
   } catch (err) {
     console.error("PURCHASE UPSERT ERROR:", err);
@@ -476,7 +486,7 @@ router.delete("/delete/:ref_no", async (req, res) => {
 
 
 /* =====================================================
-   PURCHASE DETAIL (WITH CUSTOMER NAME)
+   PURCHASE DETAIL ✅ SUPPLIER INCLUDED
 ===================================================== */
 router.get("/detail/:ref_no", async (req, res) => {
   try {
@@ -494,6 +504,8 @@ router.get("/detail/:ref_no", async (req, res) => {
         p.purchase_rate,
         p.purchase_pkr,
         p.profit,
+        p.supplier_code,
+        p.supplier_name,
         p.created_at,
         s.customer_name
       FROM purchase_entries p
@@ -515,29 +527,20 @@ router.get("/detail/:ref_no", async (req, res) => {
     );
 
     if (!q.rows.length) {
-      return res.json({
-        success: false,
-        error: "Purchase entry not found"
-      });
+      return res.json({ success: false, error: "Purchase entry not found" });
     }
 
     const totals = q.rows.reduce(
       (a, r) => {
-        a.sale_sar += Number(r.sale_sar || 0);
         a.sale_pkr += Number(r.sale_pkr || 0);
-        a.purchase_sar += Number(r.purchase_sar || 0);
         a.purchase_pkr += Number(r.purchase_pkr || 0);
         a.profit += Number(r.profit || 0);
         return a;
       },
-      { sale_sar: 0, sale_pkr: 0, purchase_sar: 0, purchase_pkr: 0, profit: 0 }
+      { sale_pkr: 0, purchase_pkr: 0, profit: 0 }
     );
 
-    res.json({
-      success: true,
-      rows: q.rows,
-      totals
-    });
+    res.json({ success: true, rows: q.rows, totals });
 
   } catch (err) {
     console.error("PURCHASE DETAIL ERROR:", err);
@@ -654,6 +657,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
