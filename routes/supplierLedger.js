@@ -10,60 +10,66 @@ router.get("/:supplier_code", async (req, res) => {
     const { supplier_code } = req.params;
     const { from, to } = req.query;
 
-    let where = `
-      WHERE is_deleted = false
-      AND supplier_code = $1
+    /* ===== PURCHASES (DEBIT) ===== */
+    const purchaseQ = `
+      SELECT
+        purchase_date AS date,
+        'PURCHASE' AS type,
+        '-' AS payment_method,
+        purchase_pkr AS debit,
+        0 AS credit
+      FROM purchases
+      WHERE supplier_code = $1
     `;
 
-    const params = [supplier_code];
-
-    if (from) {
-      params.push(from);
-      where += ` AND entry_date >= $${params.length}`;
-    }
-
-    if (to) {
-      params.push(to);
-      where += ` AND entry_date <= $${params.length}`;
-    }
+    /* ===== PAYMENTS (CREDIT) ===== */
+    const paymentQ = `
+      SELECT
+        payment_date AS date,
+        'PAYMENT' AS type,
+        payment_method,
+        0 AS debit,
+        amount AS credit
+      FROM supplier_payments
+      WHERE supplier_code = $1
+    `;
 
     const q = `
-      SELECT *
-      FROM supplier_ledger
-      ${where}
-      ORDER BY entry_date ASC, id ASC
+      SELECT * FROM (
+        ${purchaseQ}
+        UNION ALL
+        ${paymentQ}
+      ) t
+      ORDER BY date ASC
     `;
 
-    const { rows } = await db.query(q, params);
+    const { rows } = await db.query(q, [supplier_code]);
 
     /* ===== RUNNING BALANCE ===== */
     let balance = 0;
     const ledger = rows.map((r) => {
-      balance += Number(r.debit || 0);
-      balance -= Number(r.credit || 0);
-
-      return {
-        ...r,
-        balance,
-      };
+      balance += Number(r.debit);
+      balance -= Number(r.credit);
+      return { ...r, balance };
     });
 
     /* ===== PENDING / PARTIAL ===== */
-    const pending = ledger.filter(
-      (r) => r.type === "PURCHASE" && r.credit === 0
-    );
+    const pendingQ = `
+      SELECT ref_no, supplier_name, status
+      FROM purchases
+      WHERE supplier_code = $1
+      AND status IN ('PENDING','PARTIAL')
+    `;
+    const pending = (await db.query(pendingQ, [supplier_code])).rows;
 
     res.json({
       success: true,
       ledger,
       pending,
     });
-  } catch (err) {
-    console.error("SUPPLIER LEDGER ERROR:", err);
-    res.status(500).json({
-      success: false,
-      error: "Server error",
-    });
+  } catch (e) {
+    console.error(e);
+    res.json({ success: false, error: "Server error" });
   }
 });
 
