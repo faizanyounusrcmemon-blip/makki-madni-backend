@@ -80,11 +80,11 @@ app.use("/api/balance-sheet", require("../routes/balanceSheet"));
 app.use("/profit-report", require("../routes/profitReport"));
 app.use("/api/profit-report", require("../routes/profitReport"));
 
-app.use("/expense-ledger", require("../routes/expenseledger"));
-app.use("/api/expense-ledger", require("../routes/expenseledger"));
+app.use("/expense-ledger", require("../routes/expenseLedger"));
+app.use("/api/expense-ledger", require("../routes/expenseLedger"));
 
-app.use("/supplier-ledger", require("../routes/supplierledger"));
-app.use("/api/supplier-ledger", require("../routes/supplierledger"));
+app.use("/supplier-ledger", require("../routes/supplierLedger"));
+app.use("/api/supplier-ledger", require("../routes/supplierLedger"));
 
 
 
