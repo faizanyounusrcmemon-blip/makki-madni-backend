@@ -83,6 +83,9 @@ app.use("/api/profit-report", require("../routes/profitReport"));
 app.use("/expenseledger", require("../routes/expenseledger"));
 app.use("/api/expenseledger", require("../routes/expenseledger"));
 
+app.use("/supplierledger", require("../routes/supplierledger"));
+app.use("/api/supplierledger", require("../routes/supplierledger"));
+
 
 
 // ==========================
