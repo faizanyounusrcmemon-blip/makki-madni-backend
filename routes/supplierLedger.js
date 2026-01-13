@@ -102,4 +102,36 @@ router.get("/:supplierCode", async (req, res) => {
   }
 });
 
+router.post("/payment", async (req, res) => {
+  try {
+    const { supplier_code, payment_date, payment_method, amount } = req.body;
+
+    const supplier = await db.query(
+      "SELECT id FROM suppliers WHERE supplier_code = $1",
+      [supplier_code]
+    );
+
+    if (!supplier.rows.length) {
+      return res.json({ success: false, error: "Supplier not found" });
+    }
+
+    await db.query(
+      `INSERT INTO supplier_payments
+       (supplier_id, payment_date, payment_method, amount)
+       VALUES ($1,$2,$3,$4)`,
+      [
+        supplier.rows[0].id,
+        payment_date,
+        payment_method,
+        amount,
+      ]
+    );
+
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+
 module.exports = router;
