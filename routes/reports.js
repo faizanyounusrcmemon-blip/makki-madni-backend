@@ -155,6 +155,53 @@ router.get("/all", async (req, res) => {
   }
 });
 
+/* =========================================
+   SUPPLIER WISE PURCHASE REPORT
+========================================= */
+router.get("/supplier-purchase", async (req, res) => {
+  try {
+    const q = `
+      SELECT
+        p.ref_no,
+        p.item,
+        p.supplier_name,
+        p.purchase_pkr,
+        p.sale_pkr,
+        (p.sale_pkr - p.purchase_pkr) AS profit,
+        b.booking_date
+      FROM purchases p
+      JOIN bookings b ON b.ref_no = p.ref_no
+      WHERE p.is_deleted = false
+      ORDER BY p.supplier_name, b.booking_date DESC
+    `;
+
+    const { rows } = await db.query(q);
+
+    /* ================= SUPPLIER LIST ================= */
+    const suppliers = [
+      ...new Set(
+        rows
+          .map((r) => r.supplier_name)
+          .filter(Boolean)
+      ),
+    ];
+
+    res.json({
+      success: true,
+      rows,
+      suppliers,
+    });
+  } catch (err) {
+    console.error("SUPPLIER PURCHASE REPORT ERROR:", err);
+    res.status(500).json({
+      success: false,
+      error: "Server error",
+    });
+  }
+});
+
+
 module.exports = router;
+
 
 
