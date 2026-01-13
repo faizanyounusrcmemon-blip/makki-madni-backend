@@ -34,7 +34,7 @@ router.get("/:supplierCode", async (req,res)=>{
 
     // PURCHASES
     const purchases = await db.query(`
-      SELECT pe.created_at::date AS date,
+      SELECT id, pe.created_at::date AS date,
              'PURCHASE' AS type,
              '-' AS payment_method,
              pe.purchase_pkr AS debit,
@@ -46,7 +46,7 @@ router.get("/:supplierCode", async (req,res)=>{
 
     // PAYMENTS
     const payments = await db.query(`
-      SELECT payment_date::date AS date,
+      SELECT id, payment_date::date AS date,
              type,
              payment_method,
              0 AS debit,
@@ -61,7 +61,7 @@ router.get("/:supplierCode", async (req,res)=>{
     let balance=0;
     const finalLedger = ledgerAll.map(r=> {
       balance += Number(r.debit || 0) - Number(r.credit || 0);
-      return {...r, balance};
+      return {...r, balance, entry_type: r.type.toLowerCase().includes("payment") || r.type.toLowerCase().includes("adjustment") ? "payment" : "purchase"};
     });
 
     res.json({success:true, ledger: finalLedger});
@@ -119,6 +119,5 @@ router.delete("/delete/:entryId", async (req, res) => {
     res.status(500).json({ success: false, error: e.message }); 
   }
 });
-
 
 module.exports = router;
