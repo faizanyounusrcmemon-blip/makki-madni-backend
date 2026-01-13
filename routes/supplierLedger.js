@@ -85,32 +85,38 @@ router.post("/payment", async (req,res)=>{
 });
 
 /* ================================
-   DELETE LEDGER ENTRY (HARDCODE)
+   DELETE LEDGER ENTRY
    PASSWORD: 786
 ================================ */
-router.delete("/delete/:entryId", async (req,res)=>{
+router.delete("/delete/:entryId", async (req, res) => {
   try {
     const { entryId } = req.params;
     const { password, type } = req.body; // type: 'purchase' or 'payment'
 
-    if(password !== "786") 
-      return res.json({success:false,error:"Invalid password"});
+    if (!entryId || isNaN(Number(entryId))) {
+      return res.json({ success: false, error: "Invalid entry ID" });
+    }
 
-    // Prevent deletion of Live Purchase
-    if(type === "purchase") {
+    if (password !== "786") 
+      return res.json({ success: false, error: "Invalid password" });
+
+    if (type === "purchase") {
+      // Prevent deletion of live purchase
       const { rows } = await db.query("SELECT status FROM purchase_entries WHERE id=$1", [entryId]);
-      if(rows[0]?.status === "Live Purchase") 
-        return res.json({success:false,error:"Cannot delete Live Purchase"});
+      if (rows[0]?.status === "Live Purchase") 
+        return res.json({ success: false, error: "Cannot delete Live Purchase" });
       await db.query("DELETE FROM purchase_entries WHERE id=$1", [entryId]);
     } 
-    else if(type === "payment") {
+    else if (type === "payment") {
       await db.query("DELETE FROM supplier_payments WHERE id=$1", [entryId]);
     } 
-    else return res.json({success:false,error:"Invalid type"});
+    else {
+      return res.json({ success: false, error: "Invalid type" });
+    }
 
-    res.json({success:true});
-  } catch(e){ 
-    res.status(500).json({success:false,error:e.message}); 
+    res.json({ success: true });
+  } catch(e) { 
+    res.status(500).json({ success: false, error: e.message }); 
   }
 });
 
