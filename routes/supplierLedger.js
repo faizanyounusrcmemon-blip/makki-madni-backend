@@ -12,16 +12,18 @@ router.get("/:supplierCode", async (req, res) => {
 
     /* ================= PURCHASE (DEBIT) ================= */
     const purchaseQuery = `
-      SELECT 
-        purchase_date AS date,
+      SELECT
+        pe.created_at::date AS date,
         'PURCHASE' AS type,
-        'Purchase' AS payment_method,
-        total_amount AS debit,
+        '-' AS payment_method,
+        SUM(pe.purchase_pkr) AS debit,
         0 AS credit
-      FROM purchase_list
-      WHERE supplier_code = $1
-      ${from ? "AND purchase_date >= $2" : ""}
-      ${to ? `AND purchase_date <= $${from ? 3 : 2}` : ""}
+      FROM purchase_entries pe
+      WHERE pe.supplier_code = $1
+        AND pe.is_deleted = false
+        ${from ? "AND pe.created_at::date >= $2" : ""}
+        ${to ? `AND pe.created_at::date <= $${from ? 3 : 2}` : ""}
+      GROUP BY pe.created_at::date
     `;
 
     const purchaseParams = [supplierCode];
@@ -32,16 +34,17 @@ router.get("/:supplierCode", async (req, res) => {
 
     /* ================= PAYMENTS (CREDIT) ================= */
     const paymentQuery = `
-      SELECT 
-        payment_date AS date,
+      SELECT
+        sp.payment_date AS date,
         'PAYMENT' AS type,
-        payment_method,
+        sp.payment_method,
         0 AS debit,
-        amount AS credit
-      FROM purchase_payments
-      WHERE supplier_code = $1
-      ${from ? "AND payment_date >= $2" : ""}
-      ${to ? `AND payment_date <= $${from ? 3 : 2}` : ""}
+        sp.amount AS credit
+      FROM supplier_payments sp
+      JOIN suppliers s ON s.id = sp.supplier_id
+      WHERE s.supplier_code = $1
+        ${from ? "AND sp.payment_date >= $2" : ""}
+        ${to ? `AND sp.payment_date <= $${from ? 3 : 2}` : ""}
     `;
 
     const paymentParams = [supplierCode];
@@ -61,17 +64,32 @@ router.get("/:supplierCode", async (req, res) => {
       return { ...r, balance };
     });
 
-    /* ================= PENDING PURCHASES ================= */
-    const pending = await db.query(
-      `
-      SELECT ref_no, supplier_name, status
-      FROM purchase_list
-      WHERE supplier_code = $1
-        AND status IN ('PENDING','PARTIAL')
-      ORDER BY purchase_date DESC
-    `,
-      [supplierCode]
-    );
+    /* ================= PENDING / PARTIAL ================= */
+    const pendingQuery = `
+      SELECT
+        pe.ref_no,
+        pe.supplier_name,
+        CASE
+          WHEN SUM(pe.purchase_pkr) >
+               COALESCE(SUM(sp.amount),0)
+          THEN
+            CASE
+              WHEN COALESCE(SUM(sp.amount),0) = 0
+              THEN 'PENDING'
+              ELSE 'PARTIAL'
+            END
+        END AS status
+      FROM purchase_entries pe
+      LEFT JOIN suppliers s ON s.supplier_code = pe.supplier_code
+      LEFT JOIN supplier_payments sp ON sp.supplier_id = s.id
+      WHERE pe.supplier_code = $1
+        AND pe.is_deleted = false
+      GROUP BY pe.ref_no, pe.supplier_name
+      HAVING SUM(pe.purchase_pkr) > COALESCE(SUM(sp.amount),0)
+      ORDER BY pe.ref_no DESC
+    `;
+
+    const pending = await db.query(pendingQuery, [supplierCode]);
 
     res.json({
       success: true,
