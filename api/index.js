@@ -91,6 +91,10 @@ app.use("/api/expenseledger", require("../routes/expenseledger"));
 app.use("/purchase", require("../routes/purchase"));
 app.use("/api/purchase", require("../routes/purchase"));
 
+app.use("/supplier", require("../routes/supplier"));
+app.use("/api/supplier", require("../routes/supplier"));
+
+
 // ==========================
 // AUTH
 // ==========================
