@@ -157,7 +157,7 @@ router.get("/all", async (req, res) => {
 
 /* =====================================================
    🔹 SUPPLIER WISE PURCHASE REPORT
-   - Purchase data from purchase_entries
+   - Fetch from purchase_entries
    - Supplier list from suppliers table
 ===================================================== */
 router.get("/supplier-purchase", async (req, res) => {
@@ -190,10 +190,9 @@ router.get("/supplier-purchase", async (req, res) => {
     `;
     const { rows: supplierRows } = await db.query(supplierQuery);
 
-    // Add "ALL" option at the beginning for dropdown
+    // Add "ALL" option at the beginning
     const suppliers = ["ALL", ...supplierRows.map((s) => s.supplier_name)];
 
-    // 3️⃣ Send JSON response
     res.json({
       success: true,
       rows: purchases,
@@ -206,7 +205,9 @@ router.get("/supplier-purchase", async (req, res) => {
   }
 });
 
+
 module.exports = router;
+
 
 
 
