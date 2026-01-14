@@ -160,48 +160,56 @@ router.get("/all", async (req, res) => {
 ========================================= */
 router.get("/supplier-purchase", async (req, res) => {
   try {
-    const q = `
-      SELECT
+    // Query to fetch purchases along with supplier list
+    const purchaseQuery = `
+      SELECT 
         p.ref_no,
         p.item,
         p.supplier_name,
         p.purchase_pkr,
         p.sale_pkr,
         (p.sale_pkr - p.purchase_pkr) AS profit,
-        b.booking_date
+        p.booking_date
       FROM purchases p
-      JOIN bookings b ON b.ref_no = p.ref_no
-      WHERE p.is_deleted = false
-      ORDER BY p.supplier_name, b.booking_date DESC
+      ORDER BY p.booking_date DESC
     `;
 
-    const { rows } = await db.query(q);
+    const supplierQuery = `
+      SELECT DISTINCT supplier_name
+      FROM purchases
+      ORDER BY supplier_name
+    `;
 
-    /* ================= SUPPLIER LIST ================= */
-    const suppliers = [
-      ...new Set(
-        rows
-          .map((r) => r.supplier_name)
-          .filter(Boolean)
-      ),
-    ];
+    const purchaseResult = await pool.query(purchaseQuery);
+    const supplierResult = await pool.query(supplierQuery);
 
     res.json({
       success: true,
-      rows,
-      suppliers,
+      rows: purchaseResult.rows,
+      suppliers: supplierResult.rows.map((r) => r.supplier_name),
     });
   } catch (err) {
-    console.error("SUPPLIER PURCHASE REPORT ERROR:", err);
-    res.status(500).json({
-      success: false,
-      error: "Server error",
-    });
+    console.error("Error fetching supplier purchase report:", err);
+    res.status(500).json({ success: false, error: "Server Error" });
   }
 });
 
+module.exports = router;
+🔹 Notes:
+pool وہ PostgreSQL connection pool ہے جو db.js میں setup ہونا چاہیے:
+
+javascript
+Copy code
+// db.js
+const { Pool } = require("pg");
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL, // Supabase URL
+  ssl: { rejectUnauthorized: false },
+});
 
 module.exports = router;
+
 
 
 
