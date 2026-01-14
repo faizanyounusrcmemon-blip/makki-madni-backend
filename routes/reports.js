@@ -165,24 +165,26 @@ router.get("/supplier-purchase", async (req, res) => {
         p.purchase_pkr,
         p.sale_pkr,
         (p.sale_pkr - p.purchase_pkr) AS profit,
-        b.booking_date
+        p.created_at AS booking_date
       FROM purchases p
-      JOIN bookings b ON b.ref_no = p.ref_no
       WHERE p.is_deleted = false
-      ORDER BY p.supplier_name, b.booking_date DESC
+      ORDER BY p.supplier_name, p.created_at DESC
     `;
+
     const { rows } = await db.query(q);
 
+    // Unique supplier list
     const suppliers = [...new Set(rows.map((r) => r.supplier_name).filter(Boolean))];
 
     res.json({ success: true, rows, suppliers });
   } catch (err) {
-    console.error("SUPPLIER PURCHASE REPORT ERROR:", err); // <-- detailed error
+    console.error("SUPPLIER PURCHASE REPORT ERROR:", err); // full error log
     res.status(500).json({ success: false, error: err.message || "Server error" });
   }
 });
 
 module.exports = router;
+
 
 
 
