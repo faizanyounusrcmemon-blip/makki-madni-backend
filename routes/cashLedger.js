@@ -3,7 +3,7 @@ const router = express.Router();
 const pool = require("../db");
 
 /* ======================================================
-   GET cash LEDGER (LIVE VIEW WITH CUSTOMER & SUPPLIER)
+   GET Cash LEDGER (LIVE VIEW WITH CUSTOMER & SUPPLIER)
 ====================================================== */
 router.get("/", async (req, res) => {
   try {
@@ -20,7 +20,7 @@ router.get("/", async (req, res) => {
         SELECT ref_no, customer_name FROM transport
       ),
       all_entries AS (
-        /* =============================== CUSTOMER PAYMENTS (cash ONLY) =============================== */
+        /* =============================== CUSTOMER PAYMENTS (Cash ONLY) =============================== */
         SELECT 
           cp.id,
           cp.payment_date AS txn_date,
@@ -30,11 +30,11 @@ router.get("/", async (req, res) => {
           'customer' AS source
         FROM customer_payments cp
         LEFT JOIN customers c ON c.ref_no = cp.ref_no
-        WHERE cp.payment_method = 'cash' AND cp.type != 'adjustment'
+        WHERE cp.payment_method = 'Cash' AND cp.type != 'adjustment'
 
         UNION ALL
 
-       /* =============================== SUPPLIER PAYMENTS (cash ONLY) =============================== */
+       /* =============================== SUPPLIER PAYMENTS (Cash ONLY) =============================== */
         SELECT 
           sp.id,
           sp.payment_date AS txn_date,
@@ -44,11 +44,11 @@ router.get("/", async (req, res) => {
           'supplier' AS source
         FROM supplier_payments sp
         LEFT JOIN suppliers s ON s.id = sp.supplier_id   -- <-- Yahan supplier_code ko id se replace karo
-        WHERE sp.payment_method = 'cash'
+        WHERE sp.payment_method = 'Cash'
 
         UNION ALL
 
-        /* =============================== EXPENSES (cash ONLY) =============================== */
+        /* =============================== EXPENSES (Cash ONLY) =============================== */
         SELECT 
           e.id,
           e.expense_date AS txn_date,
@@ -57,11 +57,11 @@ router.get("/", async (req, res) => {
           e.amount AS debit,
           'expense' AS source
         FROM expense_ledger e
-        WHERE e.payment_method = 'cash'
+        WHERE e.payment_method = 'Cash'
 
         UNION ALL
 
-        /* =============================== MANUAL cash TRANSACTIONS =============================== */
+        /* =============================== MANUAL Cash TRANSACTIONS =============================== */
         SELECT 
           bt.id,
           bt.txn_date,
@@ -69,7 +69,7 @@ router.get("/", async (req, res) => {
           CASE WHEN bt.type='deposit' THEN bt.amount END AS credit,
           CASE WHEN bt.type='withdraw' THEN bt.amount END AS debit,
           'manual' AS source
-        FROM cash_transactions bt
+        FROM Cash_transactions bt
       )
       SELECT *,
         SUM(COALESCE(credit,0) - COALESCE(debit,0)) OVER (ORDER BY txn_date, id) AS balance
@@ -79,7 +79,7 @@ router.get("/", async (req, res) => {
     const { rows } = await pool.query(sql);
     res.json({ success: true, rows });
   } catch (err) {
-    console.error("cash LEDGER ERROR:", err);
+    console.error("Cash LEDGER ERROR:", err);
     res.json({ success: false, error: err.message });
   }
 });
@@ -91,7 +91,7 @@ router.post("/transaction", async (req, res) => {
     if (!txn_date || !amount || !type) return res.json({ success: false, error: "Missing fields" });
 
     await pool.query(
-      `INSERT INTO cash_transactions (txn_date, type, amount, comment) VALUES ($1,$2,$3,$4)`,
+      `INSERT INTO Cash_transactions (txn_date, type, amount, comment) VALUES ($1,$2,$3,$4)`,
       [txn_date, type, amount, comment || ""]
     );
 
@@ -106,7 +106,7 @@ router.delete("/transaction/:id", async (req, res) => {
   const { password } = req.body;
   if (password !== "786") return res.json({ success: false, error: "Wrong password" });
 
-  await pool.query("DELETE FROM cash_transactions WHERE id=$1", [req.params.id]);
+  await pool.query("DELETE FROM Cash_transactions WHERE id=$1", [req.params.id]);
   res.json({ success: true, message: "Transaction deleted" });
 });
 
