@@ -38,6 +38,7 @@ const TABLES = [
   "cash_transactions",
   "customer_payments",
   "purchase_payments",
+  "supplier_payments",
 ];
 
 /* ================= JSON COLUMNS ================= */
@@ -365,5 +366,6 @@ router.post("/cleanup", async (req, res) => {
 
 
 module.exports = router;
+
 
 
