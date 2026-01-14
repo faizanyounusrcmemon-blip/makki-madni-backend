@@ -162,7 +162,7 @@ router.get("/all", async (req, res) => {
 ===================================================== */
 router.get("/supplier-purchase", async (req, res) => {
   try {
-    // 1️⃣ Purchase data
+    // 1️⃣ Purchase data (purchase > 0 only)
     const purchaseQuery = `
       SELECT
         p.id,
@@ -177,11 +177,12 @@ router.get("/supplier-purchase", async (req, res) => {
       LEFT JOIN suppliers s
         ON s.supplier_code = p.supplier_code
       WHERE p.is_deleted = false
+        AND p.purchase_pkr > 0
       ORDER BY s.supplier_name, p.created_at DESC
     `;
     const { rows: purchases } = await db.query(purchaseQuery);
 
-    // 2️⃣ Supplier list (all suppliers)
+    // 2️⃣ Supplier list
     const supplierQuery = `
       SELECT supplier_name
       FROM suppliers
@@ -190,23 +191,24 @@ router.get("/supplier-purchase", async (req, res) => {
     `;
     const { rows: supplierRows } = await db.query(supplierQuery);
 
-    // Add "ALL" option at the beginning
     const suppliers = ["ALL", ...supplierRows.map((s) => s.supplier_name)];
 
     res.json({
       success: true,
       rows: purchases,
-      suppliers
+      suppliers,
     });
-
   } catch (err) {
     console.error("SUPPLIER PURCHASE REPORT ERROR:", err);
-    res.status(500).json({ success: false, error: err.message || "Server error" });
+    res
+      .status(500)
+      .json({ success: false, error: err.message || "Server error" });
   }
 });
 
 
 module.exports = router;
+
 
 
 
