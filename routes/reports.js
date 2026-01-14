@@ -160,8 +160,8 @@ router.get("/all", async (req, res) => {
 ========================================= */
 router.get("/supplier-purchase", async (req, res) => {
   try {
-    // Select data from purchases table
-    const q = `
+    // 1️⃣ Purchase data
+    const purchaseQuery = `
       SELECT 
         p.ref_no,
         p.item,
@@ -172,15 +172,23 @@ router.get("/supplier-purchase", async (req, res) => {
         p.created_at AS booking_date
       FROM purchases p
       WHERE p.is_deleted = false
-      ORDER BY p.supplier_name, p.created_at DESC
+      ORDER BY p.created_at DESC
     `;
+    const { rows: purchases } = await db.query(purchaseQuery);
 
-    const { rows } = await db.query(q);
+    // 2️⃣ Supplier list from suppliers table (all suppliers)
+    const supplierQuery = `
+      SELECT supplier_name
+      FROM suppliers
+      WHERE is_deleted = false
+      ORDER BY supplier_name
+    `;
+    const { rows: supplierRows } = await db.query(supplierQuery);
 
-    // Unique suppliers + include "ALL" option
-    const suppliers = ["ALL", ...new Set(rows.map(r => r.supplier_name).filter(Boolean))];
+    // Unique supplier list for dropdown
+    const suppliers = ["ALL", ...supplierRows.map(s => s.supplier_name)];
 
-    res.json({ success: true, rows, suppliers });
+    res.json({ success: true, rows: purchases, suppliers });
   } catch (err) {
     console.error("SUPPLIER PURCHASE REPORT ERROR:", err);
     res.status(500).json({ success: false, error: err.message || "Server error" });
@@ -189,6 +197,7 @@ router.get("/supplier-purchase", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
