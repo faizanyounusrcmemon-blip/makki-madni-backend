@@ -155,28 +155,33 @@ router.get("/all", async (req, res) => {
   }
 });
 
-/* =========================================
-   SUPPLIER WISE PURCHASE REPORT
-========================================= */
+/* =====================================================
+   🔹 SUPPLIER WISE PURCHASE REPORT
+   - Purchase data from purchase_entries
+   - Supplier list from suppliers table
+===================================================== */
 router.get("/supplier-purchase", async (req, res) => {
   try {
     // 1️⃣ Purchase data
     const purchaseQuery = `
-      SELECT 
+      SELECT
+        p.id,
         p.ref_no,
         p.item,
-        p.supplier_name,
-        p.purchase_pkr,
         p.sale_pkr,
+        p.purchase_pkr,
         (p.sale_pkr - p.purchase_pkr) AS profit,
-        p.created_at AS booking_date
-      FROM purchases p
+        p.created_at AS booking_date,
+        s.supplier_name
+      FROM purchase_entries p
+      LEFT JOIN suppliers s
+        ON s.supplier_code = p.supplier_code
       WHERE p.is_deleted = false
-      ORDER BY p.created_at DESC
+      ORDER BY s.supplier_name, p.created_at DESC
     `;
     const { rows: purchases } = await db.query(purchaseQuery);
 
-    // 2️⃣ Supplier list from suppliers table (all suppliers)
+    // 2️⃣ Supplier list (all suppliers)
     const supplierQuery = `
       SELECT supplier_name
       FROM suppliers
@@ -185,18 +190,24 @@ router.get("/supplier-purchase", async (req, res) => {
     `;
     const { rows: supplierRows } = await db.query(supplierQuery);
 
-    // Unique supplier list for dropdown
-    const suppliers = ["ALL", ...supplierRows.map(s => s.supplier_name)];
+    // Add "ALL" option at the beginning for dropdown
+    const suppliers = ["ALL", ...supplierRows.map((s) => s.supplier_name)];
 
-    res.json({ success: true, rows: purchases, suppliers });
+    // 3️⃣ Send JSON response
+    res.json({
+      success: true,
+      rows: purchases,
+      suppliers
+    });
+
   } catch (err) {
     console.error("SUPPLIER PURCHASE REPORT ERROR:", err);
     res.status(500).json({ success: false, error: err.message || "Server error" });
   }
 });
 
-
 module.exports = router;
+
 
 
 
