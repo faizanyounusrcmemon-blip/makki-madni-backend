@@ -34,16 +34,16 @@ router.get("/", async (req, res) => {
 
         UNION ALL
 
-        /* =============================== SUPPLIER PAYMENTS (BANK ONLY) =============================== */
+       /* =============================== SUPPLIER PAYMENTS (BANK ONLY) =============================== */
         SELECT 
           sp.id,
           sp.payment_date AS txn_date,
-          'Supplier Payment - ' || COALESCE(s.supplier_name,'') || ' (Ref: ' || sp.ref_no || ')' AS description,
+          'Supplier Payment - ' || COALESCE(s.supplier_name,'') || ' (Ref: ' || sp.id || ')' AS description,
           NULL::numeric AS credit,
           sp.amount AS debit,
           'supplier' AS source
         FROM supplier_payments sp
-        LEFT JOIN suppliers s ON s.supplier_code = sp.supplier_code
+        LEFT JOIN suppliers s ON s.id = sp.supplier_id   -- <-- Yahan supplier_code ko id se replace karo
         WHERE sp.payment_method = 'Bank'
 
         UNION ALL
@@ -111,3 +111,4 @@ router.delete("/transaction/:id", async (req, res) => {
 });
 
 module.exports = router;
+
