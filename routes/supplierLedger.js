@@ -39,8 +39,7 @@ router.get("/:supplierCode", async (req,res)=>{
             '-' AS payment_method,
             pe.purchase_pkr AS debit,
             0 AS credit,
-            pe.item_label AS item_label,
-            pe.item AS item
+            pe.item AS item   -- sirf 'item' use kar rahe hain
      FROM purchase_entries pe
      WHERE pe.supplier_code=$1 AND pe.is_deleted=false
      ORDER BY pe.created_at
