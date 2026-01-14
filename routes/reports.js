@@ -160,7 +160,7 @@ router.get("/all", async (req, res) => {
 ========================================= */
 router.get("/supplier-purchase", async (req, res) => {
   try {
-    // Use created_at as booking_date since bookings join may fail
+    // Select data from purchases table
     const q = `
       SELECT 
         p.ref_no,
@@ -177,16 +177,19 @@ router.get("/supplier-purchase", async (req, res) => {
 
     const { rows } = await db.query(q);
 
-    // Unique suppliers for filter dropdown
-    const suppliers = [...new Set(rows.map((r) => r.supplier_name).filter(Boolean))];
+    // Unique suppliers + include "ALL" option
+    const suppliers = ["ALL", ...new Set(rows.map(r => r.supplier_name).filter(Boolean))];
 
     res.json({ success: true, rows, suppliers });
   } catch (err) {
-    console.error("SUPPLIER PURCHASE REPORT ERROR:", err); // full error log
+    console.error("SUPPLIER PURCHASE REPORT ERROR:", err);
     res.status(500).json({ success: false, error: err.message || "Server error" });
   }
 });
+
+
 module.exports = router;
+
 
 
 
