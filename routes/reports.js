@@ -195,20 +195,7 @@ router.get("/supplier-purchase", async (req, res) => {
 });
 
 module.exports = router;
-🔹 Notes:
-pool وہ PostgreSQL connection pool ہے جو db.js میں setup ہونا چاہیے:
 
-javascript
-Copy code
-// db.js
-const { Pool } = require("pg");
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, // Supabase URL
-  ssl: { rejectUnauthorized: false },
-});
-
-module.exports = router;
 
 
 
