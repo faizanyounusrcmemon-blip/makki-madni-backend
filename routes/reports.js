@@ -155,8 +155,12 @@ router.get("/all", async (req, res) => {
   }
 });
 
+/* =========================================
+   SUPPLIER WISE PURCHASE REPORT
+========================================= */
 router.get("/supplier-purchase", async (req, res) => {
   try {
+    // Use created_at as booking_date since bookings join may fail
     const q = `
       SELECT 
         p.ref_no,
@@ -173,7 +177,7 @@ router.get("/supplier-purchase", async (req, res) => {
 
     const { rows } = await db.query(q);
 
-    // Unique supplier list
+    // Unique suppliers for filter dropdown
     const suppliers = [...new Set(rows.map((r) => r.supplier_name).filter(Boolean))];
 
     res.json({ success: true, rows, suppliers });
@@ -182,8 +186,8 @@ router.get("/supplier-purchase", async (req, res) => {
     res.status(500).json({ success: false, error: err.message || "Server error" });
   }
 });
-
 module.exports = router;
+
 
 
 
