@@ -32,17 +32,18 @@ router.get("/:supplierCode", async (req,res)=>{
     if(!supplier.rows.length) return res.json({success:false, error:"Supplier not found"});
     const supplierId = supplier.rows[0].id;
 
-    // PURCHASES
-    const purchases = await db.query(`
-      SELECT id, pe.created_at::date AS date,
-             'PURCHASE' AS type,
-             '-' AS payment_method,
-             pe.purchase_pkr AS debit,
-             0 AS credit
-      FROM purchase_entries pe
-      WHERE pe.supplier_code=$1 AND pe.is_deleted=false
-      ORDER BY pe.created_at
-    `,[supplierCode]);
+// PURCHASES
+   const purchases = await db.query(`
+     SELECT id, pe.created_at::date AS date,
+            'PURCHASE' AS type,
+            '-' AS payment_method,
+            pe.purchase_pkr AS debit,
+            0 AS credit,
+            pe.detail AS detail
+     FROM purchase_entries pe
+     WHERE pe.supplier_code=$1 AND pe.is_deleted=false
+     ORDER BY pe.created_at
+   `, [supplierCode]);
 
     // PAYMENTS
     const payments = await db.query(`
