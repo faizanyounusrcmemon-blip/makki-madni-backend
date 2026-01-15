@@ -3,7 +3,7 @@ const router = express.Router();
 const db = require("../db");
 
 /* =========================================
-   BALANCE SHEET WITH SUPPLIER LEDGER
+   BALANCE SHEET WITH ALL SUPPLIERS
 ========================================= */
 router.get("/", async (req, res) => {
   try {
@@ -79,13 +79,13 @@ router.get("/", async (req, res) => {
       LEFT JOIN supplier_payments sp
         ON sp.supplier_id = s.id
       GROUP BY s.supplier_code, s.supplier_name
-      ORDER BY balance DESC, s.supplier_name
+      ORDER BY s.supplier_name
     `);
 
     res.json({
       success: true,
       customers: customerRows,
-      suppliers: suppliers.rows,
+      suppliers: suppliers.rows, // <- sab suppliers
       summary: {
         total_receivable: customerRows.reduce((a,r)=>a+r.balance,0),
         total_payable: suppliers.rows.reduce((a,r)=>a+r.balance,0),
