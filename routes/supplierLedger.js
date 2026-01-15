@@ -7,27 +7,25 @@ const db = require("../db");
 ================================ */
 router.get("/pending", async (req, res) => {
   try {
-    // supplier-wise total purchase
     const q = await db.query(`
-      SELECT 
-          s.supplier_code,
-          s.supplier_name,
-          SUM(pe.purchase_pkr) AS total_purchase,
-          COALESCE(SUM(sp.amount), 0) AS total_paid,
-          SUM(pe.purchase_pkr) - COALESCE(SUM(sp.amount), 0) AS pending_amount,
-          CASE 
-            WHEN SUM(pe.purchase_pkr) - COALESCE(SUM(sp.amount),0) = 0 THEN 'PAID'
-            WHEN SUM(sp.amount) > 0 THEN 'PARTIAL'
-            ELSE 'PENDING'
-          END AS status
+      SELECT
+        s.supplier_code,
+        s.supplier_name,
+        COALESCE(SUM(pe.purchase_pkr), 0) AS total_purchase,
+        COALESCE(SUM(sp.amount), 0) AS total_paid,
+        COALESCE(SUM(pe.purchase_pkr), 0) - COALESCE(SUM(sp.amount), 0) AS pending_amount,
+        CASE 
+          WHEN COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0) = 0 THEN 'PAID'
+          WHEN COALESCE(SUM(sp.amount),0) > 0 THEN 'PARTIAL'
+          ELSE 'PENDING'
+        END AS status
       FROM suppliers s
-      LEFT JOIN purchase_entries pe 
+      LEFT JOIN purchase_entries pe
         ON pe.supplier_code = s.supplier_code AND pe.is_deleted = false
       LEFT JOIN supplier_payments sp
         ON sp.supplier_id = s.id
       GROUP BY s.supplier_code, s.supplier_name
-      HAVING SUM(pe.purchase_pkr) - COALESCE(SUM(sp.amount), 0) > 0
-      ORDER BY s.supplier_name
+      ORDER BY pending_amount DESC, s.supplier_name
     `);
 
     res.json({ success: true, pending: q.rows });
