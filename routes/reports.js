@@ -86,55 +86,50 @@ router.get("/sale-adjustments", async (req, res) => {
 });
 
 /* =========================================
-   PURCHASE ADJUSTMENT REPORT (FIXED)
+   SUPPLIER WISE ADJUSTMENT REPORT
 ========================================= */
-router.get("/purchase-adjustments", async (req, res) => {
+router.get("/supplier-adjustment", async (req, res) => {
   try {
-    /* ================= PURCHASE ================= */
-    const purchases = await db.query(`
+    const q = await db.query(`
       SELECT
-        pe.ref_no,
-        pe.supplier_code,
+        s.id AS supplier_id,
+        s.supplier_code,
         s.supplier_name,
-        DATE(pe.created_at) AS date,
-        SUM(pe.purchase_pkr) AS amount
-      FROM purchase_entries pe
-      JOIN suppliers s 
-        ON s.supplier_code = pe.supplier_code
-      WHERE pe.is_deleted = false
-      GROUP BY pe.ref_no, pe.supplier_code, s.supplier_name, DATE(pe.created_at)
-      ORDER BY date DESC
+
+        COALESCE(SUM(pe.purchase_pkr), 0) AS total_purchase,
+        COALESCE(SUM(sp.amount), 0) AS total_paid,
+
+        COALESCE(SUM(pe.purchase_pkr), 0)
+        - COALESCE(SUM(sp.amount), 0) AS balance,
+
+        CASE
+          WHEN COALESCE(SUM(pe.purchase_pkr), 0)
+             - COALESCE(SUM(sp.amount), 0) = 0
+            THEN 'PAID'
+          WHEN COALESCE(SUM(sp.amount), 0) > 0
+            THEN 'PARTIAL'
+          ELSE 'PENDING'
+        END AS status
+
+      FROM suppliers s
+      LEFT JOIN purchase_entries pe
+        ON pe.supplier_code = s.supplier_code
+        AND pe.is_deleted = false
+
+      LEFT JOIN supplier_payments sp
+        ON sp.supplier_id = s.id
+
+      GROUP BY s.id, s.supplier_code, s.supplier_name
+      ORDER BY s.supplier_name
     `);
 
-    /* ================= SUPPLIER PAYMENTS ================= */
-    const payments = await db.query(`
-      SELECT
-        sp.supplier_id,
-        SUM(sp.amount) AS adjustment_amount
-      FROM supplier_payments sp
-      GROUP BY sp.supplier_id
-    `);
-
-    /* ================= MAP ================= */
-    const rows = purchases.rows.map(p => {
-      const supplierPayment =
-        payments.rows.find(
-          x => x.supplier_id === p.supplier_id
-        ) || {};
-
-      return {
-        date: p.date,
-        customer_name: p.supplier_name, // UI compatible
-        ref_no: p.ref_no,
-        amount: Number(p.amount),
-        adjustment_amount: Number(supplierPayment.adjustment_amount || 0)
-      };
+    res.json({
+      success: true,
+      rows: q.rows
     });
 
-    res.json({ success: true, rows });
-
   } catch (err) {
-    console.error("PURCHASE ADJUSTMENT ERROR:", err);
+    console.error("SUPPLIER ADJUSTMENT ERROR:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -231,6 +226,7 @@ router.get("/supplier-purchase", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
