@@ -86,9 +86,9 @@ router.get("/sale-adjustments", async (req, res) => {
 });
 
 /* =========================================
-   SUPPLIER WISE ADJUSTMENT REPORT
+   SUPPLIER WISE ADJUSTMENT ONLY
 ========================================= */
-router.get("/supplier-adjustment", async (req, res) => {
+router.get("/supplier-adjustment-only", async (req, res) => {
   try {
     const q = await db.query(`
       SELECT
@@ -96,30 +96,15 @@ router.get("/supplier-adjustment", async (req, res) => {
         s.supplier_code,
         s.supplier_name,
 
-        COALESCE(SUM(pe.purchase_pkr), 0) AS total_purchase,
-        COALESCE(SUM(sp.amount), 0) AS total_paid,
-
-        COALESCE(SUM(pe.purchase_pkr), 0)
-        - COALESCE(SUM(sp.amount), 0) AS balance,
-
-        CASE
-          WHEN COALESCE(SUM(pe.purchase_pkr), 0)
-             - COALESCE(SUM(sp.amount), 0) = 0
-            THEN 'PAID'
-          WHEN COALESCE(SUM(sp.amount), 0) > 0
-            THEN 'PARTIAL'
-          ELSE 'PENDING'
-        END AS status
+        COALESCE(SUM(sp.amount), 0) AS adjustment_amount
 
       FROM suppliers s
-      LEFT JOIN purchase_entries pe
-        ON pe.supplier_code = s.supplier_code
-        AND pe.is_deleted = false
-
       LEFT JOIN supplier_payments sp
         ON sp.supplier_id = s.id
+        AND sp.payment_method = 'Adjustment'
 
       GROUP BY s.id, s.supplier_code, s.supplier_name
+      HAVING COALESCE(SUM(sp.amount),0) > 0
       ORDER BY s.supplier_name
     `);
 
@@ -129,7 +114,7 @@ router.get("/supplier-adjustment", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("SUPPLIER ADJUSTMENT ERROR:", err);
+    console.error("SUPPLIER ADJUSTMENT ONLY ERROR:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -226,6 +211,7 @@ router.get("/supplier-purchase", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
