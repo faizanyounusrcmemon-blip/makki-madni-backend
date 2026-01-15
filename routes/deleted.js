@@ -28,6 +28,11 @@ router.get("/list", async (req, res) => {
       FROM transport WHERE is_deleted = true
 
       UNION ALL
+      SELECT 'ZIYARAT' AS type, ref_no, customer_name, booking_date
+      FROM ziyarat WHERE is_deleted = true
+
+
+      UNION ALL
       SELECT 'PURCHASE' AS type, ref_no, '-' AS customer_name, MIN(created_at)::date AS booking_date
       FROM purchase_entries
       WHERE is_deleted = true
@@ -59,6 +64,7 @@ router.post("/restore", async (req, res) => {
     else if (type === "TICKETING") table = "ticketing";
     else if (type === "VISA") table = "visa";
     else if (type === "TRANSPORT") table = "transport";
+    else if (type === "ZIYARAT") table = "ziyarat";
     else if (type === "PURCHASE") table = "purchase_entries";
     else return res.json({ success: false, error: "Invalid type" });
 
@@ -107,6 +113,7 @@ router.post("/permanent-delete", async (req, res) => {
     else if (type === "TICKETING") table = "ticketing";
     else if (type === "VISA") table = "visa";
     else if (type === "TRANSPORT") table = "transport";
+    else if (type === "ZIYARAT") table = "ziyarat";
     else if (type === "PURCHASE") table = "purchase_entries";
     else return res.json({ success: false, error: "Invalid type" });
 
@@ -139,3 +146,4 @@ router.post("/permanent-delete", async (req, res) => {
 });
 
 module.exports = router;
+
