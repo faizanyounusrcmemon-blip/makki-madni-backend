@@ -252,7 +252,7 @@ router.get("/load/:ref_no", async (req, res) => {
         /* =========================
           ZIYARAT ONLY (ZIY-)
          ========================= */
-    else if (ref_no.startsWith("TRN-")) {
+    else if (ref_no.startsWith("ZIY-")) {
       const q = await db.query(
         `
         SELECT rows, pkr_rate
@@ -760,6 +760,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
