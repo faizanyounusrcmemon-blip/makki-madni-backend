@@ -10,8 +10,12 @@ router.get("/load/:ref_no", async (req, res) => {
     const { ref_no } = req.params;
     let rows = [];
 
+    /* =========================
+       CHECK EDIT MODE
+    ========================= */
     const chk = await db.query(
-      `SELECT COUNT(*) FROM purchase_entries WHERE ref_no=$1 AND is_deleted=false`,
+      `SELECT COUNT(*) FROM purchase_entries 
+       WHERE ref_no=$1 AND is_deleted=false`,
       [ref_no]
     );
     const isEdit = Number(chk.rows[0].count) > 0;
@@ -29,50 +33,72 @@ router.get("/load/:ref_no", async (req, res) => {
         [ref_no]
       );
 
-      if (!q.rows.length)
-        return res.json({ success: false, error: "Package not found" });
+      if (!q.rows.length) {
+        return res.json({
+          success: false,
+          error: "Package not found",
+        });
+      }
 
       const r = q.rows[0];
 
-      // ---- TICKETS ----
-      if (r.adult_count > 0)
+      /* -------- TICKETS -------- */
+      if (r.adult_count > 0) {
         rows.push({
           item: "Ticket – Adult",
           sale_sar: r.adult_count * r.adult_rate,
           sale_rate: r.flight_sar_rate || 0,
-          sale_pkr: r.adult_count * r.adult_rate * (r.flight_sar_rate || 0),
+          sale_pkr:
+            r.adult_count *
+            r.adult_rate *
+            (r.flight_sar_rate || 0),
         });
+      }
 
-      if (r.child_count > 0)
+      if (r.child_count > 0) {
         rows.push({
           item: "Ticket – Child",
           sale_sar: r.child_count * r.child_rate,
           sale_rate: r.flight_sar_rate || 0,
-          sale_pkr: r.child_count * r.child_rate * (r.flight_sar_rate || 0),
+          sale_pkr:
+            r.child_count *
+            r.child_rate *
+            (r.flight_sar_rate || 0),
         });
+      }
 
-      if (r.infant_count > 0)
+      if (r.infant_count > 0) {
         rows.push({
           item: "Ticket – Infant",
           sale_sar: r.infant_count * r.infant_rate,
           sale_rate: r.flight_sar_rate || 0,
-          sale_pkr: r.infant_count * r.infant_rate * (r.flight_sar_rate || 0),
+          sale_pkr:
+            r.infant_count *
+            r.infant_rate *
+            (r.flight_sar_rate || 0),
         });
+      }
 
-      // ---- HOTELS ----
-      if (Array.isArray(r.hotels))
-        r.hotels.forEach((h, i) =>
+      /* -------- HOTELS -------- */
+      if (Array.isArray(r.hotels)) {
+        r.hotels.forEach((h, i) => {
           rows.push({
             item: `Hotel ${i + 1} - ${h.hotel || ""}`,
             sale_sar: Number(h.total) || 0,
             sale_rate: r.hotel_sar_rate || 0,
-            sale_pkr: (Number(h.total) || 0) * (r.hotel_sar_rate || 0),
-          })
-        );
+            sale_pkr:
+              (Number(h.total) || 0) *
+              (r.hotel_sar_rate || 0),
+          });
+        });
+      }
 
-      // ---- VISA ----
+      /* -------- VISA -------- */
       if (r.visa_persons > 0) {
-        const sar = r.visa_total || r.visa_persons * r.visa_rate;
+        const sar =
+          r.visa_total ||
+          r.visa_persons * r.visa_rate;
+
         rows.push({
           item: "Visa",
           sale_sar: sar,
@@ -81,15 +107,18 @@ router.get("/load/:ref_no", async (req, res) => {
         });
       }
 
-      // ---- TRANSPORT ----
+      /* -------- TRANSPORT -------- */
       if (Array.isArray(r.transport)) {
         r.transport.forEach((t, i) => {
           const baseItem = `Transport ${i + 1}`;
-          const label = t.text || t.route || t.description || "";
+          const label =
+            t.text || t.route || t.description || "";
 
           rows.push({
             item: baseItem,
-            item_label: label ? `${baseItem} - ${label}` : baseItem,
+            item_label: label
+              ? `${baseItem} - ${label}`
+              : baseItem,
             sale_sar: Number(t.amount) || 0,
             sale_rate: r.transport_sar_rate || 0,
             sale_pkr:
@@ -99,15 +128,18 @@ router.get("/load/:ref_no", async (req, res) => {
         });
       }
 
-      // ---- ZIYARAT ----
+      /* -------- ZIYARAT -------- */
       if (Array.isArray(r.ziyarat)) {
         r.ziyarat.forEach((t, i) => {
           const baseItem = `Ziyarat ${i + 1}`;
-          const label = t.text || t.route || t.description || "";
+          const label =
+            t.text || t.route || t.description || "";
 
           rows.push({
             item: baseItem,
-            item_label: label ? `${baseItem} - ${label}` : baseItem,
+            item_label: label
+              ? `${baseItem} - ${label}`
+              : baseItem,
             sale_sar: Number(t.amount) || 0,
             sale_rate: r.ziyarat_sar_rate || 0,
             sale_pkr:
@@ -116,6 +148,13 @@ router.get("/load/:ref_no", async (req, res) => {
           });
         });
       }
+
+      return res.json({
+        success: true,
+        isEdit,
+        rows,
+      });
+    }
 
 
     /* =========================
@@ -721,6 +760,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
