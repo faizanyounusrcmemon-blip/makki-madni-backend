@@ -3,14 +3,11 @@ const router = express.Router();
 const db = require("../db");
 
 /* =========================================
-   BALANCE SHEET (FINAL — WITH CUSTOMER NAME)
+   BALANCE SHEET WITH SUPPLIER LEDGER
 ========================================= */
 router.get("/", async (req, res) => {
   try {
-
-    /* ===============================
-       CUSTOMER NAMES (ALL SALES TABLES)
-    =============================== */
+    // ===== Customers =====
     const customers = await db.query(`
       SELECT ref_no, MAX(customer_name) AS customer_name FROM (
         SELECT ref_no, customer_name FROM bookings
@@ -22,16 +19,15 @@ router.get("/", async (req, res) => {
         SELECT ref_no, customer_name FROM visa
         UNION ALL
         SELECT ref_no, customer_name FROM transport
+        UNION ALL
+        SELECT ref_no, customer_name FROM ziyarat
       ) x
       GROUP BY ref_no
     `);
 
-    /* ===============================
-       CUSTOMER SALES
-    =============================== */
     const sales = await db.query(`
-      SELECT ref_no, SUM(amount) AS sale_total FROM (
-        SELECT ref_no, total_pkr AS amount FROM bookings
+      SELECT ref_no, SUM(total_pkr) AS sale_total FROM (
+        SELECT ref_no, total_pkr FROM bookings
         UNION ALL
         SELECT ref_no, total_pkr FROM ticketing
         UNION ALL
@@ -40,6 +36,8 @@ router.get("/", async (req, res) => {
         SELECT ref_no, total_pkr FROM visa
         UNION ALL
         SELECT ref_no, total_pkr FROM transport
+        UNION ALL
+        SELECT ref_no, total_pkr FROM ziyarat
       ) x
       GROUP BY ref_no
     `);
@@ -51,12 +49,8 @@ router.get("/", async (req, res) => {
     `);
 
     const customerRows = sales.rows.map(s => {
-      const paid =
-        payments.rows.find(p => p.ref_no === s.ref_no)?.received || 0;
-
-      const cname =
-        customers.rows.find(c => c.ref_no === s.ref_no)?.customer_name || "";
-
+      const paid = payments.rows.find(p => p.ref_no === s.ref_no)?.received || 0;
+      const cname = customers.rows.find(c => c.ref_no === s.ref_no)?.customer_name || "";
       return {
         ref_no: s.ref_no,
         customer_name: cname,
@@ -66,55 +60,41 @@ router.get("/", async (req, res) => {
       };
     });
 
-    /* ===============================
-       PURCHASE PAYABLES
-    =============================== */
-    const purchases = await db.query(`
-      SELECT ref_no, SUM(purchase_pkr) AS purchase_total
-      FROM purchase_entries
-      GROUP BY ref_no
+    // ===== Suppliers =====
+    const suppliers = await db.query(`
+      SELECT
+        s.supplier_code,
+        s.supplier_name,
+        COALESCE(SUM(pe.purchase_pkr), 0) AS purchase_total,
+        COALESCE(SUM(sp.amount),0) AS paid,
+        COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0) AS balance,
+        CASE 
+          WHEN COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0) = 0 THEN 'PAID'
+          WHEN COALESCE(SUM(sp.amount),0) > 0 THEN 'PARTIAL'
+          ELSE 'PENDING'
+        END AS status
+      FROM suppliers s
+      LEFT JOIN purchase_entries pe
+        ON pe.supplier_code = s.supplier_code AND pe.is_deleted = false
+      LEFT JOIN supplier_payments sp
+        ON sp.supplier_id = s.id
+      GROUP BY s.supplier_code, s.supplier_name
+      ORDER BY balance DESC, s.supplier_name
     `);
-
-    const paid = await db.query(`
-      SELECT ref_no, COALESCE(SUM(amount),0) AS paid
-      FROM purchase_payments
-      GROUP BY ref_no
-    `);
-
-    const purchaseRows = purchases.rows.map(p => {
-      const paidAmt =
-        paid.rows.find(x => x.ref_no === p.ref_no)?.paid || 0;
-
-      const cname =
-        customers.rows.find(c => c.ref_no === p.ref_no)?.customer_name || "";
-
-      return {
-        ref_no: p.ref_no,
-        customer_name: cname,
-        purchase_total: Number(p.purchase_total),
-        paid: Number(paidAmt),
-        balance: Number(p.purchase_total) - Number(paidAmt)
-      };
-    });
-
-    /* ===============================
-       SUMMARY
-    =============================== */
-    const totalReceivable = customerRows.reduce((s,r)=>s+r.balance,0);
-    const totalPayable = purchaseRows.reduce((s,r)=>s+r.balance,0);
 
     res.json({
       success: true,
       customers: customerRows,
-      purchases: purchaseRows,
+      suppliers: suppliers.rows,
       summary: {
-        total_receivable: totalReceivable,
-        total_payable: totalPayable,
-        net_position: totalReceivable - totalPayable
+        total_receivable: customerRows.reduce((a,r)=>a+r.balance,0),
+        total_payable: suppliers.rows.reduce((a,r)=>a+r.balance,0),
+        net_position: customerRows.reduce((a,r)=>a+r.balance,0) -
+                      suppliers.rows.reduce((a,r)=>a+r.balance,0)
       }
     });
 
-  } catch (err) {
+  } catch(err){
     console.error("BALANCE SHEET ERROR:", err);
     res.json({ success:false, error: err.message });
   }
