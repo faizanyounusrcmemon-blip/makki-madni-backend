@@ -98,9 +98,29 @@ router.get("/load/:ref_no", async (req, res) => {
               (Number(t.amount) || 0) *
               (r.transport_sar_rate || 0),
           });
+        }
+
+             // ---- ziyarat ----
+      if (Array.isArray(r.ziyarat)) {
+        r.ziyarat.forEach((t, i) => {
+          const baseItem = `Ziyarat ${i + 1}`; // 🔒 stable key
+          const label = t.text || t.route || t.description || "";
+
+          rows.push({
+            item: baseItem, // ✅ DB key (kabhi change nahi hogi)
+            item_label: label
+              ? `${baseItem} - ${label}` // 👁️ sirf display ke liye
+              : baseItem,
+            sale_sar: Number(t.amount) || 0,
+            sale_rate: r.ziyarat_sar_rate || 0,
+            sale_pkr:
+              (Number(t.amount) || 0) *
+              (r.ziyarat_sar_rate || 0),
+          });
         });
       }
     }
+
 
     /* =========================
        HOTEL ONLY (HOT-)
@@ -177,6 +197,44 @@ router.get("/load/:ref_no", async (req, res) => {
       if (Array.isArray(r.rows)) {
         r.rows.forEach((t, i) => {
           const baseItem = `Transport ${i + 1}`;
+          const label = t.description || t.text || t.route || "";
+
+          const sar = Number(t.sar) || 0;     // ✅ FIX HERE
+          const rate = Number(r.pkr_rate) || 0;
+
+          rows.push({
+            item: baseItem, // 🔒 stable DB key
+            item_label: label ? `${baseItem} - ${label}` : baseItem,
+
+            sale_sar: sar,        // ✅ now works
+            sale_rate: rate,
+            sale_pkr: sar * rate,
+          });
+        });
+      }
+    }
+
+        /* =========================
+          ZIYARAT ONLY (ZIY-)
+         ========================= */
+    else if (ref_no.startsWith("TRN-")) {
+      const q = await db.query(
+        `
+        SELECT rows, pkr_rate
+        FROM ziyarat
+        WHERE ref_no=$1 AND is_deleted=false
+        `,
+        [ref_no]
+      );
+
+      if (!q.rows.length)
+        return res.json({ success: false, error: "Ziyarat not found" });
+
+      const r = q.rows[0];
+
+      if (Array.isArray(r.rows)) {
+        r.rows.forEach((t, i) => {
+          const baseItem = `Ziyarat ${i + 1}`;
           const label = t.description || t.text || t.route || "";
 
           const sar = Number(t.sar) || 0;     // ✅ FIX HERE
@@ -406,6 +464,8 @@ router.get("/list", async (req, res) => {
         SELECT ref_no, customer_name FROM ticketing
         UNION ALL
         SELECT ref_no, customer_name FROM transport
+        UNION ALL
+        SELECT ref_no, customer_name FROM ziyarat
       ) s ON s.ref_no = p.ref_no
       ${where}
       GROUP BY p.ref_no
@@ -519,6 +579,8 @@ router.get("/detail/:ref_no", async (req, res) => {
         SELECT ref_no, customer_name FROM ticketing
         UNION ALL
         SELECT ref_no, customer_name FROM transport
+        UNION ALL
+        SELECT ref_no, customer_name FROM ziyarat
       ) s ON s.ref_no = p.ref_no
       WHERE p.ref_no=$1 AND p.is_deleted=false
       ORDER BY p.item
@@ -590,6 +652,12 @@ router.get("/pending", async (req, res) => {
         SELECT ref_no, customer_name, booking_date
         FROM transport
         WHERE is_deleted=false
+
+        UNION ALL
+
+        SELECT ref_no, customer_name, booking_date
+        FROM ziyarat
+        WHERE is_deleted=false
       ) s
       GROUP BY ref_no
     `);
@@ -657,6 +725,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
