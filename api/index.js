@@ -50,6 +50,9 @@ app.use("/api/visa", require("../routes/visa"));
 app.use("/transport", require("../routes/transport"));
 app.use("/api/transport", require("../routes/transport"));
 
+app.use("/ziyarat", require("../routes/ziyarat"));
+app.use("/api/ziyarat", require("../routes/ziyarat"));
+
 app.use("/reports", require("../routes/reports"));
 app.use("/api/reports", require("../routes/reports"));
 
