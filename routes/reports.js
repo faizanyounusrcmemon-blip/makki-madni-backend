@@ -86,51 +86,48 @@ router.get("/sale-adjustments", async (req, res) => {
 });
 
 /* =========================================
-   PURCHASE ADJUSTMENT REPORT
-   (FROM SUPPLIER PAYMENTS)
+   PURCHASE ADJUSTMENT REPORT (FIXED)
 ========================================= */
 router.get("/purchase-adjustments", async (req, res) => {
   try {
-    /* ================= PURCHASE TOTAL ================= */
+    /* ================= PURCHASE ================= */
     const purchases = await db.query(`
       SELECT
         pe.ref_no,
         pe.supplier_code,
-        MAX(s.supplier_name) AS supplier_name,
+        s.supplier_name,
         DATE(pe.created_at) AS date,
         SUM(pe.purchase_pkr) AS amount
       FROM purchase_entries pe
-      JOIN suppliers s ON s.supplier_code = pe.supplier_code
+      JOIN suppliers s 
+        ON s.supplier_code = pe.supplier_code
       WHERE pe.is_deleted = false
-      GROUP BY pe.ref_no, pe.supplier_code, DATE(pe.created_at)
+      GROUP BY pe.ref_no, pe.supplier_code, s.supplier_name, DATE(pe.created_at)
+      ORDER BY date DESC
     `);
 
-    /* ================= SUPPLIER PAYMENTS (ADJUSTMENT) ================= */
+    /* ================= SUPPLIER PAYMENTS ================= */
     const payments = await db.query(`
       SELECT
-        sp.ref_no,
-        s.supplier_code,
+        sp.supplier_id,
         SUM(sp.amount) AS adjustment_amount
       FROM supplier_payments sp
-      JOIN suppliers s ON s.id = sp.supplier_id
-      GROUP BY sp.ref_no, s.supplier_code
+      GROUP BY sp.supplier_id
     `);
 
-    /* ================= MERGE ================= */
+    /* ================= MAP ================= */
     const rows = purchases.rows.map(p => {
-      const adj =
+      const supplierPayment =
         payments.rows.find(
-          x =>
-            x.ref_no === p.ref_no &&
-            x.supplier_code === p.supplier_code
-        )?.adjustment_amount || 0;
+          x => x.supplier_id === p.supplier_id
+        ) || {};
 
       return {
         date: p.date,
-        customer_name: p.supplier_name, // UI same rahe
+        customer_name: p.supplier_name, // UI compatible
         ref_no: p.ref_no,
         amount: Number(p.amount),
-        adjustment_amount: Number(adj),
+        adjustment_amount: Number(supplierPayment.adjustment_amount || 0)
       };
     });
 
@@ -138,9 +135,10 @@ router.get("/purchase-adjustments", async (req, res) => {
 
   } catch (err) {
     console.error("PURCHASE ADJUSTMENT ERROR:", err);
-    res.json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
+
 /* =====================================================
    🔹 ALL REPORTS (UNCHANGED)
 ===================================================== */
@@ -233,6 +231,7 @@ router.get("/supplier-purchase", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
