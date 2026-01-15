@@ -33,7 +33,7 @@ router.get("/", async (req, res) => {
     `);
     const baseProfit = Number(profitQ.rows[0].total);
 
-    /* ================= PURCHASE ADJUSTMENT (+) ================= */
+    /* ================= PURCHASE ADJUSTMENT (+) FROM SUPPLIER PAYMENTS ================= */
     const purAdjQ = await db.query(`
       SELECT COALESCE(SUM(amount),0) AS total
       FROM supplier_payments
@@ -89,4 +89,3 @@ router.get("/", async (req, res) => {
 });
 
 module.exports = router;
-
