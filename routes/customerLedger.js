@@ -48,6 +48,7 @@ router.get("/:ref_no", async (req, res) => {
       UNION ALL SELECT SUM(total_pkr) FROM visa WHERE ref_no=$1 AND is_deleted=false
       UNION ALL SELECT SUM(total_pkr) FROM ticketing WHERE ref_no=$1 AND is_deleted=false
       UNION ALL SELECT SUM(total_pkr) FROM transport WHERE ref_no=$1 AND is_deleted=false
+      UNION ALL SELECT SUM(total_pkr) FROM ziyarat WHERE ref_no=$1 AND is_deleted=false
       `,
       [ref_no]
     );
@@ -140,6 +141,11 @@ router.get("/pending/list", async (req, res) => {
         SELECT ref_no, customer_name, total_pkr
         FROM transport
         WHERE is_deleted=false
+
+        UNION ALL
+        SELECT ref_no, customer_name, total_pkr
+        FROM ziyarat
+        WHERE is_deleted=false
       ) x
       GROUP BY ref_no
     `);
@@ -228,4 +234,5 @@ router.delete("/delete/:id", async (req, res) => {
 });
 
 module.exports = router;
+
 
