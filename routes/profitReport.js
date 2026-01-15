@@ -36,7 +36,7 @@ router.get("/", async (req, res) => {
     /* ================= PURCHASE ADJUSTMENT (+) ================= */
     const purAdjQ = await db.query(`
       SELECT COALESCE(SUM(amount),0) AS total
-      FROM purchase_payments
+      FROM supplier_payments
       WHERE type='adjustment'
       ${year ? `AND EXTRACT(YEAR FROM payment_date)=${year}` : ""}
       ${month ? `AND EXTRACT(MONTH FROM payment_date)=${month}` : ""}
@@ -89,3 +89,4 @@ router.get("/", async (req, res) => {
 });
 
 module.exports = router;
+
