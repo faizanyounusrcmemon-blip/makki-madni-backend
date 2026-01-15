@@ -85,39 +85,55 @@ router.get("/sale-adjustments", async (req, res) => {
   }
 });
 
-/* =====================================================
-   ✅ PURCHASE ADJUSTMENT REPORT
-   🔹 amount = SUM(purchase_entries.purchase_pkr)
-   🔹 adjustment_amount = purchase_payments.amount
-===================================================== */
+/* =========================================
+   PURCHASE ADJUSTMENT REPORT
+   (FROM SUPPLIER PAYMENTS)
+========================================= */
 router.get("/purchase-adjustments", async (req, res) => {
   try {
-    const sql = `
+    /* ================= PURCHASE TOTAL ================= */
+    const purchases = await db.query(`
       SELECT
-        pp.id,
-        pp.payment_date AS date,
-        pp.ref_no,
-        c.customer_name,
-        pp.payment_method,
-        p.purchase_pkr AS amount,
-        pp.amount AS adjustment_amount
-      FROM purchase_payments pp
+        pe.ref_no,
+        pe.supplier_code,
+        MAX(s.supplier_name) AS supplier_name,
+        DATE(pe.created_at) AS date,
+        SUM(pe.purchase_pkr) AS amount
+      FROM purchase_entries pe
+      JOIN suppliers s ON s.supplier_code = pe.supplier_code
+      WHERE pe.is_deleted = false
+      GROUP BY pe.ref_no, pe.supplier_code, DATE(pe.created_at)
+    `);
 
-      LEFT JOIN (
-        SELECT ref_no, SUM(purchase_pkr) AS purchase_pkr
-        FROM purchase_entries
-        WHERE is_deleted=false
-        GROUP BY ref_no
-      ) p ON p.ref_no = pp.ref_no
+    /* ================= SUPPLIER PAYMENTS (ADJUSTMENT) ================= */
+    const payments = await db.query(`
+      SELECT
+        sp.ref_no,
+        s.supplier_code,
+        SUM(sp.amount) AS adjustment_amount
+      FROM supplier_payments sp
+      JOIN suppliers s ON s.id = sp.supplier_id
+      GROUP BY sp.ref_no, s.supplier_code
+    `);
 
-      LEFT JOIN (${CUSTOMER_SQL}) c
-        ON c.ref_no = pp.ref_no
+    /* ================= MERGE ================= */
+    const rows = purchases.rows.map(p => {
+      const adj =
+        payments.rows.find(
+          x =>
+            x.ref_no === p.ref_no &&
+            x.supplier_code === p.supplier_code
+        )?.adjustment_amount || 0;
 
-      WHERE pp.type = 'adjustment'
-      ORDER BY pp.payment_date DESC, pp.id DESC
-    `;
+      return {
+        date: p.date,
+        customer_name: p.supplier_name, // UI same rahe
+        ref_no: p.ref_no,
+        amount: Number(p.amount),
+        adjustment_amount: Number(adj),
+      };
+    });
 
-    const { rows } = await db.query(sql);
     res.json({ success: true, rows });
 
   } catch (err) {
@@ -125,7 +141,6 @@ router.get("/purchase-adjustments", async (req, res) => {
     res.json({ success: false, error: err.message });
   }
 });
-
 /* =====================================================
    🔹 ALL REPORTS (UNCHANGED)
 ===================================================== */
@@ -218,6 +233,7 @@ router.get("/supplier-purchase", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
