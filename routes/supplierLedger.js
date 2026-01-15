@@ -15,7 +15,7 @@ router.get("/pending", async (req, res) => {
         COALESCE(SUM(sp.amount), 0)::int AS total_paid,
         (COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0))::int AS pending_amount,
         CASE 
-          WHEN (COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) = 0 THEN 'PAID'
+          WHEN ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) = 0 THEN 'PAID'
           WHEN COALESCE(SUM(sp.amount),0) > 0 THEN 'PARTIAL'
           ELSE 'PENDING'
         END AS status
@@ -25,7 +25,7 @@ router.get("/pending", async (req, res) => {
       LEFT JOIN supplier_payments sp
         ON sp.supplier_id = s.id
       GROUP BY s.supplier_code, s.supplier_name
-      HAVING (COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) <> 0 -- remove zero balances
+      HAVING ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) <> 0
       ORDER BY pending_amount DESC, s.supplier_name
     `);
 
