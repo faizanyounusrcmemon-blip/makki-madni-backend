@@ -84,33 +84,30 @@ router.get("/load/:ref_no", async (req, res) => {
       // ---- TRANSPORT ----
       if (Array.isArray(r.transport)) {
         r.transport.forEach((t, i) => {
-          const baseItem = `Transport ${i + 1}`; // 🔒 stable key
+          const baseItem = `Transport ${i + 1}`;
           const label = t.text || t.route || t.description || "";
 
           rows.push({
-            item: baseItem, // ✅ DB key (kabhi change nahi hogi)
-            item_label: label
-              ? `${baseItem} - ${label}` // 👁️ sirf display ke liye
-              : baseItem,
+            item: baseItem,
+            item_label: label ? `${baseItem} - ${label}` : baseItem,
             sale_sar: Number(t.amount) || 0,
             sale_rate: r.transport_sar_rate || 0,
             sale_pkr:
               (Number(t.amount) || 0) *
               (r.transport_sar_rate || 0),
           });
-        }
+        });
+      }
 
-             // ---- ziyarat ----
+      // ---- ZIYARAT ----
       if (Array.isArray(r.ziyarat)) {
         r.ziyarat.forEach((t, i) => {
-          const baseItem = `Ziyarat ${i + 1}`; // 🔒 stable key
+          const baseItem = `Ziyarat ${i + 1}`;
           const label = t.text || t.route || t.description || "";
 
           rows.push({
-            item: baseItem, // ✅ DB key (kabhi change nahi hogi)
-            item_label: label
-              ? `${baseItem} - ${label}` // 👁️ sirf display ke liye
-              : baseItem,
+            item: baseItem,
+            item_label: label ? `${baseItem} - ${label}` : baseItem,
             sale_sar: Number(t.amount) || 0,
             sale_rate: r.ziyarat_sar_rate || 0,
             sale_pkr:
@@ -119,7 +116,6 @@ router.get("/load/:ref_no", async (req, res) => {
           });
         });
       }
-    }
 
 
     /* =========================
@@ -725,6 +721,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
