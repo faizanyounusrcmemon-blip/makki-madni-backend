@@ -6,8 +6,8 @@ router.get("/", async (req, res) => {
   try {
     const { year, month } = req.query;
 
-    const yCond = year ? `AND EXTRACT(YEAR FROM created_at)=${year}` : "";
-    const mCond = month ? `AND EXTRACT(MONTH FROM created_at)=${month}` : "";
+    const yCond = year ? `AND EXTRACT(YEAR FROM created_at) = ${year}` : "";
+    const mCond = month ? `AND EXTRACT(MONTH FROM created_at) = ${month}` : "";
 
     /* ================= SALES (DISPLAY ONLY) ================= */
     const salesQ = await db.query(`
@@ -33,13 +33,13 @@ router.get("/", async (req, res) => {
     `);
     const baseProfit = Number(profitQ.rows[0].total);
 
-    /* ================= PURCHASE ADJUSTMENT (+) FROM SUPPLIER PAYMENTS ================= */
+    /* ================= PURCHASE ADJUSTMENT FROM SUPPLIER PAYMENTS (+) ================= */
     const purAdjQ = await db.query(`
       SELECT COALESCE(SUM(amount),0) AS total
       FROM supplier_payments
       WHERE type='adjustment'
-      ${year ? `AND EXTRACT(YEAR FROM payment_date)=${year}` : ""}
-      ${month ? `AND EXTRACT(MONTH FROM payment_date)=${month}` : ""}
+      ${year ? `AND EXTRACT(YEAR FROM payment_date) = ${year}` : ""}
+      ${month ? `AND EXTRACT(MONTH FROM payment_date) = ${month}` : ""}
     `);
     const purchaseAdj = Number(purAdjQ.rows[0].total);
 
@@ -48,8 +48,8 @@ router.get("/", async (req, res) => {
       SELECT COALESCE(SUM(amount),0) AS total
       FROM customer_payments
       WHERE type='adjustment'
-      ${year ? `AND EXTRACT(YEAR FROM payment_date)=${year}` : ""}
-      ${month ? `AND EXTRACT(MONTH FROM payment_date)=${month}` : ""}
+      ${year ? `AND EXTRACT(YEAR FROM payment_date) = ${year}` : ""}
+      ${month ? `AND EXTRACT(MONTH FROM payment_date) = ${month}` : ""}
     `);
     const customerAdj = Number(custAdjQ.rows[0].total);
 
@@ -57,17 +57,13 @@ router.get("/", async (req, res) => {
     const expQ = await db.query(`
       SELECT COALESCE(SUM(amount),0) AS total
       FROM expense_ledger
-      ${year ? `WHERE EXTRACT(YEAR FROM expense_date)=${year}` : "WHERE 1=1"}
-      ${month ? `AND EXTRACT(MONTH FROM expense_date)=${month}` : ""}
+      ${year ? `WHERE EXTRACT(YEAR FROM expense_date) = ${year}` : "WHERE 1=1"}
+      ${month ? `AND EXTRACT(MONTH FROM expense_date) = ${month}` : ""}
     `);
     const totalExpense = Number(expQ.rows[0].total);
 
     /* ================= FINAL NET PROFIT ================= */
-    const netProfit =
-      baseProfit +
-      purchaseAdj -
-      customerAdj -
-      totalExpense;
+    const netProfit = baseProfit + purchaseAdj - customerAdj - totalExpense;
 
     res.json({
       success: true,
