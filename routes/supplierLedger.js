@@ -3,23 +3,38 @@ const router = express.Router();
 const db = require("../db");
 
 /* ================================
-   GET ALL PENDING SUPPLIERS
+   GET ALL PENDING / PARTIAL SUPPLIERS
 ================================ */
-router.get("/pending", async (req,res)=>{
+router.get("/pending", async (req, res) => {
   try {
+    // supplier-wise total purchase
     const q = await db.query(`
-      SELECT pe.supplier_code, s.supplier_name,
-             SUM(pe.purchase_pkr) - COALESCE(SUM(sp.amount),0) AS pending_amount,
-             CASE WHEN SUM(pe.purchase_pkr) - COALESCE(SUM(sp.amount),0) > 0 THEN 'PENDING' ELSE 'PAID' END AS status
-      FROM purchase_entries pe
-      JOIN suppliers s ON s.supplier_code = pe.supplier_code
-      LEFT JOIN supplier_payments sp ON sp.supplier_id = s.id
-      WHERE pe.is_deleted = false
-      GROUP BY pe.supplier_code, s.supplier_name
-      HAVING SUM(pe.purchase_pkr) - COALESCE(SUM(sp.amount),0) > 0
+      SELECT 
+          s.supplier_code,
+          s.supplier_name,
+          SUM(pe.purchase_pkr) AS total_purchase,
+          COALESCE(SUM(sp.amount), 0) AS total_paid,
+          SUM(pe.purchase_pkr) - COALESCE(SUM(sp.amount), 0) AS pending_amount,
+          CASE 
+            WHEN SUM(pe.purchase_pkr) - COALESCE(SUM(sp.amount),0) = 0 THEN 'PAID'
+            WHEN SUM(sp.amount) > 0 THEN 'PARTIAL'
+            ELSE 'PENDING'
+          END AS status
+      FROM suppliers s
+      LEFT JOIN purchase_entries pe 
+        ON pe.supplier_code = s.supplier_code AND pe.is_deleted = false
+      LEFT JOIN supplier_payments sp
+        ON sp.supplier_id = s.id
+      GROUP BY s.supplier_code, s.supplier_name
+      HAVING SUM(pe.purchase_pkr) - COALESCE(SUM(sp.amount), 0) > 0
+      ORDER BY s.supplier_name
     `);
-    res.json({success:true, pending: q.rows});
-  } catch(e){ res.status(500).json({success:false, error:e.message}); }
+
+    res.json({ success: true, pending: q.rows });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 /* ================================
