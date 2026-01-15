@@ -49,26 +49,33 @@ router.post("/save", async (req, res) => {
           transport=$18::jsonb,
           transport_total=$19,
 
-          flight_sar_total=$20,
-          hotel_sar_total=$21,
-          visa_sar_total=$22,
-          transport_sar_total=$23,
+          ziyarat=$20::jsonb,
+          ziyarat_total=$21,
 
-          flight_sar_rate=$24,
-          hotel_sar_rate=$25,
-          visa_sar_rate=$26,
-          transport_sar_rate=$27,
 
-          flight_pkr_total=$28,
-          hotel_pkr_total=$29,
-          visa_pkr_total=$30,
-          transport_pkr_total=$31,
+          flight_sar_total=$22,
+          hotel_sar_total=$23,
+          visa_sar_total=$24,
+          transport_sar_total=$25,
+          ziyarat_sar_total=$26,
 
-          net_pkr_total=$32,
-          total_sar=$33,
-          total_pkr=$34,
-          per_person_qty=$35,
-          per_person_final=$36
+          flight_sar_rate=$27,
+          hotel_sar_rate=$28,
+          visa_sar_rate=$29,
+          transport_sar_rate=$30,
+          ziyarat_sar_rate=$31,
+
+          flight_pkr_total=$32,
+          hotel_pkr_total=$33,
+          visa_pkr_total=$34,
+          transport_pkr_total=$35,
+          ziyarat_pkr_total=$36,
+
+          net_pkr_total=$37,
+          total_sar=$38,
+          total_pkr=$39,
+          per_person_qty=$40,
+          per_person_final=$41
 
         WHERE ref_no=$1
         `,
@@ -97,21 +104,27 @@ router.post("/save", async (req, res) => {
 
           JSON.stringify(d.transport || []),
           d.transport_total,
+          
+          JSON.stringify(d.ziyarat || []),
+          d.ziyarat_total,
 
           d.flight_sar_total,
           d.hotel_sar_total,
           d.visa_sar_total,
           d.transport_sar_total,
+          d.ziyarat_sar_total,
 
           d.flight_sar_rate,
           d.hotel_sar_rate,
           d.visa_sar_rate,
           d.transport_sar_rate,
+          d.ziyarat_sar_rate,
 
           d.flight_pkr_total,
           d.hotel_pkr_total,
           d.visa_pkr_total,
           d.transport_pkr_total,
+          d.ziyarat_pkr_total,
 
           d.net_pkr_total,
           d.total_sar,
@@ -143,10 +156,12 @@ router.post("/save", async (req, res) => {
 
         transport, transport_total,
 
-        flight_sar_total, hotel_sar_total, visa_sar_total, transport_sar_total,
-        flight_sar_rate, hotel_sar_rate, visa_sar_rate, transport_sar_rate,
+        ziyarat, ziyarat_total,
 
-        flight_pkr_total, hotel_pkr_total, visa_pkr_total, transport_pkr_total,
+        flight_sar_total, hotel_sar_total, visa_sar_total, transport_sar_total, ziyarat_sar_total,
+        flight_sar_rate, hotel_sar_rate, visa_sar_rate, transport_sar_rate, ziyarat_sar_rate,
+
+        flight_pkr_total, hotel_pkr_total, visa_pkr_total, transport_pkr_total, ziyarat_pkr_total,
         net_pkr_total, total_sar, total_pkr,
 
         per_person_qty, per_person_final
@@ -158,11 +173,12 @@ router.post("/save", async (req, res) => {
         $12::jsonb,$13::jsonb,$14,
         $15,$16,$17,
         $18::jsonb,$19,
-        $20,$21,$22,$23,
-        $24,$25,$26,$27,
-        $28,$29,$30,$31,
-        $32,$33,$34,
-        $35,$36
+        $20::jsonb,$21,
+        $22,$23,$24,$25,$26
+        $27,$28,$29,$30,$31,
+        $32,$33,$34,$35 $36,
+        $37,$38,$39,
+        $40,$41
       )
       `,
       [
@@ -190,20 +206,26 @@ router.post("/save", async (req, res) => {
         JSON.stringify(d.transport || []),
         d.transport_total,
 
+        JSON.stringify(d.ziyarat || []),
+        d.ziyarat_total,
+
         d.flight_sar_total,
         d.hotel_sar_total,
         d.visa_sar_total,
         d.transport_sar_total,
+        d.ziyarat_sar_total,
 
         d.flight_sar_rate,
         d.hotel_sar_rate,
         d.visa_sar_rate,
         d.transport_sar_rate,
+        d.ziyarat_sar_rate,
 
         d.flight_pkr_total,
         d.hotel_pkr_total,
         d.visa_pkr_total,
         d.transport_pkr_total,
+        d.ziyarat_pkr_total,
 
         d.net_pkr_total,
         d.total_sar,
