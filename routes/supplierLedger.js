@@ -11,11 +11,11 @@ router.get("/pending", async (req, res) => {
       SELECT
         s.supplier_code,
         s.supplier_name,
-        COALESCE(SUM(pe.purchase_pkr), 0)::int AS total_purchase,
-        COALESCE(SUM(sp.amount), 0)::int AS total_paid,
-        (COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0))::int AS pending_amount,
+        ROUND(COALESCE(SUM(pe.purchase_pkr), 0), 2) AS total_purchase,
+        ROUND(COALESCE(SUM(sp.amount), 0), 2) AS total_paid,
+        ROUND(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0), 2) AS pending_amount,
         CASE 
-          WHEN ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) = 0 THEN 'PAID'
+          WHEN ROUND(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0), 2) = 0 THEN 'PAID'
           WHEN COALESCE(SUM(sp.amount),0) > 0 THEN 'PARTIAL'
           ELSE 'PENDING'
         END AS status
@@ -25,7 +25,7 @@ router.get("/pending", async (req, res) => {
       LEFT JOIN supplier_payments sp
         ON sp.supplier_id = s.id
       GROUP BY s.supplier_code, s.supplier_name
-      HAVING ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) <> 0
+      HAVING ROUND(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0), 2) <> 0
       ORDER BY pending_amount DESC, s.supplier_name
     `);
 
