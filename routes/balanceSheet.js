@@ -61,36 +61,44 @@ router.get("/", async (req, res) => {
     });
 
     // ===== Suppliers =====
-    const suppliers = await db.query(`
-      SELECT
-        s.supplier_code,
-        s.supplier_name,
-        COALESCE(SUM(pe.purchase_pkr), 0) AS purchase_total,
-        COALESCE(SUM(sp.amount),0) AS paid,
-        COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0) AS balance,
-        CASE 
-          WHEN COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0) = 0 THEN 'PAID'
-          WHEN COALESCE(SUM(sp.amount),0) > 0 THEN 'PARTIAL'
-          ELSE 'PENDING'
-        END AS status
-      FROM suppliers s
-      LEFT JOIN purchase_entries pe
-        ON pe.supplier_code = s.supplier_code AND pe.is_deleted = false
-      LEFT JOIN supplier_payments sp
-        ON sp.supplier_id = s.id
-      GROUP BY s.supplier_code, s.supplier_name
-      ORDER BY s.supplier_name
+    // Step 1: total purchase per supplier
+    const purchaseTotals = await db.query(`
+      SELECT supplier_code, SUM(purchase_pkr) AS purchase_total
+      FROM purchase_entries
+      WHERE is_deleted = false
+      GROUP BY supplier_code
     `);
+
+    // Step 2: total payments per supplier
+    const paymentTotals = await db.query(`
+      SELECT s.supplier_code, COALESCE(SUM(sp.amount),0) AS paid
+      FROM suppliers s
+      LEFT JOIN supplier_payments sp ON sp.supplier_id = s.id
+      GROUP BY s.supplier_code
+    `);
+
+    // Step 3: merge suppliers
+    const suppliersData = await db.query(`
+      SELECT supplier_code, supplier_name FROM suppliers
+    `);
+
+    const suppliers = suppliersData.rows.map(s => {
+      const purchase = Number(purchaseTotals.rows.find(p => p.supplier_code === s.supplier_code)?.purchase_total || 0);
+      const paid = Number(paymentTotals.rows.find(p => p.supplier_code === s.supplier_code)?.paid || 0);
+      const balance = purchase - paid;
+      const status = balance === 0 ? "PAID" : paid > 0 ? "PARTIAL" : "PENDING";
+      return { ...s, purchase_total: purchase, paid, balance, status };
+    }).filter(s => s.balance > 0) // optional: hide zero balance
+      .sort((a,b) => b.balance - a.balance); // highest balance top
 
     res.json({
       success: true,
-      customers: customerRows,
-      suppliers: suppliers.rows, // <- sab suppliers
+      customers: customerRows.filter(c=>c.balance>0).sort((a,b)=>b.balance - a.balance),
+      suppliers,
       summary: {
         total_receivable: customerRows.reduce((a,r)=>a+r.balance,0),
-        total_payable: suppliers.rows.reduce((a,r)=>a+r.balance,0),
-        net_position: customerRows.reduce((a,r)=>a+r.balance,0) -
-                      suppliers.rows.reduce((a,r)=>a+r.balance,0)
+        total_payable: suppliers.reduce((a,r)=>a+r.balance,0),
+        net_position: customerRows.reduce((a,r)=>a+r.balance,0) - suppliers.reduce((a,r)=>a+r.balance,0)
       }
     });
 
