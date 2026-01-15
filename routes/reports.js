@@ -86,7 +86,7 @@ router.get("/sale-adjustments", async (req, res) => {
 });
 
 /* =========================================
-   SUPPLIER WISE ADJUSTMENT ONLY
+   SUPPLIER ADJUSTMENT (SAFE + FINAL)
 ========================================= */
 router.get("/supplier-adjustment-only", async (req, res) => {
   try {
@@ -96,15 +96,17 @@ router.get("/supplier-adjustment-only", async (req, res) => {
         s.supplier_code,
         s.supplier_name,
 
-        COALESCE(SUM(sp.amount), 0) AS adjustment_amount
+        SUM(sp.amount) AS adjustment_amount
 
       FROM suppliers s
-      LEFT JOIN supplier_payments sp
+      JOIN supplier_payments sp
         ON sp.supplier_id = s.id
-        AND sp.payment_method = 'Adjustment'
+
+      WHERE LOWER(sp.payment_method) = 'adjustment'
+         OR LOWER(sp.type) = 'adjustment'
 
       GROUP BY s.id, s.supplier_code, s.supplier_name
-      HAVING COALESCE(SUM(sp.amount),0) > 0
+      HAVING SUM(sp.amount) > 0
       ORDER BY s.supplier_name
     `);
 
@@ -114,8 +116,8 @@ router.get("/supplier-adjustment-only", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("SUPPLIER ADJUSTMENT ONLY ERROR:", err);
-    res.status(500).json({ success: false, error: err.message });
+    console.error("SUPPLIER ADJUSTMENT ERROR:", err);
+    res.status(500).json({ success:false, error: err.message });
   }
 });
 
@@ -211,6 +213,7 @@ router.get("/supplier-purchase", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
