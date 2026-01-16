@@ -3,8 +3,9 @@ const router = express.Router();
 const pool = require("../db");
 
 /* ======================================================
-   GET BANK LEDGER (LIVE VIEW WITH CUSTOMER & SUPPLIER)
+   GET BANK LEDGER (LIVE VIEW, EXCLUDE ALL ADJUSTMENTS)
    - Ignores all adjustments (cash or bank)
+   - Rounds amounts to integer, no -0
 ====================================================== */
 router.get("/", async (req, res) => {
   try {
@@ -27,7 +28,7 @@ router.get("/", async (req, res) => {
           cp.id,
           cp.payment_date AS txn_date,
           'Customer Payment - ' || COALESCE(c.customer_name,'') || ' (Ref: ' || cp.ref_no || ')' AS description,
-          cp.amount AS credit,
+          ROUND(cp.amount) AS credit,
           NULL::numeric AS debit,
           'customer' AS source
         FROM customer_payments cp
@@ -42,7 +43,7 @@ router.get("/", async (req, res) => {
           sp.payment_date AS txn_date,
           'Supplier Payment - ' || COALESCE(s.supplier_name,'') || ' (Ref: ' || sp.id || ')' AS description,
           NULL::numeric AS credit,
-          sp.amount AS debit,
+          ROUND(sp.amount) AS debit,
           'supplier' AS source
         FROM supplier_payments sp
         LEFT JOIN suppliers s ON s.id = sp.supplier_id
@@ -56,7 +57,7 @@ router.get("/", async (req, res) => {
           e.expense_date AS txn_date,
           'Expense: ' || e.title AS description,
           NULL::numeric AS credit,
-          e.amount AS debit,
+          ROUND(e.amount) AS debit,
           'expense' AS source
         FROM expense_ledger e
 
@@ -67,8 +68,8 @@ router.get("/", async (req, res) => {
           bt.id,
           bt.txn_date,
           bt.comment AS description,
-          CASE WHEN bt.type='deposit' THEN bt.amount END AS credit,
-          CASE WHEN bt.type='withdraw' THEN bt.amount END AS debit,
+          CASE WHEN bt.type='deposit' THEN ROUND(bt.amount) END AS credit,
+          CASE WHEN bt.type='withdraw' THEN ROUND(bt.amount) END AS debit,
           'manual' AS source
         FROM bank_transactions bt
       )
@@ -79,7 +80,16 @@ router.get("/", async (req, res) => {
     `;
 
     const { rows } = await pool.query(sql);
-    res.json({ success: true, rows });
+
+    // ✅ Normalize -0 to 0 in JS as extra safety
+    const normalized = rows.map(r => ({
+      ...r,
+      credit: Math.round(r.credit || 0),
+      debit: Math.round(r.debit || 0),
+      balance: Math.round(r.balance || 0)
+    }));
+
+    res.json({ success: true, rows: normalized });
   } catch (err) {
     console.error("BANK LEDGER ERROR:", err);
     res.json({ success: false, error: err.message });
@@ -90,7 +100,8 @@ router.get("/", async (req, res) => {
 router.post("/transaction", async (req, res) => {
   try {
     const { txn_date, type, amount, comment } = req.body;
-    if (!txn_date || !amount || !type) return res.json({ success: false, error: "Missing fields" });
+    if (!txn_date || !amount || !type) 
+      return res.json({ success: false, error: "Missing fields" });
 
     await pool.query(
       `INSERT INTO bank_transactions (txn_date, type, amount, comment) VALUES ($1,$2,$3,$4)`,
@@ -106,11 +117,11 @@ router.post("/transaction", async (req, res) => {
 /* ================= DELETE MANUAL ================= */
 router.delete("/transaction/:id", async (req, res) => {
   const { password } = req.body;
-  if (password !== "786") return res.json({ success: false, error: "Wrong password" });
+  if (password !== "786") 
+    return res.json({ success: false, error: "Wrong password" });
 
   await pool.query("DELETE FROM bank_transactions WHERE id=$1", [req.params.id]);
   res.json({ success: true, message: "Transaction deleted" });
 });
 
 module.exports = router;
-
