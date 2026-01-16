@@ -9,37 +9,36 @@ const db = require("../db");
 router.get("/pending", async (req, res) => {
   try {
     const q = await db.query(`
+      WITH purchase_totals AS (
+        SELECT supplier_code, SUM(purchase_pkr) AS total_purchase
+        FROM purchase_entries
+        WHERE is_deleted = false
+        GROUP BY supplier_code
+      ),
+      payment_totals AS (
+        SELECT s.id AS supplier_id, s.supplier_code, COALESCE(SUM(sp.amount),0) AS total_paid
+        FROM suppliers s
+        LEFT JOIN supplier_payments sp ON sp.supplier_id = s.id
+        WHERE s.is_deleted = false
+        GROUP BY s.id, s.supplier_code
+      )
       SELECT
         s.supplier_code,
         s.supplier_name,
-        ROUND(COALESCE(SUM(pe.purchase_pkr),0),2) AS total_purchase,
-        ROUND(COALESCE(SUM(sp.amount),0),2) AS total_paid,
-        
-        /* pending_amount rounded */
-        ROUND(
-          COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0),
-          2
-        ) AS pending_amount,
-
-        /* STATUS logic based on pending_amount and paid */
+        COALESCE(pt.total_purchase,0) AS total_purchase,
+        COALESCE(ptot.total_paid,0) AS total_paid,
+        COALESCE(pt.total_purchase,0) - COALESCE(ptot.total_paid,0) AS pending_amount,
         CASE
-          WHEN ROUND(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0),2) = 0
-            THEN 'PAID'
-          WHEN COALESCE(SUM(sp.amount),0) > 0
-            THEN 'PARTIAL'
+          WHEN COALESCE(pt.total_purchase,0) - COALESCE(ptot.total_paid,0) = 0 THEN 'PAID'
+          WHEN COALESCE(ptot.total_paid,0) > 0 THEN 'PARTIAL'
           ELSE 'PENDING'
         END AS status
-
       FROM suppliers s
-      LEFT JOIN purchase_entries pe
-        ON pe.supplier_code = s.supplier_code
-        AND pe.is_deleted = false
-      LEFT JOIN supplier_payments sp
-        ON sp.supplier_id = s.id
+      LEFT JOIN purchase_totals pt ON pt.supplier_code = s.supplier_code
+      LEFT JOIN payment_totals ptot ON ptot.supplier_code = s.supplier_code
       WHERE s.is_deleted = false
-      GROUP BY s.supplier_code, s.supplier_name
-      /* ✅ Show only pending or partial with pending_amount > 0 */
-      HAVING ROUND(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0),2) > 0
+      /* ✅ Show only pending or partial (pending_amount > 0) */
+      AND COALESCE(pt.total_purchase,0) - COALESCE(ptot.total_paid,0) > 0
       ORDER BY pending_amount DESC, s.supplier_name
     `);
 
