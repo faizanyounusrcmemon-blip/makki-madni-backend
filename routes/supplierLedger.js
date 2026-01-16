@@ -4,6 +4,7 @@ const db = require("../db");
 
 /* ================================
    GET ALL PENDING / PARTIAL SUPPLIERS
+   (NO -0, PARTIAL ONLY REAL AMOUNTS)
 ================================ */
 router.get("/pending", async (req, res) => {
   try {
@@ -15,12 +16,14 @@ router.get("/pending", async (req, res) => {
         ROUND(COALESCE(SUM(pe.purchase_pkr),0),2) AS total_purchase,
         ROUND(COALESCE(SUM(sp.amount),0),2) AS total_paid,
 
+        /* pending_amount with safe zero handling */
         CASE
           WHEN ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) < 0.005
             THEN 0
           ELSE ROUND(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0),2)
         END AS pending_amount,
 
+        /* STATUS logic */
         CASE
           WHEN ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) < 0.005
             THEN 'PAID'
@@ -30,17 +33,18 @@ router.get("/pending", async (req, res) => {
         END AS status
 
       FROM suppliers s
+
       LEFT JOIN purchase_entries pe
         ON pe.supplier_code = s.supplier_code
         AND pe.is_deleted = false
+
       LEFT JOIN supplier_payments sp
-        ON sp.supplier_code = s.supplier_code
+        ON sp.supplier_id = s.id
+
       GROUP BY s.supplier_code, s.supplier_name
 
-      /* ✅ SHOW PENDING OR PARTIAL ONLY */
-      HAVING 
-        (ROUND(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0),2) > 0)
-        OR (COALESCE(SUM(sp.amount),0) > 0)
+      /* ✅ SHOW ONLY REAL PENDING OR PARTIAL (> 0.005) */
+      HAVING ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) >= 0.005
 
       ORDER BY pending_amount DESC, s.supplier_name
     `);
