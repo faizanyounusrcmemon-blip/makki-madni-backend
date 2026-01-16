@@ -15,13 +15,13 @@ router.get("/pending", async (req, res) => {
         ROUND(COALESCE(SUM(pe.purchase_pkr),0),2) AS total_purchase,
         ROUND(COALESCE(SUM(sp.amount),0),2) AS total_paid,
         
-        /* pending_amount rounded safely */
+        /* pending_amount rounded */
         ROUND(
           COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0),
           2
         ) AS pending_amount,
 
-        /* STATUS logic aligned with pending_amount */
+        /* STATUS logic based on pending_amount and paid */
         CASE
           WHEN ROUND(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0),2) = 0
             THEN 'PAID'
@@ -38,7 +38,7 @@ router.get("/pending", async (req, res) => {
         ON sp.supplier_id = s.id
       WHERE s.is_deleted = false
       GROUP BY s.supplier_code, s.supplier_name
-      /* ✅ SHOW ONLY REAL PENDING OR PARTIAL (> 0) */
+      /* ✅ Show only pending or partial with pending_amount > 0 */
       HAVING ROUND(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0),2) > 0
       ORDER BY pending_amount DESC, s.supplier_name
     `);
