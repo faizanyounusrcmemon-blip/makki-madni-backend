@@ -61,16 +61,20 @@ router.get("/:supplierCode", async (req,res)=>{
 
 // PURCHASES
    const purchases = await db.query(`
-     SELECT id, pe.created_at::date AS date,
-            'PURCHASE' AS type,
-            '-' AS payment_method,
-            pe.purchase_pkr AS debit,
-            0 AS credit,
-            pe.item AS item   -- sirf 'item' use kar rahe hain
+     SELECT 
+         pe.id,
+         pe.created_at::date AS date,
+         'Purchase' AS type,          -- type proper capitalization
+         s.supplier_name,              -- supplier name include
+         '-' AS payment_method,
+         pe.purchase_pkr AS debit,
+         0 AS credit,
+         pe.item AS item
      FROM purchase_entries pe
+     JOIN suppliers s ON s.supplier_code = pe.supplier_code
      WHERE pe.supplier_code=$1 AND pe.is_deleted=false
      ORDER BY pe.created_at
-  `, [supplierCode]);
+   `, [supplierCode]);
 
     // PAYMENTS
     const payments = await db.query(`
