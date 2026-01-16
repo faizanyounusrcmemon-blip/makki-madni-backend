@@ -4,7 +4,7 @@ const db = require("../db");
 
 /* ================================
    GET ALL PENDING / PARTIAL SUPPLIERS
-   (NO -0, ONLY REAL PENDING / PARTIAL)
+   (PAYMENT + ADJUSTMENT SAFE)
 ================================ */
 router.get("/pending", async (req, res) => {
   try {
@@ -13,40 +13,43 @@ router.get("/pending", async (req, res) => {
         s.supplier_code,
         s.supplier_name,
 
-        /* ROUND to integer, no decimals */
-        ROUND(COALESCE(SUM(pe.purchase_pkr),0)) AS total_purchase,
-        ROUND(COALESCE(SUM(sp.amount),0)) AS total_paid,
+        /* ---- TOTAL PURCHASE ---- */
+        ROUND(COALESCE(SUM(pe.purchase_pkr), 0), 2) AS total_purchase,
 
-        /* Pending amount: no -0 */
+        /* ---- TOTAL PAID (PAYMENT + ADJUSTMENT) ---- */
+        ROUND(COALESCE(SUM(sp.amount), 0), 2) AS total_paid,
+
+        /* ---- FINAL PENDING (NO -0) ---- */
         CASE
-          WHEN ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) < 0.5
+          WHEN ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) < 0.005
             THEN 0
-          ELSE ROUND(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0))
+          ELSE ROUND(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0), 2)
         END AS pending_amount,
 
-        /* STATUS */
+        /* ---- STATUS ---- */
         CASE
-          WHEN COALESCE(SUM(sp.amount),0) = 0 AND COALESCE(SUM(pe.purchase_pkr),0) > 0
-            THEN 'PENDING'
-          WHEN COALESCE(SUM(sp.amount),0) > 0 AND COALESCE(SUM(sp.amount),0) < COALESCE(SUM(pe.purchase_pkr),0)
-            THEN 'PARTIAL'
-          WHEN COALESCE(SUM(sp.amount),0) >= COALESCE(SUM(pe.purchase_pkr),0)
+          WHEN ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) < 0.005
             THEN 'PAID'
+          WHEN COALESCE(SUM(sp.amount),0) > 0
+            THEN 'PARTIAL'
           ELSE 'PENDING'
         END AS status
 
       FROM suppliers s
+
+      /* ---- PURCHASES ---- */
       LEFT JOIN purchase_entries pe
         ON pe.supplier_code = s.supplier_code
         AND pe.is_deleted = false
+
+      /* ---- PAYMENTS + ADJUSTMENTS ---- */
       LEFT JOIN supplier_payments sp
-        ON sp.supplier_id = s.id
+        ON sp.supplier_code = s.supplier_code
 
       GROUP BY s.supplier_code, s.supplier_name
 
-      /* ✅ Include both Pending & Partial only */
-      HAVING
-        (COALESCE(SUM(sp.amount),0) < COALESCE(SUM(pe.purchase_pkr),0))
+      /* ---- SHOW ONLY PENDING OR PARTIAL ---- */
+      HAVING ROUND(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0), 2) > 0
 
       ORDER BY pending_amount DESC, s.supplier_name
     `);
