@@ -34,49 +34,50 @@ router.get("/", async (req, res) => {
     `);
     const baseProfit = Number(profitQ.rows[0].total);
 
-    /* ================= PURCHASE ADJUSTMENT (+) ================= */
-    // Only active suppliers
-    const purAdjQ = await db.query(`
+    /* ================= SUPPLIER ADJUSTMENT (+) ================= */
+    const supplierAdjQ = await db.query(`
       SELECT COALESCE(SUM(sp.amount),0) AS total
       FROM supplier_payments sp
       INNER JOIN suppliers s ON s.id = sp.supplier_id
-      WHERE sp.type = 'adjustment' AND s.is_deleted = false
-      ${year ? `AND EXTRACT(YEAR FROM sp.payment_date) = ${year}` : ""}
-      ${month ? `AND EXTRACT(MONTH FROM sp.payment_date) = ${month}` : ""}
+      WHERE sp.type = 'adjustment' 
+        AND s.is_deleted = false
+        ${year ? `AND EXTRACT(YEAR FROM sp.payment_date) = ${year}` : ""}
+        ${month ? `AND EXTRACT(MONTH FROM sp.payment_date) = ${month}` : ""}
     `);
-    const purchaseAdj = Number(purAdjQ.rows[0].total);
+    const supplierAdjustment = Number(supplierAdjQ.rows[0].total);
 
     /* ================= CUSTOMER ADJUSTMENT (–) ================= */
     const custAdjQ = await db.query(`
       SELECT COALESCE(SUM(amount),0) AS total
       FROM customer_payments
       WHERE type = 'adjustment'
-      ${year ? `AND EXTRACT(YEAR FROM payment_date) = ${year}` : ""}
-      ${month ? `AND EXTRACT(MONTH FROM payment_date) = ${month}` : ""}
+        ${year ? `AND EXTRACT(YEAR FROM payment_date) = ${year}` : ""}
+        ${month ? `AND EXTRACT(MONTH FROM payment_date) = ${month}` : ""}
     `);
-    const customerAdj = Number(custAdjQ.rows[0].total);
+    const customerAdjustment = Number(custAdjQ.rows[0].total);
 
     /* ================= EXPENSE (–) ================= */
     const expQ = await db.query(`
       SELECT COALESCE(SUM(amount),0) AS total
       FROM expense_ledger
       WHERE 1=1
-      ${year ? `AND EXTRACT(YEAR FROM expense_date) = ${year}` : ""}
-      ${month ? `AND EXTRACT(MONTH FROM expense_date) = ${month}` : ""}
+        ${year ? `AND EXTRACT(YEAR FROM expense_date) = ${year}` : ""}
+        ${month ? `AND EXTRACT(MONTH FROM expense_date) = ${month}` : ""}
     `);
     const totalExpense = Number(expQ.rows[0].total);
 
     /* ================= FINAL NET PROFIT ================= */
-    const netProfit = baseProfit + purchaseAdj - customerAdj - totalExpense;
+    const netProfit = baseProfit + supplierAdjustment - customerAdjustment - totalExpense;
 
+    /* ================= SEND RESPONSE ================= */
     res.json({
       success: true,
       report: {
         total_sales: Math.round(totalSales),
         total_purchase: Math.round(totalPurchase),
         base_profit: Math.round(baseProfit),
-        purchase_adjustment: Math.round(purchaseAdj),
-        customer_adjustment: Math.round(customerAdj),
+        supplier_adjustment: Math.round(supplierAdjustment),
+        customer_adjustment: Math.round(customerAdjustment),
         total_expense: Math.round(totalExpense),
         net_profit: Math.round(netProfit),
       },
