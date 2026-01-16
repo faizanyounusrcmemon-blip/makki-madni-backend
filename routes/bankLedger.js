@@ -20,6 +20,8 @@ router.get("/", async (req, res) => {
         SELECT ref_no, customer_name FROM ticketing
         UNION ALL
         SELECT ref_no, customer_name FROM transport
+        UNION ALL
+        SELECT ref_no, customer_name FROM ziyarat
       ),
       all_entries AS (
 
@@ -124,3 +126,4 @@ router.delete("/transaction/:id", async (req, res) => {
 });
 
 module.exports = router;
+
