@@ -4,6 +4,7 @@ const db = require("../db");
 
 /* ================================
    GET ALL PENDING / PARTIAL SUPPLIERS
+   (PAYMENT + ADJUSTMENT SAFE)
 ================================ */
 router.get("/pending", async (req, res) => {
   try {
@@ -12,43 +13,75 @@ router.get("/pending", async (req, res) => {
         s.supplier_code,
         s.supplier_name,
 
+        /* ---- TOTALS ---- */
         ROUND(COALESCE(SUM(pe.purchase_pkr), 0), 2) AS total_purchase,
         ROUND(COALESCE(SUM(sp.amount), 0), 2) AS total_paid,
+        ROUND(COALESCE(SUM(sa.amount), 0), 2) AS total_adjustment,
 
-        /* ---- SAFE PENDING (NO -0) ---- */
+        /* ---- FINAL BALANCE (NO -0) ---- */
         CASE
-          WHEN ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) < 0.005
+          WHEN ABS(
+            COALESCE(SUM(pe.purchase_pkr),0)
+            - COALESCE(SUM(sp.amount),0)
+            - COALESCE(SUM(sa.amount),0)
+          ) < 0.005
           THEN 0
-          ELSE ROUND(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0), 2)
+          ELSE ROUND(
+            COALESCE(SUM(pe.purchase_pkr),0)
+            - COALESCE(SUM(sp.amount),0)
+            - COALESCE(SUM(sa.amount),0),
+            2
+          )
         END AS pending_amount,
 
-        /* ---- CORRECT STATUS ---- */
+        /* ---- STATUS ---- */
         CASE
-          WHEN ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) < 0.005
-            THEN 'PAID'
+          WHEN ABS(
+            COALESCE(SUM(pe.purchase_pkr),0)
+            - COALESCE(SUM(sp.amount),0)
+            - COALESCE(SUM(sa.amount),0)
+          ) < 0.005
+            THEN 'CLEARED'
           WHEN COALESCE(SUM(sp.amount),0) > 0
+            OR COALESCE(SUM(sa.amount),0) > 0
             THEN 'PARTIAL'
           ELSE 'PENDING'
         END AS status
 
       FROM suppliers s
+
+      /* ---- PURCHASES ---- */
       LEFT JOIN purchase_entries pe
         ON pe.supplier_code = s.supplier_code
         AND pe.is_deleted = false
+
+      /* ---- PAYMENTS ---- */
       LEFT JOIN supplier_payments sp
-        ON sp.supplier_id = s.id
+        ON sp.supplier_code = s.supplier_code
+        AND sp.is_deleted = false
 
-      GROUP BY s.supplier_code, s.supplier_name
+      /* ---- ADJUSTMENTS ---- */
+      LEFT JOIN supplier_adjustments sa
+        ON sa.supplier_code = s.supplier_code
+        AND sa.is_deleted = false
 
-      /* ---- HIDE ZERO / -ZERO ---- */
-      HAVING ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) >= 0.005
+      GROUP BY
+        s.supplier_code,
+        s.supplier_name
+
+      /* ---- ONLY SHOW REAL PENDING ---- */
+      HAVING ABS(
+        COALESCE(SUM(pe.purchase_pkr),0)
+        - COALESCE(SUM(sp.amount),0)
+        - COALESCE(SUM(sa.amount),0)
+      ) >= 0.005
 
       ORDER BY pending_amount DESC, s.supplier_name
     `);
 
     res.json({ success: true, pending: q.rows });
   } catch (e) {
-    console.error(e);
+    console.error("Pending suppliers error:", e);
     res.status(500).json({ success: false, error: e.message });
   }
 });
