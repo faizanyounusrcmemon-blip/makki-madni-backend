@@ -13,19 +13,20 @@ router.get("/pending", async (req, res) => {
         s.supplier_code,
         s.supplier_name,
 
-        ROUND(COALESCE(SUM(pe.purchase_pkr),0),2) AS total_purchase,
-        ROUND(COALESCE(SUM(sp.amount),0),2) AS total_paid,
+        /* ROUND to integer to avoid decimals */
+        ROUND(COALESCE(SUM(pe.purchase_pkr),0)) AS total_purchase,
+        ROUND(COALESCE(SUM(sp.amount),0)) AS total_paid,
 
         /* pending_amount with safe zero handling */
         CASE
-          WHEN ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) < 0.005
+          WHEN ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) < 0.5
             THEN 0
-          ELSE ROUND(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0),2)
+          ELSE ROUND(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0))
         END AS pending_amount,
 
         /* STATUS logic */
         CASE
-          WHEN ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) < 0.005
+          WHEN ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) < 0.5
             THEN 'PAID'
           WHEN COALESCE(SUM(sp.amount),0) > 0
             THEN 'PARTIAL'
@@ -43,8 +44,8 @@ router.get("/pending", async (req, res) => {
 
       GROUP BY s.supplier_code, s.supplier_name
 
-      /* ✅ SHOW ONLY REAL PENDING OR PARTIAL (> 0.005) */
-      HAVING ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) >= 0.005
+      /* ✅ SHOW ONLY REAL PENDING OR PARTIAL (> 0.5) */
+      HAVING ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) >= 0.5
 
       ORDER BY pending_amount DESC, s.supplier_name
     `);
