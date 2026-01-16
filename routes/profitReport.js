@@ -20,11 +20,11 @@ router.get("/", async (req, res) => {
       ziyaratQ
     ] = await Promise.all([
       db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM bookings WHERE is_deleted=false ${yCond} ${mCond}`),
-      db.query(`SELECT COALESCE(SUM(total_amount),0) AS total FROM hotels WHERE is_deleted=false ${yCond} ${mCond}`),
-      db.query(`SELECT COALESCE(SUM(total_amount),0) AS total FROM visa WHERE is_deleted=false ${yCond} ${mCond}`),
-      db.query(`SELECT COALESCE(SUM(total_amount),0) AS total FROM ticketing WHERE is_deleted=false ${yCond} ${mCond}`),
-      db.query(`SELECT COALESCE(SUM(total_amount),0) AS total FROM transport WHERE is_deleted=false ${yCond} ${mCond}`),
-      db.query(`SELECT COALESCE(SUM(total_amount),0) AS total FROM ziyarat WHERE is_deleted=false ${yCond} ${mCond}`)
+      db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM hotels WHERE is_deleted=false ${yCond} ${mCond}`),
+      db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM visa WHERE is_deleted=false ${yCond} ${mCond}`),
+      db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM ticketing WHERE is_deleted=false ${yCond} ${mCond}`),
+      db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM transport WHERE is_deleted=false ${yCond} ${mCond}`),
+      db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM ziyarat WHERE is_deleted=false ${yCond} ${mCond}`)
     ]);
 
     const totalSales = Number(bookingsQ.rows[0].total) +
@@ -105,3 +105,4 @@ router.get("/", async (req, res) => {
 });
 
 module.exports = router;
+
