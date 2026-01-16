@@ -3,13 +3,13 @@ const router = express.Router();
 const db = require("../db");
 
 /* =========================================
-   BALANCE SHEET (DELETED FIXED)
+   BALANCE SHEET (FIXED: NO is_deleted ON PAYMENTS)
 ========================================= */
 router.get("/", async (req, res) => {
   try {
     /* ========== CUSTOMERS ========== */
 
-    // --- Customer Names (exclude deleted) ---
+    // --- Customer Names (sales tables only) ---
     const customers = await db.query(`
       SELECT ref_no, MAX(customer_name) AS customer_name FROM (
         SELECT ref_no, customer_name FROM bookings   WHERE is_deleted = false
@@ -27,7 +27,7 @@ router.get("/", async (req, res) => {
       GROUP BY ref_no
     `);
 
-    // --- Sales Total (exclude deleted) ---
+    // --- Sales Total ---
     const sales = await db.query(`
       SELECT ref_no, SUM(total_pkr) AS sale_total FROM (
         SELECT ref_no, total_pkr FROM bookings   WHERE is_deleted = false
@@ -45,11 +45,10 @@ router.get("/", async (req, res) => {
       GROUP BY ref_no
     `);
 
-    // --- Customer Payments (exclude deleted) ---
+    // --- Customer Payments (NO is_deleted here) ---
     const payments = await db.query(`
       SELECT ref_no, COALESCE(SUM(amount),0) AS received
       FROM customer_payments
-      WHERE is_deleted = false
       GROUP BY ref_no
     `);
 
@@ -71,7 +70,7 @@ router.get("/", async (req, res) => {
 
     /* ========== SUPPLIERS ========== */
 
-    // --- Purchase totals (already fixed) ---
+    // --- Purchase totals (is_deleted exists) ---
     const purchaseTotals = await db.query(`
       SELECT supplier_code, SUM(purchase_pkr) AS purchase_total
       FROM purchase_entries
@@ -79,13 +78,12 @@ router.get("/", async (req, res) => {
       GROUP BY supplier_code
     `);
 
-    // --- Supplier payments (exclude deleted payments + suppliers) ---
+    // --- Supplier payments (NO is_deleted here) ---
     const paymentTotals = await db.query(`
       SELECT s.supplier_code, COALESCE(SUM(sp.amount),0) AS paid
       FROM suppliers s
       LEFT JOIN supplier_payments sp 
         ON sp.supplier_id = s.id
-        AND sp.is_deleted = false
       WHERE s.is_deleted = false
       GROUP BY s.supplier_code
     `);
@@ -130,6 +128,7 @@ router.get("/", async (req, res) => {
     /* ========== RESPONSE ========== */
     res.json({
       success: true,
+
       customers: customerRows
         .filter(c => c.balance > 0)
         .sort((a, b) => b.balance - a.balance),
