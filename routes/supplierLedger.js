@@ -16,14 +16,14 @@ router.get("/pending", async (req, res) => {
         ROUND(COALESCE(SUM(pe.purchase_pkr),0)) AS total_purchase,
         ROUND(COALESCE(SUM(sp.amount),0)) AS total_paid,
 
-        /* pending_amount without rounding yet, tiny decimals safe */
+        /* pending_amount with safe zero */
         CASE
-          WHEN ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) < 0.5
+          WHEN COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0) < 0.5
             THEN 0
           ELSE ROUND(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0))
         END AS pending_amount,
 
-        /* STATUS logic */
+        /* Status calculation */
         CASE
           WHEN COALESCE(SUM(sp.amount),0) = 0 AND COALESCE(SUM(pe.purchase_pkr),0) > 0
             THEN 'PENDING'
@@ -35,19 +35,16 @@ router.get("/pending", async (req, res) => {
         END AS status
 
       FROM suppliers s
-
       LEFT JOIN purchase_entries pe
-        ON pe.supplier_code = s.supplier_code
-        AND pe.is_deleted = false
-
+        ON pe.supplier_code = s.supplier_code AND pe.is_deleted = false
       LEFT JOIN supplier_payments sp
         ON sp.supplier_id = s.id
 
       GROUP BY s.supplier_code, s.supplier_name
 
-      /* ✅ Show only real pending or partial */
+      /* ✅ Show only Pending or Partial */
       HAVING 
-        COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0) > 0.5
+        (COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0) >= 0.5)
         OR (COALESCE(SUM(sp.amount),0) > 0 AND COALESCE(SUM(sp.amount),0) < COALESCE(SUM(pe.purchase_pkr),0))
 
       ORDER BY pending_amount DESC, s.supplier_name
