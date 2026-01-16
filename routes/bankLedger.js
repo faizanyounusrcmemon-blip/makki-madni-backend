@@ -4,8 +4,8 @@ const pool = require("../db");
 
 /* ======================================================
    GET BANK LEDGER (LIVE VIEW, EXCLUDE ALL ADJUSTMENTS)
-   - Ignores all adjustments (cash or bank)
-   - Rounds amounts to integer, no -0
+   - No adjustments (customer/supplier, cash/bank)
+   - Rounded amounts, no -0
 ====================================================== */
 router.get("/", async (req, res) => {
   try {
@@ -23,31 +23,31 @@ router.get("/", async (req, res) => {
       ),
       all_entries AS (
 
-        /* ================= CUSTOMER PAYMENTS (BANK + CASH, NO ADJUSTMENT) ================= */
+        /* ================= CUSTOMER PAYMENTS ================= */
         SELECT 
           cp.id,
           cp.payment_date AS txn_date,
           'Customer Payment - ' || COALESCE(c.customer_name,'') || ' (Ref: ' || cp.ref_no || ')' AS description,
-          ROUND(cp.amount) AS credit,
+          ROUND(cp.amount::numeric, 0) AS credit,
           NULL::numeric AS debit,
           'customer' AS source
         FROM customer_payments cp
         LEFT JOIN customers c ON c.ref_no = cp.ref_no
-        WHERE (cp.type IS NULL OR cp.type != 'adjustment')
+        WHERE LOWER(COALESCE(cp.type, '')) != 'adjustment'
 
         UNION ALL
 
-        /* ================= SUPPLIER PAYMENTS (BANK + CASH, NO ADJUSTMENT) ================= */
+        /* ================= SUPPLIER PAYMENTS ================= */
         SELECT 
           sp.id,
           sp.payment_date AS txn_date,
           'Supplier Payment - ' || COALESCE(s.supplier_name,'') || ' (Ref: ' || sp.id || ')' AS description,
           NULL::numeric AS credit,
-          ROUND(sp.amount) AS debit,
+          ROUND(sp.amount::numeric, 0) AS debit,
           'supplier' AS source
         FROM supplier_payments sp
         LEFT JOIN suppliers s ON s.id = sp.supplier_id
-        WHERE (sp.type IS NULL OR sp.type != 'adjustment')
+        WHERE LOWER(COALESCE(sp.type, '')) != 'adjustment'
 
         UNION ALL
 
@@ -57,7 +57,7 @@ router.get("/", async (req, res) => {
           e.expense_date AS txn_date,
           'Expense: ' || e.title AS description,
           NULL::numeric AS credit,
-          ROUND(e.amount) AS debit,
+          ROUND(e.amount::numeric, 0) AS debit,
           'expense' AS source
         FROM expense_ledger e
 
@@ -68,25 +68,26 @@ router.get("/", async (req, res) => {
           bt.id,
           bt.txn_date,
           bt.comment AS description,
-          CASE WHEN bt.type='deposit' THEN ROUND(bt.amount) END AS credit,
-          CASE WHEN bt.type='withdraw' THEN ROUND(bt.amount) END AS debit,
+          CASE WHEN bt.type='deposit' THEN ROUND(bt.amount::numeric, 0) END AS credit,
+          CASE WHEN bt.type='withdraw' THEN ROUND(bt.amount::numeric, 0) END AS debit,
           'manual' AS source
         FROM bank_transactions bt
       )
       SELECT *,
-        SUM(COALESCE(credit,0) - COALESCE(debit,0)) OVER (ORDER BY txn_date, id) AS balance
+        /* Running balance, rounded and -0 fixed */
+        ROUND(SUM(COALESCE(credit,0) - COALESCE(debit,0)) OVER (ORDER BY txn_date, id)) AS balance
       FROM all_entries
       ORDER BY txn_date, id;
     `;
 
     const { rows } = await pool.query(sql);
 
-    // ✅ Normalize -0 to 0 in JS as extra safety
+    // Extra safety in JS: normalize -0 to 0
     const normalized = rows.map(r => ({
       ...r,
-      credit: Math.round(r.credit || 0),
-      debit: Math.round(r.debit || 0),
-      balance: Math.round(r.balance || 0)
+      credit: r.credit === -0 ? 0 : r.credit,
+      debit: r.debit === -0 ? 0 : r.debit,
+      balance: r.balance === -0 ? 0 : r.balance
     }));
 
     res.json({ success: true, rows: normalized });
@@ -100,8 +101,7 @@ router.get("/", async (req, res) => {
 router.post("/transaction", async (req, res) => {
   try {
     const { txn_date, type, amount, comment } = req.body;
-    if (!txn_date || !amount || !type) 
-      return res.json({ success: false, error: "Missing fields" });
+    if (!txn_date || !amount || !type) return res.json({ success: false, error: "Missing fields" });
 
     await pool.query(
       `INSERT INTO bank_transactions (txn_date, type, amount, comment) VALUES ($1,$2,$3,$4)`,
@@ -117,8 +117,7 @@ router.post("/transaction", async (req, res) => {
 /* ================= DELETE MANUAL ================= */
 router.delete("/transaction/:id", async (req, res) => {
   const { password } = req.body;
-  if (password !== "786") 
-    return res.json({ success: false, error: "Wrong password" });
+  if (password !== "786") return res.json({ success: false, error: "Wrong password" });
 
   await pool.query("DELETE FROM bank_transactions WHERE id=$1", [req.params.id]);
   res.json({ success: true, message: "Transaction deleted" });
