@@ -3,7 +3,9 @@ const router = express.Router();
 const pool = require("../db");
 
 /* ======================================================
-   GET Cash LEDGER (LIVE VIEW WITH CUSTOMER & SUPPLIER)
+   GET CASH LEDGER (LIVE VIEW, EXCLUDE ALL ADJUSTMENTS)
+   - No adjustments (customer/supplier, cash/bank)
+   - Rounded amounts, no -0
 ====================================================== */
 router.get("/", async (req, res) => {
   try {
@@ -18,68 +20,81 @@ router.get("/", async (req, res) => {
         SELECT ref_no, customer_name FROM ticketing
         UNION ALL
         SELECT ref_no, customer_name FROM transport
+        UNION ALL
+        SELECT ref_no, customer_name FROM ziyarat
       ),
       all_entries AS (
-        /* =============================== CUSTOMER PAYMENTS (Cash ONLY) =============================== */
+
+        /* ================= CUSTOMER PAYMENTS ================= */
         SELECT 
           cp.id,
           cp.payment_date AS txn_date,
           'Customer Payment - ' || COALESCE(c.customer_name,'') || ' (Ref: ' || cp.ref_no || ')' AS description,
-          cp.amount AS credit,
+          ROUND(cp.amount::numeric, 0) AS credit,
           NULL::numeric AS debit,
           'customer' AS source
         FROM customer_payments cp
         LEFT JOIN customers c ON c.ref_no = cp.ref_no
-        WHERE cp.payment_method = 'Cash' AND cp.type != 'adjustment'
+        WHERE LOWER(COALESCE(cp.type, '')) != 'adjustment'
 
         UNION ALL
 
-       /* =============================== SUPPLIER PAYMENTS (Cash ONLY) =============================== */
+        /* ================= SUPPLIER PAYMENTS ================= */
         SELECT 
           sp.id,
           sp.payment_date AS txn_date,
           'Supplier Payment - ' || COALESCE(s.supplier_name,'') || ' (Ref: ' || sp.id || ')' AS description,
           NULL::numeric AS credit,
-          sp.amount AS debit,
+          ROUND(sp.amount::numeric, 0) AS debit,
           'supplier' AS source
         FROM supplier_payments sp
-        LEFT JOIN suppliers s ON s.id = sp.supplier_id   -- <-- Yahan supplier_code ko id se replace karo
-        WHERE sp.payment_method = 'Cash'
+        LEFT JOIN suppliers s ON s.id = sp.supplier_id
+        WHERE LOWER(COALESCE(sp.type, '')) != 'adjustment'
 
         UNION ALL
 
-        /* =============================== EXPENSES (Cash ONLY) =============================== */
+        /* ================= EXPENSES ================= */
         SELECT 
           e.id,
           e.expense_date AS txn_date,
           'Expense: ' || e.title AS description,
           NULL::numeric AS credit,
-          e.amount AS debit,
+          ROUND(e.amount::numeric, 0) AS debit,
           'expense' AS source
         FROM expense_ledger e
-        WHERE e.payment_method = 'Cash'
 
         UNION ALL
 
-        /* =============================== MANUAL Cash TRANSACTIONS =============================== */
+        /* ================= MANUAL CASH TRANSACTIONS ================= */
         SELECT 
           bt.id,
           bt.txn_date,
           bt.comment AS description,
-          CASE WHEN bt.type='deposit' THEN bt.amount END AS credit,
-          CASE WHEN bt.type='withdraw' THEN bt.amount END AS debit,
+          CASE WHEN bt.type='deposit' THEN ROUND(bt.amount::numeric, 0) END AS credit,
+          CASE WHEN bt.type='withdraw' THEN ROUND(bt.amount::numeric, 0) END AS debit,
           'manual' AS source
-        FROM Cash_transactions bt
+        FROM cash_transactions bt
       )
       SELECT *,
-        SUM(COALESCE(credit,0) - COALESCE(debit,0)) OVER (ORDER BY txn_date, id) AS balance
+        /* Running balance, rounded and -0 fixed */
+        ROUND(SUM(COALESCE(credit,0) - COALESCE(debit,0)) OVER (ORDER BY txn_date, id)) AS balance
       FROM all_entries
       ORDER BY txn_date, id;
     `;
+
     const { rows } = await pool.query(sql);
-    res.json({ success: true, rows });
+
+    // Extra safety in JS: normalize -0 to 0
+    const normalized = rows.map(r => ({
+      ...r,
+      credit: r.credit === -0 ? 0 : r.credit,
+      debit: r.debit === -0 ? 0 : r.debit,
+      balance: r.balance === -0 ? 0 : r.balance
+    }));
+
+    res.json({ success: true, rows: normalized });
   } catch (err) {
-    console.error("Cash LEDGER ERROR:", err);
+    console.error("CASH LEDGER ERROR:", err);
     res.json({ success: false, error: err.message });
   }
 });
@@ -91,7 +106,7 @@ router.post("/transaction", async (req, res) => {
     if (!txn_date || !amount || !type) return res.json({ success: false, error: "Missing fields" });
 
     await pool.query(
-      `INSERT INTO Cash_transactions (txn_date, type, amount, comment) VALUES ($1,$2,$3,$4)`,
+      `INSERT INTO cash_transactions (txn_date, type, amount, comment) VALUES ($1,$2,$3,$4)`,
       [txn_date, type, amount, comment || ""]
     );
 
@@ -106,10 +121,8 @@ router.delete("/transaction/:id", async (req, res) => {
   const { password } = req.body;
   if (password !== "786") return res.json({ success: false, error: "Wrong password" });
 
-  await pool.query("DELETE FROM Cash_transactions WHERE id=$1", [req.params.id]);
+  await pool.query("DELETE FROM cash_transactions WHERE id=$1", [req.params.id]);
   res.json({ success: true, message: "Transaction deleted" });
 });
 
 module.exports = router;
-
-
