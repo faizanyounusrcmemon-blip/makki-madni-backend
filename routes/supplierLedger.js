@@ -4,7 +4,7 @@ const db = require("../db");
 
 /* ================================
    GET ALL PENDING / PARTIAL SUPPLIERS
-   (PAYMENT + ADJUSTMENT SAFE)
+   (NO -0, PARTIAL ONLY REAL AMOUNTS)
 ================================ */
 router.get("/pending", async (req, res) => {
   try {
@@ -13,20 +13,17 @@ router.get("/pending", async (req, res) => {
         s.supplier_code,
         s.supplier_name,
 
-        /* ---- TOTAL PURCHASE ---- */
-        ROUND(COALESCE(SUM(pe.purchase_pkr), 0), 2) AS total_purchase,
+        ROUND(COALESCE(SUM(pe.purchase_pkr),0),2) AS total_purchase,
+        ROUND(COALESCE(SUM(sp.amount),0),2) AS total_paid,
 
-        /* ---- TOTAL PAID (PAYMENT + ADJUSTMENT) ---- */
-        ROUND(COALESCE(SUM(sp.amount), 0), 2) AS total_paid,
-
-        /* ---- FINAL PENDING (NO -0) ---- */
+        /* pending_amount with safe zero handling */
         CASE
           WHEN ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) < 0.005
             THEN 0
-          ELSE ROUND(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0), 2)
+          ELSE ROUND(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0),2)
         END AS pending_amount,
 
-        /* ---- STATUS ---- */
+        /* STATUS logic */
         CASE
           WHEN ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) < 0.005
             THEN 'PAID'
@@ -37,19 +34,17 @@ router.get("/pending", async (req, res) => {
 
       FROM suppliers s
 
-      /* ---- PURCHASES ---- */
       LEFT JOIN purchase_entries pe
         ON pe.supplier_code = s.supplier_code
         AND pe.is_deleted = false
 
-      /* ---- PAYMENTS + ADJUSTMENTS ---- */
       LEFT JOIN supplier_payments sp
-        ON sp.supplier_code = s.supplier_code
+        ON sp.supplier_id = s.id
 
       GROUP BY s.supplier_code, s.supplier_name
 
-      /* ---- SHOW ONLY PENDING OR PARTIAL ---- */
-      HAVING ROUND(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0), 2) > 0
+      /* ✅ SHOW ONLY REAL PENDING OR PARTIAL (> 0.005) */
+      HAVING ABS(COALESCE(SUM(pe.purchase_pkr),0) - COALESCE(SUM(sp.amount),0)) >= 0.005
 
       ORDER BY pending_amount DESC, s.supplier_name
     `);
