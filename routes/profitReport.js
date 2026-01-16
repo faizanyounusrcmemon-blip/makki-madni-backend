@@ -10,7 +10,7 @@ router.get("/", async (req, res) => {
     const yCond = year ? `AND EXTRACT(YEAR FROM created_at) = ${year}` : "";
     const mCond = month ? `AND EXTRACT(MONTH FROM created_at) = ${month}` : "";
 
-    /* ================= SALES (DISPLAY ONLY) ================= */
+    /* ================= SALES ================= */
     const salesQ = await db.query(`
       SELECT COALESCE(SUM(total_pkr),0) AS total
       FROM bookings
@@ -18,7 +18,7 @@ router.get("/", async (req, res) => {
     `);
     const totalSales = Number(salesQ.rows[0].total);
 
-    /* ================= PURCHASE (DISPLAY ONLY) ================= */
+    /* ================= PURCHASE ================= */
     const purchaseQ = await db.query(`
       SELECT COALESCE(SUM(purchase_pkr),0) AS total
       FROM purchase_entries
@@ -38,11 +38,11 @@ router.get("/", async (req, res) => {
     const supplierAdjQ = await db.query(`
       SELECT COALESCE(SUM(sp.amount),0) AS total
       FROM supplier_payments sp
-      INNER JOIN suppliers s ON s.id = sp.supplier_id
-      WHERE sp.type = 'adjustment' 
-        AND s.is_deleted = false
-        ${year ? `AND EXTRACT(YEAR FROM sp.payment_date) = ${year}` : ""}
-        ${month ? `AND EXTRACT(MONTH FROM sp.payment_date) = ${month}` : ""}
+      LEFT JOIN suppliers s ON s.id = sp.supplier_id
+      WHERE sp.type = 'adjustment'
+        AND (s.is_deleted = false OR s.is_deleted IS NULL)
+        ${year ? `AND (sp.payment_date IS NOT NULL AND EXTRACT(YEAR FROM sp.payment_date) = ${year})` : ""}
+        ${month ? `AND (sp.payment_date IS NOT NULL AND EXTRACT(MONTH FROM sp.payment_date) = ${month})` : ""}
     `);
     const supplierAdjustment = Number(supplierAdjQ.rows[0].total);
 
@@ -66,10 +66,9 @@ router.get("/", async (req, res) => {
     `);
     const totalExpense = Number(expQ.rows[0].total);
 
-    /* ================= FINAL NET PROFIT ================= */
+    /* ================= NET PROFIT ================= */
     const netProfit = baseProfit + supplierAdjustment - customerAdjustment - totalExpense;
 
-    /* ================= SEND RESPONSE ================= */
     res.json({
       success: true,
       report: {
