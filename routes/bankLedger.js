@@ -4,7 +4,7 @@ const pool = require("../db");
 
 /* ======================================================
    GET BANK LEDGER (LIVE VIEW WITH CUSTOMER & SUPPLIER)
-   - Ignores adjustments
+   - Ignores all adjustments (cash or bank)
 ====================================================== */
 router.get("/", async (req, res) => {
   try {
@@ -22,7 +22,7 @@ router.get("/", async (req, res) => {
       ),
       all_entries AS (
 
-        /* ================= CUSTOMER PAYMENTS (BANK ONLY, NO ADJUSTMENT) ================= */
+        /* ================= CUSTOMER PAYMENTS (BANK + CASH, NO ADJUSTMENT) ================= */
         SELECT 
           cp.id,
           cp.payment_date AS txn_date,
@@ -32,11 +32,11 @@ router.get("/", async (req, res) => {
           'customer' AS source
         FROM customer_payments cp
         LEFT JOIN customers c ON c.ref_no = cp.ref_no
-        WHERE cp.payment_method = 'Bank' AND cp.type != 'adjustment'
+        WHERE (cp.type IS NULL OR cp.type != 'adjustment')
 
         UNION ALL
 
-        /* ================= SUPPLIER PAYMENTS (BANK ONLY, NO ADJUSTMENT) ================= */
+        /* ================= SUPPLIER PAYMENTS (BANK + CASH, NO ADJUSTMENT) ================= */
         SELECT 
           sp.id,
           sp.payment_date AS txn_date,
@@ -46,11 +46,11 @@ router.get("/", async (req, res) => {
           'supplier' AS source
         FROM supplier_payments sp
         LEFT JOIN suppliers s ON s.id = sp.supplier_id
-        WHERE sp.payment_method = 'Bank' AND sp.type != 'adjustment'
+        WHERE (sp.type IS NULL OR sp.type != 'adjustment')
 
         UNION ALL
 
-        /* ================= EXPENSES (BANK ONLY) ================= */
+        /* ================= EXPENSES ================= */
         SELECT 
           e.id,
           e.expense_date AS txn_date,
@@ -59,7 +59,6 @@ router.get("/", async (req, res) => {
           e.amount AS debit,
           'expense' AS source
         FROM expense_ledger e
-        WHERE e.payment_method = 'Bank'
 
         UNION ALL
 
@@ -114,3 +113,4 @@ router.delete("/transaction/:id", async (req, res) => {
 });
 
 module.exports = router;
+
