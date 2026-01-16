@@ -35,14 +35,13 @@ router.get("/", async (req, res) => {
     const baseProfit = Number(profitQ.rows[0].total);
 
     /* ================= SUPPLIER ADJUSTMENT (+) ================= */
-    // ✅ Sabhi valid payments uthaega chahe supplier deleted ho ya active
     const supplierAdjQ = await db.query(`
-      SELECT COALESCE(SUM(sp.amount),0) AS total
-      FROM supplier_payments sp
-      WHERE sp.type='adjustment'
-        AND sp.amount IS NOT NULL
-        ${year ? `AND EXTRACT(YEAR FROM sp.payment_date) = ${year}` : ""}
-        ${month ? `AND EXTRACT(MONTH FROM sp.payment_date) = ${month}` : ""}
+      SELECT COALESCE(SUM(amount),0) AS total
+      FROM supplier_payments
+      WHERE amount IS NOT NULL
+        AND LOWER(type) = 'adjustment'
+        ${year ? `AND EXTRACT(YEAR FROM payment_date) = ${year}` : ""}
+        ${month ? `AND EXTRACT(MONTH FROM payment_date) = ${month}` : ""}
     `);
     const supplierAdjustment = Number(supplierAdjQ.rows[0].total);
 
@@ -50,7 +49,7 @@ router.get("/", async (req, res) => {
     const custAdjQ = await db.query(`
       SELECT COALESCE(SUM(amount),0) AS total
       FROM customer_payments
-      WHERE type='adjustment'
+      WHERE type = 'adjustment'
         ${year ? `AND EXTRACT(YEAR FROM payment_date) = ${year}` : ""}
         ${month ? `AND EXTRACT(MONTH FROM payment_date) = ${month}` : ""}
     `);
@@ -69,6 +68,7 @@ router.get("/", async (req, res) => {
     /* ================= NET PROFIT ================= */
     const netProfit = baseProfit + supplierAdjustment - customerAdjustment - totalExpense;
 
+    /* ================= RESPONSE ================= */
     res.json({
       success: true,
       report: {
