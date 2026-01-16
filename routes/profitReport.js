@@ -11,17 +11,6 @@ router.get("/", async (req, res) => {
     const mCond = month ? `AND EXTRACT(MONTH FROM created_at) = ${month}` : "";
 
     /* ================= TOTAL SALES (6 TABLES) ================= */
-    const salesQ = await db.query(`
-      SELECT
-        COALESCE(SUM(total_pkr),0) AS bookings_total,
-        0 AS hotels_total,
-        0 AS visa_total,
-        0 AS ticketing_total,
-        0 AS transport_total,
-        0 AS ziyarats_total
-    `);
-
-    // Or better: sum from each table individually
     const [
       bookingsQ,
       hotelsQ,
@@ -30,12 +19,12 @@ router.get("/", async (req, res) => {
       transportQ,
       ziyaratQ
     ] = await Promise.all([
-      db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM bookings WHERE is_deleted=false ${year ? `AND EXTRACT(YEAR FROM created_at) = ${year}` : ""} ${month ? `AND EXTRACT(MONTH FROM created_at) = ${month}` : ""}`),
-      db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM hotels WHERE is_deleted=false ${year ? `AND EXTRACT(YEAR FROM created_at) = ${year}` : ""} ${month ? `AND EXTRACT(MONTH FROM created_at) = ${month}` : ""}`),
-      db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM visa WHERE is_deleted=false ${year ? `AND EXTRACT(YEAR FROM created_at) = ${year}` : ""} ${month ? `AND EXTRACT(MONTH FROM created_at) = ${month}` : ""}`),
-      db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM ticketing WHERE is_deleted=false ${year ? `AND EXTRACT(YEAR FROM created_at) = ${year}` : ""} ${month ? `AND EXTRACT(MONTH FROM created_at) = ${month}` : ""}`),
-      db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM transport WHERE is_deleted=false ${year ? `AND EXTRACT(YEAR FROM created_at) = ${year}` : ""} ${month ? `AND EXTRACT(MONTH FROM created_at) = ${month}` : ""}`),
-      db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM ziyarats WHERE is_deleted=false ${year ? `AND EXTRACT(YEAR FROM created_at) = ${year}` : ""} ${month ? `AND EXTRACT(MONTH FROM created_at) = ${month}` : ""}`)
+      db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM bookings WHERE is_deleted=false ${yCond} ${mCond}`),
+      db.query(`SELECT COALESCE(SUM(total_amount),0) AS total FROM hotels WHERE is_deleted=false ${yCond} ${mCond}`),
+      db.query(`SELECT COALESCE(SUM(total_amount),0) AS total FROM visa WHERE is_deleted=false ${yCond} ${mCond}`),
+      db.query(`SELECT COALESCE(SUM(total_amount),0) AS total FROM ticketing WHERE is_deleted=false ${yCond} ${mCond}`),
+      db.query(`SELECT COALESCE(SUM(total_amount),0) AS total FROM transport WHERE is_deleted=false ${yCond} ${mCond}`),
+      db.query(`SELECT COALESCE(SUM(total_amount),0) AS total FROM ziyarat WHERE is_deleted=false ${yCond} ${mCond}`)
     ]);
 
     const totalSales = Number(bookingsQ.rows[0].total) +
@@ -63,12 +52,12 @@ router.get("/", async (req, res) => {
 
     /* ================= SUPPLIER ADJUSTMENT (+) ================= */
     const supplierAdjQ = await db.query(`
-      SELECT COALESCE(SUM(amount),0) AS total
-      FROM supplier_payments
-      WHERE amount IS NOT NULL
-        AND LOWER(type) = 'adjustment'
-        ${year ? `AND EXTRACT(YEAR FROM payment_date) = ${year}` : ""}
-        ${month ? `AND EXTRACT(MONTH FROM payment_date) = ${month}` : ""}
+      SELECT COALESCE(SUM(sp.amount),0) AS total
+      FROM supplier_payments sp
+      INNER JOIN suppliers s ON s.id = sp.supplier_id
+      WHERE LOWER(sp.type)='adjustment' AND s.is_deleted=false
+        ${year ? `AND EXTRACT(YEAR FROM sp.payment_date) = ${year}` : ""}
+        ${month ? `AND EXTRACT(MONTH FROM sp.payment_date) = ${month}` : ""}
     `);
     const supplierAdjustment = Number(supplierAdjQ.rows[0].total);
 
@@ -76,7 +65,7 @@ router.get("/", async (req, res) => {
     const custAdjQ = await db.query(`
       SELECT COALESCE(SUM(amount),0) AS total
       FROM customer_payments
-      WHERE type = 'adjustment'
+      WHERE LOWER(type)='adjustment'
         ${year ? `AND EXTRACT(YEAR FROM payment_date) = ${year}` : ""}
         ${month ? `AND EXTRACT(MONTH FROM payment_date) = ${month}` : ""}
     `);
