@@ -4,6 +4,7 @@ const pool = require("../db");
 
 /* ======================================================
    GET BANK LEDGER (LIVE VIEW WITH CUSTOMER & SUPPLIER)
+   - Ignores adjustments
 ====================================================== */
 router.get("/", async (req, res) => {
   try {
@@ -20,7 +21,8 @@ router.get("/", async (req, res) => {
         SELECT ref_no, customer_name FROM transport
       ),
       all_entries AS (
-        /* =============================== CUSTOMER PAYMENTS (BANK ONLY) =============================== */
+
+        /* ================= CUSTOMER PAYMENTS (BANK ONLY, NO ADJUSTMENT) ================= */
         SELECT 
           cp.id,
           cp.payment_date AS txn_date,
@@ -34,7 +36,7 @@ router.get("/", async (req, res) => {
 
         UNION ALL
 
-       /* =============================== SUPPLIER PAYMENTS (BANK ONLY) =============================== */
+        /* ================= SUPPLIER PAYMENTS (BANK ONLY, NO ADJUSTMENT) ================= */
         SELECT 
           sp.id,
           sp.payment_date AS txn_date,
@@ -43,12 +45,12 @@ router.get("/", async (req, res) => {
           sp.amount AS debit,
           'supplier' AS source
         FROM supplier_payments sp
-        LEFT JOIN suppliers s ON s.id = sp.supplier_id   -- <-- Yahan supplier_code ko id se replace karo
-        WHERE sp.payment_method = 'Bank'
+        LEFT JOIN suppliers s ON s.id = sp.supplier_id
+        WHERE sp.payment_method = 'Bank' AND sp.type != 'adjustment'
 
         UNION ALL
 
-        /* =============================== EXPENSES (BANK ONLY) =============================== */
+        /* ================= EXPENSES (BANK ONLY) ================= */
         SELECT 
           e.id,
           e.expense_date AS txn_date,
@@ -61,7 +63,7 @@ router.get("/", async (req, res) => {
 
         UNION ALL
 
-        /* =============================== MANUAL BANK TRANSACTIONS =============================== */
+        /* ================= MANUAL BANK TRANSACTIONS ================= */
         SELECT 
           bt.id,
           bt.txn_date,
@@ -76,6 +78,7 @@ router.get("/", async (req, res) => {
       FROM all_entries
       ORDER BY txn_date, id;
     `;
+
     const { rows } = await pool.query(sql);
     res.json({ success: true, rows });
   } catch (err) {
@@ -111,4 +114,3 @@ router.delete("/transaction/:id", async (req, res) => {
 });
 
 module.exports = router;
-
