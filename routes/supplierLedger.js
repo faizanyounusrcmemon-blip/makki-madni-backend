@@ -70,6 +70,7 @@ router.get("/:supplierCode", async (req,res)=>{
          pe.purchase_pkr AS debit,
          0 AS credit,
          pe.item AS item
+         pe.ref_no        -- ✅ REF NO ADD
      FROM purchase_entries pe
      JOIN suppliers s ON s.supplier_code = pe.supplier_code
      WHERE pe.supplier_code=$1 AND pe.is_deleted=false
