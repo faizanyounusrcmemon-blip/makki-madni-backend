@@ -4,8 +4,9 @@ const pool = require("../db");
 
 /* ======================================================
    GET CASH LEDGER (LIVE VIEW, CASH ONLY, EXCLUDE ADJUSTMENTS)
-   - Customer/Supplier payments filtered by payment_method='cash'
-   - Manual cash transactions included
+   - Customer/Supplier cash payments
+   - Expenses paid by cash only
+   - Manual cash transactions
    - Rounded amounts, no -0
 ====================================================== */
 router.get("/", async (req, res) => {
@@ -56,7 +57,7 @@ router.get("/", async (req, res) => {
 
         UNION ALL
 
-        /* ================= EXPENSES ================= */
+        /* ================= EXPENSES PAID BY CASH ================= */
         SELECT 
           e.id,
           e.expense_date AS txn_date,
@@ -65,6 +66,7 @@ router.get("/", async (req, res) => {
           ROUND(e.amount::numeric, 0) AS debit,
           'expense' AS source
         FROM expense_ledger e
+        WHERE LOWER(COALESCE(e.payment_method,'')) = 'cash'
 
         UNION ALL
 
