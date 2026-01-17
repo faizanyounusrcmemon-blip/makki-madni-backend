@@ -3,8 +3,8 @@ const router = express.Router();
 const pool = require("../db");
 
 /* ======================================================
-   GET BANK LEDGER (LIVE VIEW, EXCLUDE ALL ADJUSTMENTS)
-   - No adjustments (customer/supplier, cash/bank)
+   GET BANK LEDGER (LIVE VIEW, BANK ONLY, EXCLUDE ADJUSTMENTS)
+   - No cash payments
    - Rounded amounts, no -0
 ====================================================== */
 router.get("/", async (req, res) => {
@@ -25,7 +25,7 @@ router.get("/", async (req, res) => {
       ),
       all_entries AS (
 
-        /* ================= CUSTOMER PAYMENTS ================= */
+        /* ================= CUSTOMER BANK PAYMENTS ================= */
         SELECT 
           cp.id,
           cp.payment_date AS txn_date,
@@ -36,10 +36,11 @@ router.get("/", async (req, res) => {
         FROM customer_payments cp
         LEFT JOIN customers c ON c.ref_no = cp.ref_no
         WHERE LOWER(COALESCE(cp.type, '')) != 'adjustment'
+          AND LOWER(COALESCE(cp.method,'')) = 'bank'
 
         UNION ALL
 
-        /* ================= SUPPLIER PAYMENTS ================= */
+        /* ================= SUPPLIER BANK PAYMENTS ================= */
         SELECT 
           sp.id,
           sp.payment_date AS txn_date,
@@ -50,6 +51,7 @@ router.get("/", async (req, res) => {
         FROM supplier_payments sp
         LEFT JOIN suppliers s ON s.id = sp.supplier_id
         WHERE LOWER(COALESCE(sp.type, '')) != 'adjustment'
+          AND LOWER(COALESCE(sp.method,'')) = 'bank'
 
         UNION ALL
 
@@ -99,11 +101,12 @@ router.get("/", async (req, res) => {
   }
 });
 
-/* ================= SAVE MANUAL ENTRY ================= */
+/* ================= SAVE MANUAL BANK ENTRY ================= */
 router.post("/transaction", async (req, res) => {
   try {
     const { txn_date, type, amount, comment } = req.body;
-    if (!txn_date || !amount || !type) return res.json({ success: false, error: "Missing fields" });
+    if (!txn_date || !amount || !type) 
+      return res.json({ success: false, error: "Missing fields" });
 
     await pool.query(
       `INSERT INTO bank_transactions (txn_date, type, amount, comment) VALUES ($1,$2,$3,$4)`,
@@ -116,14 +119,14 @@ router.post("/transaction", async (req, res) => {
   }
 });
 
-/* ================= DELETE MANUAL ================= */
+/* ================= DELETE MANUAL BANK ENTRY ================= */
 router.delete("/transaction/:id", async (req, res) => {
   const { password } = req.body;
-  if (password !== "786") return res.json({ success: false, error: "Wrong password" });
+  if (password !== "786") 
+    return res.json({ success: false, error: "Wrong password" });
 
   await pool.query("DELETE FROM bank_transactions WHERE id=$1", [req.params.id]);
   res.json({ success: true, message: "Transaction deleted" });
 });
 
 module.exports = router;
-
