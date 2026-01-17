@@ -23,22 +23,22 @@ router.post("/create", async (req, res) => {
       INSERT INTO users (
         name, username, password, role,
 
-        packages, ticketing, transport, visa, hotels,
+        packages, ticketing, transport, ziyarat, visa, hotels,
         purchase_entry, purchase_list, pending_purchase,
-        customer_ledger, purchase_ledger, bank_ledger, expense_ledger, balance_sheet, cash_ledger,
+        customer_ledger, supplier_ledger, bank_ledger, expense_ledger, balance_sheet, cash_ledger,
         hotel_voucher, transport_voucher,
-        all_reports, profit_report, sale_adjustment_report, purchase_adjustment_report,
-        create_user, manage_users, deleted_reports, restore, system_storage
+        all_reports, profit_report, sale_adjustment_report, supplier_purchase_detail_report, supplier_adjustment_only,
+        create_user, manage_users, supplier, deleted_reports, restore, system_storage
       )
       VALUES (
         $1, $2, $3, $4,
 
-        false, false, false, false, false,
+        false, false, false, false, false, false,
         false, false, false,
         false, false, false, false, false, false,
         false, false,
-        false, false, false, false,
-        false, false, false, false, false
+        false, false, false, false, false,
+        false, false, false, false, false, false
       )
       `,
       [name, username, password, role || "user"]
@@ -126,12 +126,12 @@ router.post("/permissions/update", async (req, res) => {
     const { users } = req.body;
 
     const perms = [
-      "packages","ticketing","transport","visa","hotels",
+      "packages","ticketing","transport","ziyarat","visa","hotels",
       "purchase_entry","purchase_list","pending_purchase",
-      "customer_ledger","purchase_ledger","bank_ledger","expense_ledger","balance_sheet","cash_ledger",
+      "customer_ledger","supplier_ledger","bank_ledger","expense_ledger","balance_sheet","cash_ledger",
       "hotel_voucher","transport_voucher",
-      "all_reports","profit_report","sale_adjustment_report","purchase_adjustment_report",
-      "create_user","manage_users","deleted_reports","restore","system_storage"
+      "all_reports","profit_report","sale_adjustment_report","supplier_purchase_detail_report","supplier_adjustment_only",
+      "create_user","manage_users","supplier","deleted_reports","restore","system_storage"
     ];
 
     for (const u of users) {
@@ -152,5 +152,6 @@ router.post("/permissions/update", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
