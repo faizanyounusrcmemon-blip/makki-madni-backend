@@ -4,7 +4,8 @@ const pool = require("../db");
 
 /* ======================================================
    GET BANK LEDGER (LIVE VIEW, BANK ONLY, EXCLUDE ADJUSTMENTS)
-   - No cash payments
+   - Customer/Supplier payments filtered by payment_method='bank'
+   - Manual bank transactions included
    - Rounded amounts, no -0
 ====================================================== */
 router.get("/", async (req, res) => {
@@ -36,7 +37,7 @@ router.get("/", async (req, res) => {
         FROM customer_payments cp
         LEFT JOIN customers c ON c.ref_no = cp.ref_no
         WHERE LOWER(COALESCE(cp.type, '')) != 'adjustment'
-          AND LOWER(COALESCE(cp.method,'')) = 'bank'
+          AND LOWER(COALESCE(cp.payment_method,'')) = 'bank'
 
         UNION ALL
 
@@ -51,7 +52,7 @@ router.get("/", async (req, res) => {
         FROM supplier_payments sp
         LEFT JOIN suppliers s ON s.id = sp.supplier_id
         WHERE LOWER(COALESCE(sp.type, '')) != 'adjustment'
-          AND LOWER(COALESCE(sp.method,'')) = 'bank'
+          AND LOWER(COALESCE(sp.payment_method,'')) = 'bank'
 
         UNION ALL
 
