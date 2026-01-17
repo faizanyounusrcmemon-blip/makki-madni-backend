@@ -56,7 +56,7 @@ router.get("/", async (req, res) => {
 
         UNION ALL
 
-        /* ================= EXPENSES ================= */
+        /* ================= EXPENSES PAID BY BANK ================= */
         SELECT 
           e.id,
           e.expense_date AS txn_date,
@@ -65,9 +65,9 @@ router.get("/", async (req, res) => {
           ROUND(e.amount::numeric, 0) AS debit,
           'expense' AS source
         FROM expense_ledger e
+        WHERE LOWER(COALESCE(e.payment_method,'')) = 'bank'
 
         UNION ALL
-
         /* ================= MANUAL BANK TRANSACTIONS ================= */
         SELECT 
           bt.id,
@@ -131,3 +131,4 @@ router.delete("/transaction/:id", async (req, res) => {
 });
 
 module.exports = router;
+
