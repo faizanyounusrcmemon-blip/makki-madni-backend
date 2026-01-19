@@ -87,8 +87,7 @@ router.get("/load/:ref_no", async (req, res) => {
           const label = t.text || t.route || t.description || "";
           const sar = Number(t.amount) || 0;
           rows.push({
-            item: base,
-            item_label: label ? `${base} - ${label}` : base,
+            item: label ? `${base} - ${label}` : base, // ✅ item میں label include کریں
             sale_sar: sar,
             sale_rate: salesRow.transport_sar_rate || 0,
             sale_pkr: sar * (salesRow.transport_sar_rate || 0)
@@ -103,8 +102,7 @@ router.get("/load/:ref_no", async (req, res) => {
           const label = t.text || t.route || t.description || "";
           const sar = Number(t.amount) || 0;
           rows.push({
-            item: base,
-            item_label: label ? `${base} - ${label}` : base,
+            item: label ? `${base} - ${label}` : base, 
             sale_sar: sar,
             sale_rate: salesRow.ziyarat_sar_rate || 0,
             sale_pkr: sar * (salesRow.ziyarat_sar_rate || 0)
@@ -707,3 +705,4 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
