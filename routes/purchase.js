@@ -296,36 +296,36 @@ router.get("/load/:ref_no", async (req, res) => {
    MERGE PURCHASE (EDIT) ✅
    SHOW BLANK FOR EMPTY SAR/RATE
 ===================================================== */
-const p = await db.query(
-  `SELECT * FROM purchase_entries WHERE ref_no=$1 AND is_deleted=false`,
-  [ref_no]
-);
+     const p = await db.query(
+       `SELECT * FROM purchase_entries WHERE ref_no=$1 AND is_deleted=false`,
+       [ref_no]
+     );
 
-rows = rows.map(r => {
-  // Extract base item (ignore label for matching)
-  const baseItem = r.item.split(' - ')[0];
+     rows = rows.map(r => {
+       // Extract base item (ignore label for matching)
+       const baseItem = r.item.split(' - ')[0];
 
-  // Find matching purchase entry by stable item
-  const x = p.rows.find(p => p.item === r.item || p.item === baseItem);
+       // Find matching purchase entry by stable item
+       const x = p.rows.find(p => p.item === r.item || p.item === baseItem);
 
-  return {
-    ...r,
-    purchase_sar: x?.purchase_sar ?? "",     
-    purchase_rate: x?.purchase_rate ?? "",   
-    purchase_pkr: x?.purchase_pkr ?? 0,
-    profit: x?.profit ?? 0,
-    supplier_code: x?.supplier_code ?? "",
-    supplier_name: x?.supplier_name ?? ""
-  };
-});
+       return {
+         ...r,
+         purchase_sar: x?.purchase_sar ?? "",     
+         purchase_rate: x?.purchase_rate ?? "",   
+         purchase_pkr: x?.purchase_pkr ?? 0,
+         profit: x?.profit ?? 0,
+         supplier_code: x?.supplier_code ?? "",
+         supplier_name: x?.supplier_name ?? ""
+       };
+     });
 
-res.json({ success: true, is_edit: isEdit, rows });
+     res.json({ success: true, is_edit: isEdit, rows });
 
-} catch(err){
-  console.error("PURCHASE LOAD ERROR:", err);
-  res.json({ success:false, error: err.message });
-}
-});
+     } catch(err){
+       console.error("PURCHASE LOAD ERROR:", err);
+       res.json({ success:false, error: err.message });
+     }
+     });
 
 /* =====================================================
    SAVE PURCHASE (UPSERT) ✅ SUPPLIER INCLUDED
@@ -712,6 +712,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
