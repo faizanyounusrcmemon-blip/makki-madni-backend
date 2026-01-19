@@ -298,54 +298,55 @@ res.json({ success: false, error: err.message });
    SAVE PURCHASE (DUPLICATE SAFE – UPDATE EXISTING)
 ===================================================== */
 router.post("/save", async (req, res) => {
-try {
-  const { ref_no, items } = req.body;
+  try {
+    const { ref_no, items } = req.body;
 
-  for (const r of items) {
-    await db.query(
-      `
-      INSERT INTO purchase_entries (
-        ref_no, item,
-        sale_sar, sale_rate, sale_pkr,
-        purchase_sar, purchase_rate, purchase_pkr,
-        profit, supplier_code, supplier_name, is_deleted
-      )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false)
-      ON CONFLICT (ref_no, item)
-      DO UPDATE SET
-        sale_sar = EXCLUDED.sale_sar,
-        sale_rate = EXCLUDED.sale_rate,
-        sale_pkr = EXCLUDED.sale_pkr,
-        purchase_sar = EXCLUDED.purchase_sar,
-        purchase_rate = EXCLUDED.purchase_rate,
-        purchase_pkr = EXCLUDED.purchase_pkr,
-        profit = EXCLUDED.profit,
-        supplier_code = EXCLUDED.supplier_code,
-        supplier_name = EXCLUDED.supplier_name,
-        is_deleted = false
-      `,
-      [
-        ref_no,
-        r.item,
-        r.sale_sar || 0,
-        r.sale_rate || 0,
-        r.sale_pkr || 0,
-        r.purchase_sar || 0,
-        r.purchase_rate || 0,
-        r.purchase_pkr || 0,
-        r.profit || 0,
-        r.supplier_code || "",
-        r.supplier_name || "",
-      ]
-    );
+    for (const r of items) {
+      // صرف وہی item update کریں جو پہلے سے موجود ہیں
+      const result = await db.query(
+        `
+        UPDATE purchase_entries
+        SET
+          sale_sar = $1,
+          sale_rate = $2,
+          sale_pkr = $3,
+          purchase_sar = $4,
+          purchase_rate = $5,
+          purchase_pkr = $6,
+          profit = $7,
+          supplier_code = $8,
+          supplier_name = $9,
+          is_deleted = false
+        WHERE ref_no = $10 AND item = $11
+        RETURNING id
+        `,
+        [
+          r.sale_sar || 0,
+          r.sale_rate || 0,
+          r.sale_pkr || 0,
+          r.purchase_sar || 0,
+          r.purchase_rate || 0,
+          r.purchase_pkr || 0,
+          r.profit || 0,
+          r.supplier_code || "",
+          r.supplier_name || "",
+          ref_no,
+          r.item
+        ]
+      );
+
+      // اگر row موجود نہ ہو، کچھ نہ کریں (no insert)
+      if (!result.rows.length) {
+        console.log(`Skipping new item: ${r.item}`);
+      }
+    }
+
+    res.json({ success: true, message: "✅ Existing purchase entries updated only" });
+
+  } catch (err) {
+    console.error(err);
+    res.json({ success: false, error: err.message });
   }
-
-  res.json({ success: true, message: "✅ Purchase saved / updated" });
-
-} catch (err) {
-  console.error(err);
-  res.json({ success: false, error: err.message });
-}
 });
 
 /* =====================================================
@@ -659,5 +660,6 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
