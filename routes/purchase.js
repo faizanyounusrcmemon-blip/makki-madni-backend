@@ -192,8 +192,7 @@ router.get("/load/:ref_no", async (req, res) => {
           const rate = Number(r.pkr_rate) || 0;
 
           rows.push({
-            item: baseItem, // 🔒 stable DB key
-            item_label: label ? `${baseItem} - ${label}` : baseItem,
+            item: label ? `${baseItem} - ${label}` : baseItem,
 
             sale_sar: sar,        // ✅ now works
             sale_rate: rate,
@@ -230,8 +229,7 @@ router.get("/load/:ref_no", async (req, res) => {
           const rate = Number(r.pkr_rate) || 0;
 
           rows.push({
-            item: baseItem, // 🔒 stable DB key
-            item_label: label ? `${baseItem} - ${label}` : baseItem,
+            item: label ? `${baseItem} - ${label}` : baseItem,
 
             sale_sar: sar,        // ✅ now works
             sale_rate: rate,
@@ -705,4 +703,5 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
