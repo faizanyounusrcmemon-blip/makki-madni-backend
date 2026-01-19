@@ -3,13 +3,16 @@ const router = express.Router();
 const db = require("../db");
 
 /* =====================================================
-   LOAD PURCHASE (SAVE + EDIT AUTO)
+   LOAD PURCHASE (SAVE + EDIT AUTO) ✅ SUPPLIER INCLUDED
 ===================================================== */
 router.get("/load/:ref_no", async (req, res) => {
   try {
     const { ref_no } = req.params;
     let rows = [];
 
+    /* =========================
+       CHECK EDIT MODE
+    ========================= */
     const chk = await db.query(
       `SELECT COUNT(*) FROM purchase_entries 
        WHERE ref_no=$1 AND is_deleted=false`,
@@ -18,91 +21,96 @@ router.get("/load/:ref_no", async (req, res) => {
     const isEdit = Number(chk.rows[0].count) > 0;
 
     /* =========================
-       PKG-
+       FETCH SALES DATA BASED ON REF PREFIX
     ========================= */
+    let salesRow = null;
     if (ref_no.startsWith("PKG-")) {
       const q = await db.query(
         `SELECT * FROM bookings WHERE ref_no=$1 AND is_deleted=false`,
         [ref_no]
       );
-      if (!q.rows.length)
-        return res.json({ success: false, error: "Package not found" });
-
-      const s = q.rows[0];
+      if (!q.rows.length) return res.json({ success:false, error:"Package not found" });
+      salesRow = q.rows[0];
 
       // TICKETS
-      if (s.adult_count > 0)
+      if (salesRow.adult_count > 0)
         rows.push({
           item: "Ticket – Adult",
-          sale_sar: s.adult_count * s.adult_rate,
-          sale_rate: s.flight_sar_rate || 0,
-          sale_pkr: s.adult_count * s.adult_rate * (s.flight_sar_rate || 0),
+          sale_sar: salesRow.adult_count * salesRow.adult_rate,
+          sale_rate: salesRow.flight_sar_rate || 0,
+          sale_pkr: (salesRow.adult_count * salesRow.adult_rate) * (salesRow.flight_sar_rate || 0),
         });
 
-      if (s.child_count > 0)
+      if (salesRow.child_count > 0)
         rows.push({
           item: "Ticket – Child",
-          sale_sar: s.child_count * s.child_rate,
-          sale_rate: s.flight_sar_rate || 0,
-          sale_pkr: s.child_count * s.child_rate * (s.flight_sar_rate || 0),
+          sale_sar: salesRow.child_count * salesRow.child_rate,
+          sale_rate: salesRow.flight_sar_rate || 0,
+          sale_pkr: (salesRow.child_count * salesRow.child_rate) * (salesRow.flight_sar_rate || 0),
         });
 
-      if (s.infant_count > 0)
+      if (salesRow.infant_count > 0)
         rows.push({
           item: "Ticket – Infant",
-          sale_sar: s.infant_count * s.infant_rate,
-          sale_rate: s.flight_sar_rate || 0,
-          sale_pkr: s.infant_count * s.infant_rate * (s.flight_sar_rate || 0),
+          sale_sar: salesRow.infant_count * salesRow.infant_rate,
+          sale_rate: salesRow.flight_sar_rate || 0,
+          sale_pkr: (salesRow.infant_count * salesRow.infant_rate) * (salesRow.flight_sar_rate || 0),
         });
 
       // HOTELS
-      (s.hotels || []).forEach((h, i) => {
-        rows.push({
-          item: `Hotel ${i + 1} - ${h.hotel || ""}`,
-          sale_sar: Number(h.total) || 0,
-          sale_rate: s.hotel_sar_rate || 0,
-          sale_pkr: (Number(h.total) || 0) * (s.hotel_sar_rate || 0),
+      if (Array.isArray(salesRow.hotels)) {
+        salesRow.hotels.forEach((h,i)=>{
+          rows.push({
+            item: `Hotel ${i+1} - ${h.hotel||""}`,
+            sale_sar: Number(h.total) || 0,
+            sale_rate: salesRow.hotel_sar_rate || 0,
+            sale_pkr: (Number(h.total)||0) * (salesRow.hotel_sar_rate||0)
+          });
         });
-      });
+      }
 
       // VISA
-      if (s.visa_persons > 0) {
-        const sar = s.visa_total || s.visa_persons * s.visa_rate;
+      if (salesRow.visa_persons > 0) {
+        const sar = salesRow.visa_total || salesRow.visa_persons * salesRow.visa_rate;
         rows.push({
           item: "Visa",
           sale_sar: sar,
-          sale_rate: s.visa_sar_rate || 0,
-          sale_pkr: sar * (s.visa_sar_rate || 0),
+          sale_rate: salesRow.visa_sar_rate || 0,
+          sale_pkr: sar * (salesRow.visa_sar_rate || 0),
         });
       }
 
       // TRANSPORT
-      (s.transport || []).forEach((t, i) => {
-        const base = `Transport ${i + 1}`;
-        const label = t.text || t.route || t.description || "";
-        const sar = Number(t.amount) || 0;
-
-        rows.push({
-          item: label ? `${base} - ${label}` : base,
-          sale_sar: sar,
-          sale_rate: s.transport_sar_rate || 0,
-          sale_pkr: sar * (s.transport_sar_rate || 0),
+      if (Array.isArray(salesRow.transport)) {
+        salesRow.transport.forEach((t,i)=>{
+          const base = `Transport ${i+1}`;
+          const label = t.text || t.route || t.description || "";
+          const sar = Number(t.amount) || 0;
+          rows.push({
+            item: base,
+            item_label: label ? `${base} - ${label}` : base,
+            sale_sar: sar,
+            sale_rate: salesRow.transport_sar_rate || 0,
+            sale_pkr: sar * (salesRow.transport_sar_rate || 0)
+          });
         });
-      });
+      }
 
       // ZIYARAT
-      (s.ziyarat || []).forEach((t, i) => {
-        const base = `Ziyarat ${i + 1}`;
-        const label = t.text || t.route || t.description || "";
-        const sar = Number(t.amount) || 0;
-
-        rows.push({
-          item: label ? `${base} - ${label}` : base,
-          sale_sar: sar,
-          sale_rate: s.ziyarat_sar_rate || 0,
-          sale_pkr: sar * (s.ziyarat_sar_rate || 0),
+      if (Array.isArray(salesRow.ziyarat)) {
+        salesRow.ziyarat.forEach((t,i)=>{
+          const base = `Ziyarat ${i+1}`;
+          const label = t.text || t.route || t.description || "";
+          const sar = Number(t.amount) || 0;
+          rows.push({
+            item: base,
+            item_label: label ? `${base} - ${label}` : base,
+            sale_sar: sar,
+            sale_rate: salesRow.ziyarat_sar_rate || 0,
+            sale_pkr: sar * (salesRow.ziyarat_sar_rate || 0)
+          });
         });
-      });
+      }
     }
 
     /* =========================
@@ -160,57 +168,79 @@ router.get("/load/:ref_no", async (req, res) => {
     }
 
     /* =========================
-       TRN-
+       TRANSPORT ONLY (TRN-)
     ========================= */
     else if (ref_no.startsWith("TRN-")) {
       const q = await db.query(
-        `SELECT rows, pkr_rate FROM transport WHERE ref_no=$1 AND is_deleted=false`,
+        `
+        SELECT rows, pkr_rate
+        FROM transport
+        WHERE ref_no=$1 AND is_deleted=false
+        `,
         [ref_no]
       );
+
       if (!q.rows.length)
         return res.json({ success: false, error: "Transport not found" });
 
       const r = q.rows[0];
 
-      (r.rows || []).forEach((t, i) => {
-        const base = `Transport ${i + 1}`;
-        const label = t.description || t.text || t.route || "";
-        const sar = Number(t.sar) || 0;
+      if (Array.isArray(r.rows)) {
+        r.rows.forEach((t, i) => {
+          const baseItem = `Transport ${i + 1}`;
+          const label = t.description || t.text || t.route || "";
 
-        rows.push({
-          item: label ? `${base} - ${label}` : base,
-          sale_sar: sar,
-          sale_rate: Number(r.pkr_rate) || 0,
-          sale_pkr: sar * (Number(r.pkr_rate) || 0),
+          const sar = Number(t.sar) || 0;     // ✅ FIX HERE
+          const rate = Number(r.pkr_rate) || 0;
+
+          rows.push({
+            item: baseItem, // 🔒 stable DB key
+            item_label: label ? `${baseItem} - ${label}` : baseItem,
+
+            sale_sar: sar,        // ✅ now works
+            sale_rate: rate,
+            sale_pkr: sar * rate,
+          });
         });
-      });
+      }
     }
-       
-    /* =========================
-       ZIY-
-    ========================= */
+
+        /* =========================
+          ZIYARAT ONLY (ZIY-)
+         ========================= */
     else if (ref_no.startsWith("ZIY-")) {
       const q = await db.query(
-        `SELECT rows, pkr_rate FROM ziyarat WHERE ref_no=$1 AND is_deleted=false`,
+        `
+        SELECT rows, pkr_rate
+        FROM ziyarat
+        WHERE ref_no=$1 AND is_deleted=false
+        `,
         [ref_no]
       );
+
       if (!q.rows.length)
         return res.json({ success: false, error: "Ziyarat not found" });
 
       const r = q.rows[0];
 
-      (r.rows || []).forEach((t, i) => {
-        const base = `Ziyarat ${i + 1}`;
-        const label = t.description || t.text || t.route || "";
-        const sar = Number(t.sar) || 0;
+      if (Array.isArray(r.rows)) {
+        r.rows.forEach((t, i) => {
+          const baseItem = `Ziyarat ${i + 1}`;
+          const label = t.description || t.text || t.route || "";
 
-        rows.push({
-          item: label ? `${base} - ${label}` : base,
-          sale_sar: sar,
-          sale_rate: Number(r.pkr_rate) || 0,
-          sale_pkr: sar * (Number(r.pkr_rate) || 0),
+          const sar = Number(t.sar) || 0;     // ✅ FIX HERE
+          const rate = Number(r.pkr_rate) || 0;
+
+          rows.push({
+            item: baseItem, // 🔒 stable DB key
+            item_label: label ? `${baseItem} - ${label}` : baseItem,
+
+            sale_sar: sar,        // ✅ now works
+            sale_rate: rate,
+            sale_pkr: sar * rate,
+          });
         });
-      });
+      }
     }
 
     /* =========================
@@ -263,91 +293,105 @@ router.get("/load/:ref_no", async (req, res) => {
 
 
 
-/* =====================================================
-   MERGE PURCHASE (EDIT SAFE)
-===================================================== */
-const p = await db.query(
-  `SELECT * FROM purchase_entries WHERE ref_no=$1 AND is_deleted=false`,
-  [ref_no]
-);
+    /* =========================
+       MERGE PURCHASE (EDIT) ✅
+       SHOW BLANK FOR EMPTY SAR/RATE
+    ========================= */
+    const p = await db.query(
+      `SELECT * FROM purchase_entries
+       WHERE ref_no=$1 AND is_deleted=false`,
+      [ref_no]
+    );
 
-rows = rows.map(r => {
-  // اب direct item match کریں گے
-  const x = p.rows.find(p => p.item === r.item);
+    rows = rows.map(r => {
+      const x = p.rows.find(p=>p.item === r.item);
+      return {
+        ...r,
+        purchase_sar: x?.purchase_sar ?? "",     // EMPTY if null
+        purchase_rate: x?.purchase_rate ?? "",   // EMPTY if null
+        purchase_pkr: x?.purchase_pkr ?? 0,
+        profit: x?.profit ?? 0,
+        supplier_code: x?.supplier_code ?? "",
+        supplier_name: x?.supplier_name ?? ""
+      };
+    });
 
-  return {
-    ...r,
-    purchase_sar: x?.purchase_sar ?? 0,
-    purchase_rate: x?.purchase_rate ?? 0,
-    purchase_pkr: x?.purchase_pkr ?? 0,
-    profit: x?.profit ?? 0,
-    supplier_code: x?.supplier_code ?? "",
-    supplier_name: x?.supplier_name ?? "",
-  };
+    res.json({ success:true, is_edit:isEdit, rows });
+
+  } catch(err){
+    console.error("PURCHASE LOAD ERROR:", err);
+    res.json({ success:false, error: err.message });
+  }
 });
 
-res.json({ success: true, is_edit: isEdit, rows });
-
-} catch (err) {
-  console.error(err);
-  res.json({ success: false, error: err.message });
-}
-});
-
 /* =====================================================
-   SAVE PURCHASE (DUPLICATE SAFE – UPDATE EXISTING ONLY)
+   SAVE PURCHASE (UPSERT) ✅ SUPPLIER INCLUDED
 ===================================================== */
 router.post("/save", async (req, res) => {
   try {
     const { ref_no, items } = req.body;
 
-    if (!ref_no || !items || !items.length) {
-      return res.json({ success: false, error: "Ref No or items missing" });
+    if (!ref_no || !Array.isArray(items)) {
+      return res.json({ success: false, error: "Invalid payload" });
     }
+
+    const unique = [];
+    const seen = new Set();
 
     for (const r of items) {
-      // 🔹 Directly update existing row that matches exact item
-      const result = await db.query(
-        `
-        UPDATE purchase_entries
-        SET
-          sale_sar = $1,
-          sale_rate = $2,
-          sale_pkr = $3,
-          purchase_sar = $4,
-          purchase_rate = $5,
-          purchase_pkr = $6,
-          profit = $7,
-          supplier_code = $8,
-          supplier_name = $9,
-          is_deleted = false
-        WHERE ref_no = $10 AND item = $11
-        RETURNING id
-        `,
-        [
-          r.sale_sar ?? 0,
-          r.sale_rate ?? 0,
-          r.sale_pkr ?? 0,
-          r.purchase_sar ?? 0,
-          r.purchase_rate ?? 0,
-          r.purchase_pkr ?? 0,
-          r.profit ?? 0,
-          r.supplier_code || "",
-          r.supplier_name || "",
-          ref_no,
-          r.item
-        ]
-      );
-
-      if (!result.rows.length) {
-        console.log(`Skipping new item (not added): ${r.item}`);
-      }
+      if (!r.item) continue;
+      const key = r.item.trim();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(r);
     }
 
-    res.json({ success: true, message: "✅ Existing purchase entries updated only" });
+    for (const r of unique) {
+      await db.query(
+        `
+        INSERT INTO purchase_entries (
+          ref_no, item,
+          sale_sar, sale_rate, sale_pkr,
+          purchase_sar, purchase_rate, purchase_pkr,
+          profit,
+          supplier_code,
+          supplier_name,
+          is_deleted
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false)
+        ON CONFLICT (ref_no, item)
+        DO UPDATE SET
+          sale_sar       = EXCLUDED.sale_sar,
+          sale_rate      = EXCLUDED.sale_rate,
+          sale_pkr       = EXCLUDED.sale_pkr,
+          purchase_sar   = EXCLUDED.purchase_sar,
+          purchase_rate  = EXCLUDED.purchase_rate,
+          purchase_pkr   = EXCLUDED.purchase_pkr,
+          profit         = EXCLUDED.profit,
+          supplier_code  = EXCLUDED.supplier_code,
+          supplier_name  = EXCLUDED.supplier_name,
+          is_deleted     = false
+        `,
+        [
+          ref_no,
+          r.item,
+          r.sale_sar || 0,
+          r.sale_rate || 0,
+          r.sale_pkr || 0,
+          r.purchase_sar || 0,
+          r.purchase_rate || 0,
+          r.purchase_pkr || 0,
+          r.profit || 0,
+          r.supplier_code || "",
+          r.supplier_name || "",
+        ]
+      );
+    }
+
+    res.json({ success: true, message: "✅ Purchase saved / updated" });
 
   } catch (err) {
-    console.error("SAVE PURCHASE ERROR:", err);
+    console.error("PURCHASE UPSERT ERROR:", err);
     res.json({ success: false, error: err.message });
   }
 });
@@ -663,8 +707,3 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
-
-
-
-
-
