@@ -272,13 +272,13 @@ const p = await db.query(
 );
 
 rows = rows.map(r => {
-  // اب ہم base کے ساتھ match کرنے کی ضرورت نہیں، براہ راست item match کریں گے
+  // اب direct item match کریں گے
   const x = p.rows.find(p => p.item === r.item);
 
   return {
     ...r,
-    purchase_sar: x?.purchase_sar ?? "",
-    purchase_rate: x?.purchase_rate ?? "",
+    purchase_sar: x?.purchase_sar ?? 0,
+    purchase_rate: x?.purchase_rate ?? 0,
     purchase_pkr: x?.purchase_pkr ?? 0,
     profit: x?.profit ?? 0,
     supplier_code: x?.supplier_code ?? "",
@@ -289,22 +289,24 @@ rows = rows.map(r => {
 res.json({ success: true, is_edit: isEdit, rows });
 
 } catch (err) {
-console.error(err);
-res.json({ success: false, error: err.message });
+  console.error(err);
+  res.json({ success: false, error: err.message });
 }
 });
 
 /* =====================================================
-   SAVE PURCHASE (DUPLICATE SAFE – UPDATE EXISTING)
+   SAVE PURCHASE (DUPLICATE SAFE – UPDATE EXISTING ONLY)
 ===================================================== */
 router.post("/save", async (req, res) => {
   try {
     const { ref_no, items } = req.body;
 
-    for (const r of items) {
-      const base = r.item.split(" - ")[0]; // same logic as load
+    if (!ref_no || !items || !items.length) {
+      return res.json({ success: false, error: "Ref No or items missing" });
+    }
 
-      // update all rows that start with base (avoid duplicates)
+    for (const r of items) {
+      // 🔹 Directly update existing row that matches exact item
       const result = await db.query(
         `
         UPDATE purchase_entries
@@ -319,33 +321,33 @@ router.post("/save", async (req, res) => {
           supplier_code = $8,
           supplier_name = $9,
           is_deleted = false
-        WHERE ref_no = $10 AND item LIKE $11
+        WHERE ref_no = $10 AND item = $11
         RETURNING id
         `,
         [
-          r.sale_sar || 0,
-          r.sale_rate || 0,
-          r.sale_pkr || 0,
-          r.purchase_sar || 0,
-          r.purchase_rate || 0,
-          r.purchase_pkr || 0,
-          r.profit || 0,
+          r.sale_sar ?? 0,
+          r.sale_rate ?? 0,
+          r.sale_pkr ?? 0,
+          r.purchase_sar ?? 0,
+          r.purchase_rate ?? 0,
+          r.purchase_pkr ?? 0,
+          r.profit ?? 0,
           r.supplier_code || "",
           r.supplier_name || "",
           ref_no,
-          `${base}%`
+          r.item
         ]
       );
 
       if (!result.rows.length) {
-        console.log(`Skipping new item: ${r.item}`);
+        console.log(`Skipping new item (not added): ${r.item}`);
       }
     }
 
     res.json({ success: true, message: "✅ Existing purchase entries updated only" });
 
   } catch (err) {
-    console.error(err);
+    console.error("SAVE PURCHASE ERROR:", err);
     res.json({ success: false, error: err.message });
   }
 });
@@ -661,6 +663,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
