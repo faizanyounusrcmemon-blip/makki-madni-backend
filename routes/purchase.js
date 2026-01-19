@@ -292,106 +292,113 @@ router.get("/load/:ref_no", async (req, res) => {
 
 
 
-    /* =========================
-       MERGE PURCHASE (EDIT) ✅
-       SHOW BLANK FOR EMPTY SAR/RATE
-    ========================= */
-     const p = await db.query(
-       `SELECT * FROM purchase_entries WHERE ref_no=$1 AND is_deleted=false`,
-       [ref_no]
-     );
+/* =====================================================
+   MERGE PURCHASE (EDIT) ✅
+   SHOW BLANK FOR EMPTY SAR/RATE
+===================================================== */
+const p = await db.query(
+  `SELECT * FROM purchase_entries WHERE ref_no=$1 AND is_deleted=false`,
+  [ref_no]
+);
 
-     rows = rows.map(r => {
-       // Match purchase entry by stable item (ignore label)
-       const x = p.rows.find(p => p.item === r.item);
+rows = rows.map(r => {
+  // Extract base item (ignore label for matching)
+  const baseItem = r.item.split(' - ')[0];
 
-       return {
-         ...r,
-         purchase_sar: x?.purchase_sar ?? "",     
-         purchase_rate: x?.purchase_rate ?? "",   
-         purchase_pkr: x?.purchase_pkr ?? 0,
-         profit: x?.profit ?? 0,
-         supplier_code: x?.supplier_code ?? "",
-         supplier_name: x?.supplier_name ?? ""
-       };
-     });
+  // Find matching purchase entry by stable item
+  const x = p.rows.find(p => p.item === r.item || p.item === baseItem);
 
-    res.json({ success:true, is_edit:isEdit, rows });
+  return {
+    ...r,
+    purchase_sar: x?.purchase_sar ?? "",     
+    purchase_rate: x?.purchase_rate ?? "",   
+    purchase_pkr: x?.purchase_pkr ?? 0,
+    profit: x?.profit ?? 0,
+    supplier_code: x?.supplier_code ?? "",
+    supplier_name: x?.supplier_name ?? ""
+  };
+});
 
-  } catch(err){
-    console.error("PURCHASE LOAD ERROR:", err);
-    res.json({ success:false, error: err.message });
-  }
+res.json({ success: true, is_edit: isEdit, rows });
+
+} catch(err){
+  console.error("PURCHASE LOAD ERROR:", err);
+  res.json({ success:false, error: err.message });
+}
 });
 
 /* =====================================================
    SAVE PURCHASE (UPSERT) ✅ SUPPLIER INCLUDED
 ===================================================== */
 router.post("/save", async (req, res) => {
-  try {
-    const { ref_no, items } = req.body;
+try {
+  const { ref_no, items } = req.body;
 
-    if (!ref_no || !Array.isArray(items)) {
-      return res.json({ success: false, error: "Invalid payload" });
-    }
-
-    const unique = [];
-    const seen = new Set();
-
-    for (const r of items) {
-      if (!r.item) continue;
-      const key = r.item.trim();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      unique.push(r);
-    }
-
-    for (const r of unique) {
-     await db.query(
-       `
-       INSERT INTO purchase_entries (
-         ref_no, item, item_label,
-         sale_sar, sale_rate, sale_pkr,
-         purchase_sar, purchase_rate, purchase_pkr,
-         profit, supplier_code, supplier_name, is_deleted
-       )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,false)
-       ON CONFLICT (ref_no, item)
-       DO UPDATE SET
-         item_label     = EXCLUDED.item_label,
-         sale_sar       = EXCLUDED.sale_sar,
-         sale_rate      = EXCLUDED.sale_rate,
-         sale_pkr       = EXCLUDED.sale_pkr,
-         purchase_sar   = EXCLUDED.purchase_sar,
-         purchase_rate  = EXCLUDED.purchase_rate,
-         purchase_pkr   = EXCLUDED.purchase_pkr,
-         profit         = EXCLUDED.profit,
-         supplier_code  = EXCLUDED.supplier_code,
-         supplier_name  = EXCLUDED.supplier_name,
-         is_deleted     = false
-       `,
-       [
-         ref_no,
-         r.item,
-         r.item_label || r.item,    // label save
-         r.sale_sar || 0,
-         r.sale_rate || 0,
-         r.sale_pkr || 0,
-         r.purchase_sar || 0,
-         r.purchase_rate || 0,
-         r.purchase_pkr || 0,
-         r.profit || 0,
-         r.supplier_code || "",
-         r.supplier_name || "",
-       ]
-     );
-
-    res.json({ success: true, message: "✅ Purchase saved / updated" });
-
-  } catch (err) {
-    console.error("PURCHASE UPSERT ERROR:", err);
-    res.json({ success: false, error: err.message });
+  if (!ref_no || !Array.isArray(items)) {
+    return res.json({ success: false, error: "Invalid payload" });
   }
+
+  // Remove duplicates in front-end array
+  const unique = [];
+  const seen = new Set();
+  for (const r of items) {
+    if (!r.item) continue;
+    const key = r.item.trim();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(r);
+  }
+
+  for (const r of unique) {
+    // Extract base item (stable key for DB)
+    const baseItem = r.item.split(' - ')[0];
+
+    await db.query(
+      `
+      INSERT INTO purchase_entries (
+        ref_no, item, item_label,
+        sale_sar, sale_rate, sale_pkr,
+        purchase_sar, purchase_rate, purchase_pkr,
+        profit, supplier_code, supplier_name, is_deleted
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,false)
+      ON CONFLICT (ref_no, item)
+      DO UPDATE SET
+        item_label     = EXCLUDED.item_label,
+        sale_sar       = EXCLUDED.sale_sar,
+        sale_rate      = EXCLUDED.sale_rate,
+        sale_pkr       = EXCLUDED.sale_pkr,
+        purchase_sar   = EXCLUDED.purchase_sar,
+        purchase_rate  = EXCLUDED.purchase_rate,
+        purchase_pkr   = EXCLUDED.purchase_pkr,
+        profit         = EXCLUDED.profit,
+        supplier_code  = EXCLUDED.supplier_code,
+        supplier_name  = EXCLUDED.supplier_name,
+        is_deleted     = false
+      `,
+      [
+        ref_no,
+        baseItem,                   // stable DB key
+        r.item_label || r.item,     // display label
+        r.sale_sar || 0,
+        r.sale_rate || 0,
+        r.sale_pkr || 0,
+        r.purchase_sar || 0,
+        r.purchase_rate || 0,
+        r.purchase_pkr || 0,
+        r.profit || 0,
+        r.supplier_code || "",
+        r.supplier_name || "",
+      ]
+    );
+  }
+
+  res.json({ success: true, message: "✅ Purchase saved / updated" });
+
+} catch (err) {
+  console.error("PURCHASE UPSERT ERROR:", err);
+  res.json({ success: false, error: err.message });
+}
 });
 
 /* =====================================================
@@ -705,6 +712,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
