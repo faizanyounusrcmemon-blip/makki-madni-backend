@@ -291,46 +291,48 @@ router.get("/load/:ref_no", async (req, res) => {
     }
 
 
+    /* =========================
+       MERGE PURCHASE (EDIT)
+    ========================= */
+    const p = await db.query(
+      `SELECT * FROM purchase_entries
+       WHERE ref_no=$1 AND is_deleted=false`,
+      [ref_no]
+    );
+
+    if (p.rows.length) isEdit = true;
+
+    rows = rows.map(r => {
+      const baseItem = r.item.split(" - ")[0];
+
+      const x = p.rows.find(
+        pr => pr.item === r.item || pr.item === baseItem
+      );
+
+      return {
+        ...r,
+        purchase_sar: x?.purchase_sar ?? "",
+        purchase_rate: x?.purchase_rate ?? "",
+        purchase_pkr: x?.purchase_pkr ?? 0,
+        profit: x?.profit ?? 0,
+        supplier_code: x?.supplier_code ?? "",
+        supplier_name: x?.supplier_name ?? ""
+      };
+    });
+
+    res.json({ success: true, is_edit: isEdit, rows });
+
+  } catch (err) {
+    console.error("PURCHASE LOAD ERROR:", err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
 
 /* =====================================================
-   MERGE PURCHASE (EDIT) ✅
-   SHOW BLANK FOR EMPTY SAR/RATE
-===================================================== */
-     const p = await db.query(
-       `SELECT * FROM purchase_entries WHERE ref_no=$1 AND is_deleted=false`,
-       [ref_no]
-     );
-
-     rows = rows.map(r => {
-       // Extract base item (ignore label for matching)
-       const baseItem = r.item.split(' - ')[0];
-
-       // Find matching purchase entry by stable item
-       const x = p.rows.find(p => p.item === r.item || p.item === baseItem);
-
-       return {
-         ...r,
-         purchase_sar: x?.purchase_sar ?? "",     
-         purchase_rate: x?.purchase_rate ?? "",   
-         purchase_pkr: x?.purchase_pkr ?? 0,
-         profit: x?.profit ?? 0,
-         supplier_code: x?.supplier_code ?? "",
-         supplier_name: x?.supplier_name ?? ""
-       };
-     });
-
-     res.json({ success: true, is_edit: isEdit, rows });
-
-     } catch(err){
-       console.error("PURCHASE LOAD ERROR:", err);
-       res.json({ success:false, error: err.message });
-     }
-     });
-
-/* =====================================================
-   SAVE PURCHASE (UPSERT) ✅ FIXED
-   - NO NEW ROW ON EDIT
-   - NO item_label REQUIRED
+   SAVE PURCHASE (UPSERT)
+   - NO DUPLICATE ROWS
+   - NO item_label
 ===================================================== */
 router.post("/save", async (req, res) => {
   try {
@@ -340,9 +342,9 @@ router.post("/save", async (req, res) => {
       return res.json({ success: false, error: "Invalid payload" });
     }
 
-    // =========================
-    // REMOVE DUPLICATES (BY ITEM)
-    // =========================
+    /* =========================
+       REMOVE DUPLICATES
+    ========================= */
     const unique = [];
     const seen = new Set();
 
@@ -356,9 +358,9 @@ router.post("/save", async (req, res) => {
       unique.push(r);
     }
 
-    // =========================
-    // UPSERT LOOP
-    // =========================
+    /* =========================
+       UPSERT LOOP
+    ========================= */
     for (const r of unique) {
       await db.query(
         `
@@ -408,7 +410,6 @@ router.post("/save", async (req, res) => {
       );
     }
 
-    // ✅ LOOP KE BAAD RESPONSE
     res.json({ success: true, message: "✅ Purchase saved / updated" });
 
   } catch (err) {
@@ -728,6 +729,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
