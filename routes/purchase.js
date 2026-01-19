@@ -302,7 +302,9 @@ router.post("/save", async (req, res) => {
     const { ref_no, items } = req.body;
 
     for (const r of items) {
-      // صرف وہی item update کریں جو پہلے سے موجود ہیں
+      const base = r.item.split(" - ")[0]; // same logic as load
+
+      // update all rows that start with base (avoid duplicates)
       const result = await db.query(
         `
         UPDATE purchase_entries
@@ -317,7 +319,7 @@ router.post("/save", async (req, res) => {
           supplier_code = $8,
           supplier_name = $9,
           is_deleted = false
-        WHERE ref_no = $10 AND item = $11
+        WHERE ref_no = $10 AND item LIKE $11
         RETURNING id
         `,
         [
@@ -331,11 +333,10 @@ router.post("/save", async (req, res) => {
           r.supplier_code || "",
           r.supplier_name || "",
           ref_no,
-          r.item
+          `${base}%`
         ]
       );
 
-      // اگر row موجود نہ ہو، کچھ نہ کریں (no insert)
       if (!result.rows.length) {
         console.log(`Skipping new item: ${r.item}`);
       }
@@ -660,6 +661,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
