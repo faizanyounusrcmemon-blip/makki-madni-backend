@@ -350,7 +350,7 @@ router.post("/save", async (req, res) => {
       await db.query(
         `
         INSERT INTO purchase_entries (
-          ref_no, item,
+          ref_no, item, item_label,
           sale_sar, sale_rate, sale_pkr,
           purchase_sar, purchase_rate, purchase_pkr,
           profit,
@@ -358,8 +358,8 @@ router.post("/save", async (req, res) => {
           supplier_name,
           is_deleted
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false)
-        ON CONFLICT (ref_no, item)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,false)
+        ON CONFLICT (ref_no, item_label)
         DO UPDATE SET
           sale_sar       = EXCLUDED.sale_sar,
           sale_rate      = EXCLUDED.sale_rate,
@@ -375,6 +375,7 @@ router.post("/save", async (req, res) => {
         [
           ref_no,
           r.item,
+          r.item_label || r.item,
           r.sale_sar || 0,
           r.sale_rate || 0,
           r.sale_pkr || 0,
@@ -383,7 +384,7 @@ router.post("/save", async (req, res) => {
           r.purchase_pkr || 0,
           r.profit || 0,
           r.supplier_code || "",
-          r.supplier_name || "",
+          r.supplier_name || ""
         ]
       );
     }
@@ -707,3 +708,4 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
