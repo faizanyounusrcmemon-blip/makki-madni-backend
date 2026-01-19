@@ -287,9 +287,9 @@ router.get("/load/:ref_no", async (req, res) => {
           sale_pkr: r.infant_qty * r.infant_rate * r.pkr_rate,
         });
     } else {
-      return res.json({ success: false, error: "Invalid Ref No" });
-    }
-
+      return res.json({ success: false, error: "Invalid Ref No" });          
+  }
+});
 
     /* =========================
        MERGE PURCHASE (EDIT)
@@ -729,6 +729,7 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
