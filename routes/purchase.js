@@ -298,7 +298,14 @@ router.get("/load/:ref_no", async (req, res) => {
     );
 
     rows = rows.map(r => {
-      const x = p.rows.find(p=>p.item === r.item);
+      // Base item for matching (remove any ' - ' label part)
+      const baseItem = r.item.split(' - ')[0];
+
+      // Try to find matching purchase entry
+      const x = p.rows.find(p => 
+        p.item === r.item || p.item === baseItem
+      );
+
       return {
         ...r,
         purchase_sar: x?.purchase_sar ?? "",     // EMPTY if null
@@ -701,5 +708,6 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
 
