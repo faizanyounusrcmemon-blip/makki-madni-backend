@@ -387,7 +387,7 @@ router.post("/save", async (req, res) => {
           r.supplier_name || "",
         ]
       );
-   }
+    }
 
     res.json({ success: true, message: "✅ Purchase saved / updated" });
 
@@ -708,4 +708,5 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
+
 
