@@ -83,11 +83,15 @@ router.get("/load/:ref_no", async (req, res) => {
       // TRANSPORT
       if (Array.isArray(salesRow.transport)) {
         salesRow.transport.forEach((t,i)=>{
+          const base = `Transport ${i+1}`;
+          const label = t.text || t.route || t.description || "";
+          const sar = Number(t.amount) || 0;
           rows.push({
-            item: `transport ${i+1} - ${h.transport||""}`,
-            sale_sar: Number(h.total) || 0,
+            item: base,
+            item_label: label ? `${base} - ${label}` : base,
+            sale_sar: sar,
             sale_rate: salesRow.transport_sar_rate || 0,
-            sale_pkr: (Number(h.total)||0) * (salesRow.transport_sar_rate||0)
+            sale_pkr: sar * (salesRow.transport_sar_rate || 0)
           });
         });
       }
@@ -703,4 +707,3 @@ router.get("/pending", async (req, res) => {
 
 
 module.exports = router;
-
