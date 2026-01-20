@@ -2,6 +2,11 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
+/* ================================
+   GET ALL PENDING / PARTIAL / EXTRA PAID SUPPLIERS
+   (NO -0, PARTIAL ONLY REAL AMOUNTS)
+   ROUNDING ISSUE FIXED
+================================ */
 router.get("/pending", async (req, res) => {
   try {
     const q = await db.query(`
@@ -25,17 +30,25 @@ router.get("/pending", async (req, res) => {
         COALESCE(ptot.total_paid,0) AS total_paid,
         COALESCE(pt.total_purchase,0) - COALESCE(ptot.total_paid,0) AS pending_amount,
         CASE
-          WHEN COALESCE(ptot.total_paid,0) > COALESCE(pt.total_purchase,0) THEN 'EXTRA PAID'
-          WHEN COALESCE(pt.total_purchase,0) - COALESCE(ptot.total_paid,0) = 0 THEN 'PAID'
+          /* Extra paid only if difference > 0.5 PKR */
+          WHEN (COALESCE(ptot.total_paid,0) - COALESCE(pt.total_purchase,0)) > 0.5 THEN 'EXTRA PAID'
+          /* Consider amounts equal if difference <= 0.5 PKR */
+          WHEN abs(COALESCE(pt.total_purchase,0) - COALESCE(ptot.total_paid,0)) <= 0.5 THEN 'PAID'
+          /* Partial payment done */
           WHEN COALESCE(ptot.total_paid,0) > 0 THEN 'PARTIAL'
+          /* No payment at all */
           ELSE 'PENDING'
         END AS status
       FROM suppliers s
       LEFT JOIN purchase_totals pt ON pt.supplier_code = s.supplier_code
       LEFT JOIN payment_totals ptot ON ptot.supplier_code = s.supplier_code
       WHERE s.is_deleted = false
-        /* ✅ Show PENDING, PARTIAL, or EXTRA PAID */
-        AND (COALESCE(pt.total_purchase,0) - COALESCE(ptot.total_paid,0) <> 0 OR COALESCE(ptot.total_paid,0) > COALESCE(pt.total_purchase,0))
+        /* Show only pending, partial, or extra paid */
+        AND (
+          (COALESCE(pt.total_purchase,0) - COALESCE(ptot.total_paid,0) > 0.5) OR
+          (COALESCE(ptot.total_paid,0) - COALESCE(pt.total_purchase,0) > 0.5) OR
+          (abs(COALESCE(pt.total_purchase,0) - COALESCE(ptot.total_paid,0)) <= 0.5)
+        )
       ORDER BY pending_amount DESC, s.supplier_name
     `);
 
