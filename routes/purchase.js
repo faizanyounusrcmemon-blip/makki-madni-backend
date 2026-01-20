@@ -707,24 +707,33 @@ router.get("/pending", async (req, res) => {
 });
 
 /* =====================================================
-   COMPLETED PURCHASE BUT SUPPLIER MISSING
+   COMPLETED PURCHASE BUT ANY ROW SUPPLIER MISSING
 ===================================================== */
 router.get("/missing-supplier", async (req, res) => {
   try {
     const result = await db.query(`
       SELECT
         p.ref_no,
+
+        -- supplier shown only for display (if any)
         MAX(p.supplier_name) AS supplier_name,
         MAX(p.supplier_code) AS supplier_code,
+
+        -- total purchase
         SUM(p.purchase_sar * p.purchase_rate) AS total_amount
+
       FROM purchase_entries p
       WHERE p.is_deleted = false
         AND p.purchase_sar > 0
         AND p.purchase_rate > 0
+
       GROUP BY p.ref_no
+
       HAVING
-        MAX(p.supplier_name) IS NULL
-        OR MAX(p.supplier_code) IS NULL
+        -- 🔴 agar ek bhi row me supplier missing ho
+        BOOL_OR(p.supplier_name IS NULL OR p.supplier_name = '')
+        OR
+        BOOL_OR(p.supplier_code IS NULL OR p.supplier_code = '')
     `);
 
     /* ================= CUSTOMER NAME ================= */
@@ -754,11 +763,11 @@ router.get("/missing-supplier", async (req, res) => {
     const rows = result.rows.map(r => ({
       ref_no: r.ref_no,
       customer_name: customerMap[r.ref_no] || "",
-      supplier_name: r.supplier_name,
-      supplier_code: r.supplier_code,
-      total_amount: r.total_amount,
+      supplier_name: r.supplier_name || null,
+      supplier_code: r.supplier_code || null,
+      total_amount: r.total_amount || 0,
       status: "COMPLETE",
-      note: "Supplier missing"
+      note: "Supplier missing in one or more rows"
     }));
 
     res.json({ success: true, rows });
@@ -772,6 +781,7 @@ router.get("/missing-supplier", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
