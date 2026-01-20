@@ -711,21 +711,21 @@ router.get("/pending", async (req, res) => {
 ===================================================== */
 router.get("/missing-supplier", async (req, res) => {
   try {
-    // 🔹 Get all purchases that are completed
+    // 🔹 Get all purchases that are completed but missing supplier
     const purchases = await db.query(`
       SELECT
         ref_no,
         MAX(supplier_name) AS supplier_name,
         MAX(supplier_code) AS supplier_code,
-        SUM(purchase_sar * purchase_rate) AS total_amount
+        SUM(COALESCE(purchase_sar,0) * COALESCE(purchase_rate,0)) AS total_amount
       FROM purchase_entries
       WHERE is_deleted = false
       GROUP BY ref_no
-      HAVING BOOL_AND(purchase_sar > 0 AND purchase_rate > 0)
+      HAVING BOOL_AND(COALESCE(purchase_sar,0) > 0 AND COALESCE(purchase_rate,0) > 0)
          AND (MAX(supplier_name) IS NULL OR MAX(supplier_code) IS NULL)
     `);
 
-    // 🔹 Get customer name from sales tables
+    // 🔹 Get customer name from all sales tables
     const sales = await db.query(`
       SELECT
         ref_no,
@@ -748,17 +748,19 @@ router.get("/missing-supplier", async (req, res) => {
 
     // 🔹 Map customer name by ref_no
     const salesMap = {};
-    sales.rows.forEach(r => {
-      salesMap[r.ref_no] = r.customer_name;
-    });
+    if (sales.rows && sales.rows.length) {
+      sales.rows.forEach(r => {
+        salesMap[r.ref_no] = r.customer_name || "";
+      });
+    }
 
     // 🔹 Prepare final result
-    const result = purchases.rows.map(r => ({
+    const result = (purchases.rows || []).map(r => ({
       ref_no: r.ref_no,
       customer_name: salesMap[r.ref_no] || "",
-      supplier_name: r.supplier_name,
-      supplier_code: r.supplier_code,
-      total_amount: r.total_amount,
+      supplier_name: r.supplier_name || "",
+      supplier_code: r.supplier_code || "",
+      total_amount: r.total_amount || 0,
       status: "COMPLETE",
       note: "Supplier missing"
     }));
@@ -780,6 +782,7 @@ router.get("/missing-supplier", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
