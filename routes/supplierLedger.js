@@ -2,10 +2,6 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-/* ================================
-   GET ALL PENDING / PARTIAL SUPPLIERS
-   (NO -0, PARTIAL ONLY REAL AMOUNTS)
-================================ */
 router.get("/pending", async (req, res) => {
   try {
     const q = await db.query(`
@@ -29,7 +25,8 @@ router.get("/pending", async (req, res) => {
         COALESCE(ptot.total_paid,0) AS total_paid,
         COALESCE(pt.total_purchase,0) - COALESCE(ptot.total_paid,0) AS pending_amount,
         CASE
-          WHEN COALESCE(pt.total_purchase,0) - COALESCE(ptot.total_paid,0) <= 0 THEN 'PAID'
+          WHEN COALESCE(ptot.total_paid,0) > COALESCE(pt.total_purchase,0) THEN 'EXTRA PAID'
+          WHEN COALESCE(pt.total_purchase,0) - COALESCE(ptot.total_paid,0) = 0 THEN 'PAID'
           WHEN COALESCE(ptot.total_paid,0) > 0 THEN 'PARTIAL'
           ELSE 'PENDING'
         END AS status
@@ -37,8 +34,8 @@ router.get("/pending", async (req, res) => {
       LEFT JOIN purchase_totals pt ON pt.supplier_code = s.supplier_code
       LEFT JOIN payment_totals ptot ON ptot.supplier_code = s.supplier_code
       WHERE s.is_deleted = false
-        /* ✅ Show only pending or partial (including extra paid as partial) */
-        AND (COALESCE(pt.total_purchase,0) - COALESCE(ptot.total_paid,0) <> 0 OR COALESCE(ptot.total_paid,0) > 0)
+        /* ✅ Show PENDING, PARTIAL, or EXTRA PAID */
+        AND (COALESCE(pt.total_purchase,0) - COALESCE(ptot.total_paid,0) <> 0 OR COALESCE(ptot.total_paid,0) > COALESCE(pt.total_purchase,0))
       ORDER BY pending_amount DESC, s.supplier_name
     `);
 
