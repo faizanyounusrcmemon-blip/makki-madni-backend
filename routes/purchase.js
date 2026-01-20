@@ -706,8 +706,81 @@ router.get("/pending", async (req, res) => {
   }
 });
 
+/* =====================================================
+   COMPLETED PURCHASES BUT MISSING SUPPLIER
+===================================================== */
+router.get("/missing-supplier", async (req, res) => {
+  try {
+    // 🔹 Get all purchases that are completed
+    const purchases = await db.query(`
+      SELECT
+        ref_no,
+        MAX(supplier_name) AS supplier_name,
+        MAX(supplier_code) AS supplier_code,
+        SUM(purchase_sar * purchase_rate) AS total_amount
+      FROM purchase_entries
+      WHERE is_deleted = false
+      GROUP BY ref_no
+      HAVING BOOL_AND(purchase_sar > 0 AND purchase_rate > 0)
+         AND (MAX(supplier_name) IS NULL OR MAX(supplier_code) IS NULL)
+    `);
+
+    // 🔹 Get customer name from sales tables
+    const sales = await db.query(`
+      SELECT
+        ref_no,
+        MAX(customer_name) AS customer_name
+      FROM (
+        SELECT ref_no, customer_name FROM bookings WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, customer_name FROM hotels WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, customer_name FROM visa WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, customer_name FROM ticketing WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, customer_name FROM transport WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, customer_name FROM ziyarat WHERE is_deleted=false
+      ) s
+      GROUP BY ref_no
+    `);
+
+    // 🔹 Map customer name by ref_no
+    const salesMap = {};
+    sales.rows.forEach(r => {
+      salesMap[r.ref_no] = r.customer_name;
+    });
+
+    // 🔹 Prepare final result
+    const result = purchases.rows.map(r => ({
+      ref_no: r.ref_no,
+      customer_name: salesMap[r.ref_no] || "",
+      supplier_name: r.supplier_name,
+      supplier_code: r.supplier_code,
+      total_amount: r.total_amount,
+      status: "COMPLETE",
+      note: "Supplier missing"
+    }));
+
+    return res.json({
+      success: true,
+      rows: result
+    });
+
+  } catch (err) {
+    console.error("MISSING SUPPLIER PURCHASE ERROR:", err);
+    return res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+
 
 module.exports = router;
+
 
 
 
