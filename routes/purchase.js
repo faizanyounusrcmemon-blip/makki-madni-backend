@@ -707,29 +707,29 @@ router.get("/pending", async (req, res) => {
 });
 
 /* =====================================================
-   COMPLETED PURCHASES BUT MISSING SUPPLIER
+   COMPLETED PURCHASE BUT SUPPLIER MISSING
 ===================================================== */
 router.get("/missing-supplier", async (req, res) => {
   try {
-    // 🔹 Get all purchases that are completed but missing supplier
-    const purchases = await db.query(`
+    const result = await db.query(`
       SELECT
-        ref_no,
-        MAX(supplier_name) AS supplier_name,
-        MAX(supplier_code) AS supplier_code,
-        SUM(COALESCE(purchase_sar,0) * COALESCE(purchase_rate,0)) AS total_amount
-      FROM purchase_entries
-      WHERE is_deleted = false
-      GROUP BY ref_no
-      HAVING BOOL_AND(COALESCE(purchase_sar,0) > 0 AND COALESCE(purchase_rate,0) > 0)
-         AND (MAX(supplier_name) IS NULL OR MAX(supplier_code) IS NULL)
+        p.ref_no,
+        MAX(p.supplier_name) AS supplier_name,
+        MAX(p.supplier_code) AS supplier_code,
+        SUM(p.purchase_sar * p.purchase_rate) AS total_amount
+      FROM purchase_entries p
+      WHERE p.is_deleted = false
+        AND p.purchase_sar > 0
+        AND p.purchase_rate > 0
+      GROUP BY p.ref_no
+      HAVING
+        MAX(p.supplier_name) IS NULL
+        OR MAX(p.supplier_code) IS NULL
     `);
 
-    // 🔹 Get customer name from all sales tables
-    const sales = await db.query(`
-      SELECT
-        ref_no,
-        MAX(customer_name) AS customer_name
+    /* ================= CUSTOMER NAME ================= */
+    const customers = await db.query(`
+      SELECT ref_no, MAX(customer_name) AS customer_name
       FROM (
         SELECT ref_no, customer_name FROM bookings WHERE is_deleted=false
         UNION ALL
@@ -742,46 +742,37 @@ router.get("/missing-supplier", async (req, res) => {
         SELECT ref_no, customer_name FROM transport WHERE is_deleted=false
         UNION ALL
         SELECT ref_no, customer_name FROM ziyarat WHERE is_deleted=false
-      ) s
+      ) x
       GROUP BY ref_no
     `);
 
-    // 🔹 Map customer name by ref_no
-    const salesMap = {};
-    if (sales.rows && sales.rows.length) {
-      sales.rows.forEach(r => {
-        salesMap[r.ref_no] = r.customer_name || "";
-      });
-    }
+    const customerMap = {};
+    customers.rows.forEach(r => {
+      customerMap[r.ref_no] = r.customer_name;
+    });
 
-    // 🔹 Prepare final result
-    const result = (purchases.rows || []).map(r => ({
+    const rows = result.rows.map(r => ({
       ref_no: r.ref_no,
-      customer_name: salesMap[r.ref_no] || "",
-      supplier_name: r.supplier_name || "",
-      supplier_code: r.supplier_code || "",
-      total_amount: r.total_amount || 0,
+      customer_name: customerMap[r.ref_no] || "",
+      supplier_name: r.supplier_name,
+      supplier_code: r.supplier_code,
+      total_amount: r.total_amount,
       status: "COMPLETE",
       note: "Supplier missing"
     }));
 
-    return res.json({
-      success: true,
-      rows: result
-    });
+    res.json({ success: true, rows });
 
   } catch (err) {
-    console.error("MISSING SUPPLIER PURCHASE ERROR:", err);
-    return res.status(500).json({
-      success: false,
-      error: err.message
-    });
+    console.error("MISSING SUPPLIER ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
 
 
 module.exports = router;
+
 
 
 
