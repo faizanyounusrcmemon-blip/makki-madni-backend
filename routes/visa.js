@@ -2,26 +2,11 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-// ========================
-// AUTO REF GENERATOR
-// ========================
+// AUTO REF
 async function generateRef() {
-  const r = await db.query("SELECT COUNT(*) FROM visa WHERE is_deleted=false");
+  const r = await db.query("SELECT COUNT(*) FROM visa");
   return "VISA-" + (Number(r.rows[0].count) + 1).toString().padStart(5, "0");
 }
-
-// ========================
-// NEXT REF NO ENDPOINT
-// ========================
-router.get("/next-ref", async (req, res) => {
-  try {
-    const nextRef = await generateRef();
-    res.json({ success: true, next_ref_no: nextRef });
-  } catch (err) {
-    console.error("NEXT REF ERROR:", err);
-    res.json({ success: false, error: err.message });
-  }
-});
 
 // ========================
 // SAVE / UPDATE
@@ -104,28 +89,27 @@ router.post("/save", async (req, res) => {
 // GET BY REF
 // ========================
 router.get("/get/:ref", async (req, res) => {
-  try {
-    const q = await db.query(
-      "SELECT * FROM visa WHERE ref_no=$1 AND is_deleted=false",
-      [req.params.ref]
-    );
+  const q = await db.query(
+    "SELECT * FROM visa WHERE ref_no=$1 AND is_deleted=false",
+    [req.params.ref]
+  );
 
-    if (q.rows.length === 0) return res.json({ success: false });
+  if (q.rows.length === 0)
+    return res.json({ success: false });
 
-    res.json({ success: true, row: q.rows[0] });
-  } catch (err) {
-    console.error("GET VISA ERROR:", err);
-    res.json({ success: false, error: err.message });
-  }
+  res.json({ success: true, row: q.rows[0] });
 });
 
-// ========================
-// DELETE (SOFT DELETE)
-// ========================
+// ===================================
+// SOFT DELETE WITH PURCHASE / PAYMENT CHECK (VISA)
+// ===================================
 router.delete("/delete/:ref_no", async (req, res) => {
   try {
     const { ref_no } = req.params;
 
+    // ===============================
+    // CHECK IF PURCHASE ENTRIES EXIST
+    // ===============================
     const purchaseCheck = await db.query(
       `SELECT SUM(purchase_pkr) AS total
        FROM purchase_entries
@@ -140,6 +124,9 @@ router.delete("/delete/:ref_no", async (req, res) => {
       });
     }
 
+    // ===============================
+    // CHECK IF PAYMENT RECEIVED
+    // ===============================
     const paymentCheck = await db.query(
       `SELECT SUM(amount) AS total
        FROM customer_payments
@@ -154,6 +141,9 @@ router.delete("/delete/:ref_no", async (req, res) => {
       });
     }
 
+    // ===============================
+    // SOFT DELETE
+    // ===============================
     const q = await db.query(
       `UPDATE visa
        SET is_deleted = true
@@ -174,4 +164,6 @@ router.delete("/delete/:ref_no", async (req, res) => {
   }
 });
 
+
 module.exports = router;
+
