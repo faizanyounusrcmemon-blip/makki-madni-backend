@@ -192,6 +192,7 @@ router.get("/supplier-purchase", async (req, res) => {
       LEFT JOIN suppliers s
         ON s.supplier_code = p.supplier_code
       WHERE p.is_deleted = false
+        AND (p.purchase_sar > 0 OR p.purchase_rate > 0)  -- ✅ یہ شرط
       ORDER BY p.created_at DESC
     `;
 
@@ -217,6 +218,7 @@ router.get("/supplier-purchase", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
