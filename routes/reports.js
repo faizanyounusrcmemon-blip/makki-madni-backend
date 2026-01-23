@@ -167,52 +167,57 @@ router.get("/all", async (req, res) => {
 ===================================================== */
 router.get("/supplier-purchase", async (req, res) => {
   try {
-    // 1️⃣ Purchase data (purchase > 0 only)
-    const purchaseQuery = `
+    const query = `
       SELECT
         p.id,
         p.ref_no,
         p.item,
+
+        /* SALE */
+        p.sale_sar,
+        p.sale_rate,
         p.sale_pkr,
+
+        /* PURCHASE */
+        p.purchase_sar,
+        p.purchase_rate,
         p.purchase_pkr,
-        (p.sale_pkr - p.purchase_pkr) AS profit,
+
+        /* PROFIT */
+        (COALESCE(p.sale_pkr,0) - COALESCE(p.purchase_pkr,0)) AS profit,
+
         p.created_at AS booking_date,
         s.supplier_name
       FROM purchase_entries p
       LEFT JOIN suppliers s
         ON s.supplier_code = p.supplier_code
       WHERE p.is_deleted = false
-        AND p.purchase_pkr > 0
-      ORDER BY s.supplier_name, p.created_at DESC
+      ORDER BY p.created_at DESC
     `;
-    const { rows: purchases } = await db.query(purchaseQuery);
 
-    // 2️⃣ Supplier list
-    const supplierQuery = `
+    const { rows } = await db.query(query);
+
+    const sup = await db.query(`
       SELECT supplier_name
       FROM suppliers
       WHERE is_deleted = false
       ORDER BY supplier_name
-    `;
-    const { rows: supplierRows } = await db.query(supplierQuery);
-
-    const suppliers = ["ALL", ...supplierRows.map((s) => s.supplier_name)];
+    `);
 
     res.json({
       success: true,
-      rows: purchases,
-      suppliers,
+      rows,
+      suppliers: ["ALL", ...sup.rows.map(s => s.supplier_name)]
     });
   } catch (err) {
-    console.error("SUPPLIER PURCHASE REPORT ERROR:", err);
-    res
-      .status(500)
-      .json({ success: false, error: err.message || "Server error" });
+    console.error(err);
+    res.status(500).json({ success: false });
   }
 });
 
 
 module.exports = router;
+
 
 
 
