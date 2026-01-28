@@ -147,7 +147,7 @@ router.get("/load/:ref_no", async (req, res) => {
     else if (ref_no.startsWith("VISA-")) {
       const q = await db.query(
         `
-        SELECT total_sar, pkr_rate
+        SELECT total_sar, pkr_rate, visa_persons
         FROM visa
         WHERE ref_no=$1 AND is_deleted=false
         `,
@@ -159,14 +159,17 @@ router.get("/load/:ref_no", async (req, res) => {
 
       const r = q.rows[0];
 
+      const persons = Number(r.visa_persons) || 0;
+      const sar = Number(r.total_sar) || 0;
+      const rate = Number(r.pkr_rate) || 0;
+
       rows.push({
-        item: "Visa",
-        sale_sar: Number(r.total_sar) || 0,
-        sale_rate: r.pkr_rate || 0,
-        sale_pkr: (Number(r.total_sar) || 0) * (r.pkr_rate || 0),
+        item: `Visa (${persons} Person${persons > 1 ? "s" : ""})`,
+        sale_sar: sar,
+        sale_rate: rate,
+        sale_pkr: sar * rate,
       });
     }
-
     /* =========================
        TRANSPORT ONLY (TRN-)
     ========================= */
@@ -778,6 +781,7 @@ router.get("/missing-supplier", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
