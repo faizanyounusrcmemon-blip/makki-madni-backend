@@ -71,15 +71,17 @@ router.get("/load/:ref_no", async (req, res) => {
 
       // VISA
       if (salesRow.visa_persons > 0) {
-        const sar = salesRow.visa_total || salesRow.visa_persons * salesRow.visa_rate;
+        const persons = salesRow.visa_persons;
+        const sar =
+          salesRow.visa_total || persons * salesRow.visa_rate;
+
         rows.push({
-          item: "Visa",
+          item: `Visa (${persons} Person${persons > 1 ? "s" : ""})`,
           sale_sar: sar,
           sale_rate: salesRow.visa_sar_rate || 0,
           sale_pkr: sar * (salesRow.visa_sar_rate || 0),
         });
       }
-
       // TRANSPORT
       if (Array.isArray(salesRow.transport)) {
         salesRow.transport.forEach((t,i)=>{
@@ -776,6 +778,7 @@ router.get("/missing-supplier", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
