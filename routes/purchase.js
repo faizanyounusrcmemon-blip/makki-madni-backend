@@ -320,36 +320,40 @@ router.get("/load/:ref_no", async (req, res) => {
     );
 
     rows = rows.map(r => {
-      // base type for matching
-      let baseItem = "";
-  
-      if (r.item.startsWith("Hotel")) baseItem = "Hotel " + r.item.match(/Hotel (\d+)/)[1];
-      else if (r.item.startsWith("Transport")) baseItem = "Transport " + r.item.match(/Transport (\d+)/)[1];
-      else if (r.item.startsWith("Ziyarat")) baseItem = "Ziyarat " + r.item.match(/Ziyarat (\d+)/)[1];
-      else if (r.item.startsWith("Visa")) baseItem = "Visa";
-      else if (r.item.startsWith("Ticket")) baseItem = r.item.split("–")[0].trim();
+      // base item for matching
+      const baseItem = r.item.split(' - ')[0];
 
-      // find matching purchase row
-      const x = p.rows.find(p => {
-        // match either exact item or base item
-        return p.item === r.item || p.item.startsWith(baseItem);
-      });
+      const x = p.rows.find(p =>
+        p.item === r.item || p.item === baseItem
+      );
+
+      const sale_sar = Number(r.sale_sar) || 0;
+      const sale_rate = Number(r.sale_rate) || 0;
+      const sale_pkr = sale_sar * sale_rate;
 
       const purchase_sar = x?.purchase_sar ?? "";
       const purchase_rate = x?.purchase_rate ?? "";
       const purchase_pkr =
-        purchase_sar && purchase_rate ? Number(purchase_sar) * Number(purchase_rate) : 0;
+        purchase_sar && purchase_rate
+          ? Number(purchase_sar) * Number(purchase_rate)
+          : 0;
 
       return {
         ...r,
-        id: x?.id, // keep ID for edit
-        sale_sar: Number(r.sale_sar) || 0,
-        sale_rate: Number(r.sale_rate) || 0,
-        sale_pkr: Number(r.sale_sar) * Number(r.sale_rate),
+
+        // ✅ SALE ALWAYS FROM CURRENT ROW
+        sale_sar,
+        sale_rate,
+        sale_pkr,
+
+        // ✅ PURCHASE FROM DB (EDIT)
         purchase_sar,
         purchase_rate,
         purchase_pkr,
-        profit: (Number(r.sale_sar) * Number(r.sale_rate)) - purchase_pkr,
+
+        // ✅ PROFIT AUTO RECALCULATED
+        profit: sale_pkr - purchase_pkr,
+
         supplier_code: x?.supplier_code ?? "",
         supplier_name: x?.supplier_name ?? ""
       };
@@ -364,7 +368,7 @@ router.get("/load/:ref_no", async (req, res) => {
 });
 
 /* =====================================================
-   SAVE PURCHASE (UPDATE / INSERT) ✅ FIXED
+   SAVE PURCHASE (UPSERT) ✅ SUPPLIER INCLUDED
 ===================================================== */
 router.post("/save", async (req, res) => {
   try {
@@ -374,91 +378,60 @@ router.post("/save", async (req, res) => {
       return res.json({ success: false, error: "Invalid payload" });
     }
 
+    const unique = [];
+    const seen = new Set();
+
     for (const r of items) {
       if (!r.item) continue;
-
-      // =============================
-      // EDIT MODE → UPDATE BY ID
-      // =============================
-      if (r.id) {
-        await db.query(
-          `
-          UPDATE purchase_entries SET
-            item=$1,
-            sale_sar=$2,
-            sale_rate=$3,
-            sale_pkr=$4,
-            purchase_sar=$5,
-            purchase_rate=$6,
-            purchase_pkr=$7,
-            profit=$8,
-            supplier_code=$9,
-            supplier_name=$10,
-            is_deleted=false
-          WHERE id=$11
-          `,
-          [
-            r.item,
-            r.sale_sar || 0,
-            r.sale_rate || 0,
-            r.sale_pkr || 0,
-            r.purchase_sar || 0,
-            r.purchase_rate || 0,
-            r.purchase_pkr || 0,
-            r.profit || 0,
-            r.supplier_code || "",
-            r.supplier_name || "",
-            r.id
-          ]
-        );
-      }
-
-      // =============================
-      // NEW ROW → SAFE INSERT
-      // =============================
-      else {
-        // 👇 SAME ref_no + item already exists?
-        await db.query(
-          `
-          UPDATE purchase_entries
-          SET is_deleted=true
-          WHERE ref_no=$1 AND item=$2
-          `,
-          [ref_no, r.item]
-        );
-
-        await db.query(
-          `
-          INSERT INTO purchase_entries (
-            ref_no, item,
-            sale_sar, sale_rate, sale_pkr,
-            purchase_sar, purchase_rate, purchase_pkr,
-            profit,
-            supplier_code,
-            supplier_name,
-            is_deleted
-          )
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false)
-          `,
-          [
-            ref_no,
-            r.item,
-            r.sale_sar || 0,
-            r.sale_rate || 0,
-            r.sale_pkr || 0,
-            r.purchase_sar || 0,
-            r.purchase_rate || 0,
-            r.purchase_pkr || 0,
-            r.profit || 0,
-            r.supplier_code || "",
-            r.supplier_name || ""
-          ]
-        );
-      }
+      const key = r.item.trim();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(r);
     }
 
-    // ✅ RESPONSE LOOP KE BAAD
-    res.json({ success: true, message: "✅ Purchase saved / updated successfully" });
+    for (const r of unique) {
+      await db.query(
+        `
+        INSERT INTO purchase_entries (
+          ref_no, item,
+          sale_sar, sale_rate, sale_pkr,
+          purchase_sar, purchase_rate, purchase_pkr,
+          profit,
+          supplier_code,
+          supplier_name,
+          is_deleted
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false)
+        ON CONFLICT (ref_no, item)
+        DO UPDATE SET
+          sale_sar       = EXCLUDED.sale_sar,
+          sale_rate      = EXCLUDED.sale_rate,
+          sale_pkr       = EXCLUDED.sale_pkr,
+          purchase_sar   = EXCLUDED.purchase_sar,
+          purchase_rate  = EXCLUDED.purchase_rate,
+          purchase_pkr   = EXCLUDED.purchase_pkr,
+          profit         = EXCLUDED.profit,
+          supplier_code  = EXCLUDED.supplier_code,
+          supplier_name  = EXCLUDED.supplier_name,
+          is_deleted     = false
+        `,
+        [
+          ref_no,
+          r.item,
+          r.sale_sar || 0,
+          r.sale_rate || 0,
+          r.sale_pkr || 0,
+          r.purchase_sar || 0,
+          r.purchase_rate || 0,
+          r.purchase_pkr || 0,
+          r.profit || 0,
+          r.supplier_code || "",
+          r.supplier_name || "",
+        ]
+      );
+    }
+
+    res.json({ success: true, message: "✅ Purchase saved / updated" });
 
   } catch (err) {
     console.error("PURCHASE UPSERT ERROR:", err);
@@ -975,10 +948,6 @@ router.get("/sale-mismatch-report", async (req, res) => {
 
 
 module.exports = router;
-
-
-
-
 
 
 
