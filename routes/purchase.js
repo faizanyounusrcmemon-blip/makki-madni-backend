@@ -320,8 +320,20 @@ router.get("/load/:ref_no", async (req, res) => {
     );
 
     rows = rows.map(r => {
-      const baseItem = r.item.split(' - ')[0];
-      const x = p.rows.find(p => p.item === r.item || p.item === baseItem);
+      // base type for matching
+      let baseItem = "";
+  
+      if (r.item.startsWith("Hotel")) baseItem = "Hotel " + r.item.match(/Hotel (\d+)/)[1];
+      else if (r.item.startsWith("Transport")) baseItem = "Transport " + r.item.match(/Transport (\d+)/)[1];
+      else if (r.item.startsWith("Ziyarat")) baseItem = "Ziyarat " + r.item.match(/Ziyarat (\d+)/)[1];
+      else if (r.item.startsWith("Visa")) baseItem = "Visa";
+      else if (r.item.startsWith("Ticket")) baseItem = r.item.split("–")[0].trim();
+
+      // find matching purchase row
+      const x = p.rows.find(p => {
+        // match either exact item or base item
+        return p.item === r.item || p.item.startsWith(baseItem);
+      });
 
       const purchase_sar = x?.purchase_sar ?? "";
       const purchase_rate = x?.purchase_rate ?? "";
@@ -330,7 +342,7 @@ router.get("/load/:ref_no", async (req, res) => {
 
       return {
         ...r,
-        id: x?.id, // ✅ Add ID for edit
+        id: x?.id, // keep ID for edit
         sale_sar: Number(r.sale_sar) || 0,
         sale_rate: Number(r.sale_rate) || 0,
         sale_pkr: Number(r.sale_sar) * Number(r.sale_rate),
@@ -942,6 +954,7 @@ router.get("/sale-mismatch-report", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
