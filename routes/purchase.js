@@ -62,9 +62,10 @@ router.get("/load/:ref_no", async (req, res) => {
         salesRow.hotels.forEach((h, i) => {
           const rooms = Number(h.rooms) || 0;
           const nights = Number(h.nights) || 0;
+          const type = h.type ? h.type.toUpperCase() : "";
 
           rows.push({
-            item: `Hotel ${i + 1} - ${h.hotel || ""} (${rooms} Room${rooms > 1 ? "s" : ""}, ${nights} Night${nights > 1 ? "s" : ""})`,
+            item: `Hotel ${i + 1} - ${h.hotel || ""} (${type}${type ? ", " : ""}${rooms} Room${rooms > 1 ? "s" : ""}, ${nights} Night${nights > 1 ? "s" : ""})`,
             sale_sar: Number(h.total) || 0,
             sale_rate: salesRow.hotel_sar_rate || 0,
             sale_pkr:
@@ -72,7 +73,7 @@ router.get("/load/:ref_no", async (req, res) => {
           });
         });
       }
-      // VISA
+       // VISA
       if (salesRow.visa_persons > 0) {
         const persons = salesRow.visa_persons;
         const sar =
@@ -785,6 +786,7 @@ router.get("/missing-supplier", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
