@@ -260,28 +260,27 @@ router.post("/save", async (req, res) => {
 
     for (const r of unique) {
       await db.query(`
-        INSERT INTO purchase_entries (
-          ref_no, item, item_key,
-          sale_sar, sale_rate, sale_pkr,
-          purchase_sar, purchase_rate, purchase_pkr,
-          profit,
-          supplier_code,
-          supplier_name,
-          is_deleted
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,false)
-        ON CONFLICT (ref_no, item_key)
-        DO UPDATE SET
-          item            = EXCLUDED.item,
-          sale_sar        = EXCLUDED.sale_sar,
-          sale_rate       = EXCLUDED.sale_rate,
-          sale_pkr        = EXCLUDED.sale_pkr,
-          purchase_sar    = EXCLUDED.purchase_sar,
-          purchase_rate   = EXCLUDED.purchase_rate,
-          purchase_pkr    = EXCLUDED.purchase_pkr,
-          profit          = EXCLUDED.profit,
-          supplier_code   = EXCLUDED.supplier_code,
-          supplier_name   = EXCLUDED.supplier_name,
-          is_deleted      = false
+      INSERT INTO purchase_entries (
+        ref_no, item, item_key,
+        sale_sar, sale_rate, sale_pkr,
+        purchase_sar, purchase_rate, purchase_pkr,
+        profit,
+        supplier_code,
+        supplier_name,
+        is_deleted
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,false)
+      ON CONFLICT (ref_no, item_key)
+      DO UPDATE SET
+        sale_sar       = EXCLUDED.sale_sar,
+        sale_rate      = EXCLUDED.sale_rate,
+        sale_pkr       = EXCLUDED.sale_pkr,
+        purchase_sar   = EXCLUDED.purchase_sar,
+        purchase_rate  = EXCLUDED.purchase_rate,
+        purchase_pkr   = EXCLUDED.purchase_pkr,
+        profit         = EXCLUDED.profit,
+        supplier_code  = EXCLUDED.supplier_code,
+        supplier_name  = EXCLUDED.supplier_name,
+        is_deleted     = false
       `, [
         ref_no,
         r.item,
@@ -296,7 +295,6 @@ router.post("/save", async (req, res) => {
         r.supplier_code || "",
         r.supplier_name || ""
       ]);
-    }
 
     res.json({ success:true, message:"✅ Purchase saved / updated successfully" });
 
@@ -815,6 +813,7 @@ router.get("/sale-mismatch-report", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
