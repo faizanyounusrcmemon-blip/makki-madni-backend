@@ -326,21 +326,29 @@ router.get("/load/:ref_no", async (req, res) => {
         p.item === r.item || p.item === baseItem
       );
 
+      // SALE (always fixed)
       const sale_sar = Number(r.sale_sar) || 0;
       const sale_rate = Number(r.sale_rate) || 0;
       const sale_pkr = sale_sar * sale_rate;
 
-      const purchase_sar = x?.purchase_sar ?? "";
-      const purchase_rate = x?.purchase_rate ?? "";
+      // PURCHASE — CURRENT ROW FIRST, DB ONLY AS FALLBACK
+      const purchase_sar =
+        r.purchase_sar !== undefined
+          ? r.purchase_sar
+          : x?.purchase_sar ?? "";
 
-      const purchase_pkr =
-        Number(purchase_sar) > 0 && Number(purchase_rate) > 0
-          ? Number(purchase_sar) * Number(purchase_rate)
-          : 0;
+      const purchase_rate =
+        r.purchase_rate !== undefined
+          ? r.purchase_rate
+          : x?.purchase_rate ?? "";
 
       const purchaseComplete =
         Number(purchase_sar) > 0 &&
         Number(purchase_rate) > 0;
+
+      const purchase_pkr = purchaseComplete
+        ? Number(purchase_sar) * Number(purchase_rate)
+        : 0;
 
       const profit = purchaseComplete
         ? sale_pkr - purchase_pkr
@@ -357,7 +365,7 @@ router.get("/load/:ref_no", async (req, res) => {
         purchase_rate,
         purchase_pkr,
 
-        profit, // ✅ FIXED
+        profit, // 🔥 NOW RESETS TO 0 IF CLEARED
 
         supplier_code: x?.supplier_code ?? "",
         supplier_name: x?.supplier_name ?? ""
@@ -971,6 +979,7 @@ router.get("/sale-mismatch-report", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
