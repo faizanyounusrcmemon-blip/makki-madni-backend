@@ -1,11 +1,7 @@
-// backend/routes/next.js
-const express = require("express");
-const router = express.Router();
-const db = require("../db"); // aapka database file
-// api/next.js
-import db from "../db"; // apna db connection adjust karein
+// pages/api/sale-mismatch-report.js
+const db = require("../../db"); // apna db connection adjust karein
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
     return res.status(405).json({ success: false, error: "Method not allowed" });
   }
@@ -92,5 +88,4 @@ export default async function handler(req, res) {
     console.error("SALE MISMATCH REPORT ERROR:", err);
     res.status(500).json({ success: false, error: err.message });
   }
-}
-module.exports = router;
+};
