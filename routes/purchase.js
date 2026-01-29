@@ -334,11 +334,17 @@ router.get("/load/:ref_no", async (req, res) => {
       const purchase_rate = x?.purchase_rate ?? "";
 
       const purchase_pkr =
-        purchase_sar && purchase_rate
+        Number(purchase_sar) > 0 && Number(purchase_rate) > 0
           ? Number(purchase_sar) * Number(purchase_rate)
           : 0;
 
-      const hasPurchase = !!x;
+      const purchaseComplete =
+        Number(purchase_sar) > 0 &&
+        Number(purchase_rate) > 0;
+
+      const profit = purchaseComplete
+        ? sale_pkr - purchase_pkr
+        : 0;
 
       return {
         ...r,
@@ -351,16 +357,15 @@ router.get("/load/:ref_no", async (req, res) => {
         purchase_rate,
         purchase_pkr,
 
-        // 🔥 PROFIT RULE FIX
-        profit: hasPurchase ? sale_pkr - purchase_pkr : 0,
+        profit, // ✅ FIXED
 
         supplier_code: x?.supplier_code ?? "",
         supplier_name: x?.supplier_name ?? ""
       };
     });
 
-    res.json({ success:true, is_edit:isEdit, rows });
-
+    res.json({ success: true, is_edit: isEdit, rows });
+     
   } catch(err){
     console.error("PURCHASE LOAD ERROR:", err);
     res.json({ success:false, error: err.message });
@@ -368,7 +373,7 @@ router.get("/load/:ref_no", async (req, res) => {
 });
 
 /* =====================================================
-   SAVE PURCHASE (UPSERT) ✅ SUPPLIER INCLUDED
+   SAVE PURCHASE (UPSERT) ✅ PROFIT AUTO RECALC
 ===================================================== */
 router.post("/save", async (req, res) => {
   try {
@@ -390,6 +395,24 @@ router.post("/save", async (req, res) => {
     }
 
     for (const r of unique) {
+      const sale_sar = Number(r.sale_sar) || 0;
+      const sale_rate = Number(r.sale_rate) || 0;
+      const sale_pkr = sale_sar * sale_rate;
+
+      const purchase_sar = Number(r.purchase_sar) || 0;
+      const purchase_rate = Number(r.purchase_rate) || 0;
+      const purchase_pkr =
+        purchase_sar > 0 && purchase_rate > 0
+          ? purchase_sar * purchase_rate
+          : 0;
+
+      const purchaseComplete =
+        purchase_sar > 0 && purchase_rate > 0;
+
+      const profit = purchaseComplete
+        ? sale_pkr - purchase_pkr
+        : 0;
+
       await db.query(
         `
         INSERT INTO purchase_entries (
@@ -418,13 +441,13 @@ router.post("/save", async (req, res) => {
         [
           ref_no,
           r.item,
-          r.sale_sar || 0,
-          r.sale_rate || 0,
-          r.sale_pkr || 0,
-          r.purchase_sar || 0,
-          r.purchase_rate || 0,
-          r.purchase_pkr || 0,
-          r.profit || 0,
+          sale_sar,
+          sale_rate,
+          sale_pkr,
+          purchase_sar,
+          purchase_rate,
+          purchase_pkr,
+          profit, // ✅ ALWAYS CORRECT
           r.supplier_code || "",
           r.supplier_name || "",
         ]
@@ -948,6 +971,7 @@ router.get("/sale-mismatch-report", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
