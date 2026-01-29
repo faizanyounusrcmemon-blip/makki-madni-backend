@@ -818,24 +818,3 @@ router.get("/missing-supplier", async (req, res) => {
 
 
 module.exports = router;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
