@@ -1,3 +1,7 @@
+// backend/routes/next.js
+const express = require("express");
+const router = express.Router();
+const db = require("../db"); // aapka database file
 // api/next.js
 import db from "../db"; // apna db connection adjust karein
 
