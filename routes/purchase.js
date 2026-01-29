@@ -127,7 +127,7 @@ router.get("/load/:ref_no", async (req, res) => {
           hotel_name,
           hotel_total,
           sar_rate,
-          hotal_type,
+          hotel_type,
           hotel_rooms,
           hotel_nights
         FROM hotels
@@ -818,6 +818,7 @@ router.get("/missing-supplier", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
