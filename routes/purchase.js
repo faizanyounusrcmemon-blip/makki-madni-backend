@@ -376,66 +376,32 @@ router.post("/save", async (req, res) => {
 
     for (const r of items) {
       // r.id agar edit mode me aya hai
-      if (r.id) {
-        // UPDATE existing row
+      if(r.id) {
+        // update existing
         await db.query(
           `UPDATE purchase_entries SET
-            item = $1,
-            sale_sar = $2,
-            sale_rate = $3,
-            sale_pkr = $4,
-            purchase_sar = $5,
-            purchase_rate = $6,
-            purchase_pkr = $7,
-            profit = $8,
-            supplier_code = $9,
-            supplier_name = $10,
-            is_deleted = false
-          WHERE id = $11
-          `,
-          [
-            r.item,
-            r.sale_sar || 0,
-            r.sale_rate || 0,
-            r.sale_pkr || 0,
-            r.purchase_sar || 0,
-            r.purchase_rate || 0,
-            r.purchase_pkr || 0,
-            r.profit || 0,
-            r.supplier_code || "",
-            r.supplier_name || "",
-            r.id
-          ]
+            item=$1, sale_sar=$2, sale_rate=$3, sale_pkr=$4,
+            purchase_sar=$5, purchase_rate=$6, purchase_pkr=$7,
+            profit=$8, supplier_code=$9, supplier_name=$10, is_deleted=false
+           WHERE id=$11`,
+          [r.item, r.sale_sar, r.sale_rate, r.sale_pkr,
+           r.purchase_sar, r.purchase_rate, r.purchase_pkr,
+           r.profit, r.supplier_code, r.supplier_name,
+           r.id]
         );
       } else {
-        // INSERT new row
+        // insert new
         await db.query(
           `INSERT INTO purchase_entries (
-            ref_no, item,
-            sale_sar, sale_rate, sale_pkr,
-            purchase_sar, purchase_rate, purchase_pkr,
-            profit,
-            supplier_code,
-            supplier_name,
-            is_deleted
-          )
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false)`,
-          [
-            ref_no,
-            r.item,
-            r.sale_sar || 0,
-            r.sale_rate || 0,
-            r.sale_pkr || 0,
-            r.purchase_sar || 0,
-            r.purchase_rate || 0,
-            r.purchase_pkr || 0,
-            r.profit || 0,
-            r.supplier_code || "",
-            r.supplier_name || "",
-          ]
+            ref_no, item, sale_sar, sale_rate, sale_pkr,
+            purchase_sar, purchase_rate, purchase_pkr, profit,
+            supplier_code, supplier_name, is_deleted
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false)`,
+          [ref_no, r.item, r.sale_sar, r.sale_rate, r.sale_pkr,
+           r.purchase_sar, r.purchase_rate, r.purchase_pkr, r.profit,
+           r.supplier_code, r.supplier_name]
         );
       }
-    }
 
     res.json({ success: true, message: "✅ Purchase saved / updated" });
 
@@ -954,6 +920,7 @@ router.get("/sale-mismatch-report", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
