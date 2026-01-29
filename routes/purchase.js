@@ -123,7 +123,13 @@ router.get("/load/:ref_no", async (req, res) => {
     else if (ref_no.startsWith("HOT-")) {
       const q = await db.query(
         `
-        SELECT hotel_name, hotel_total, sar_rate
+        SELECT
+          hotel_name,
+          hotel_total,
+          sar_rate,
+          hotal_type,
+          hotal_rooms,
+          hotal_nights
         FROM hotels
         WHERE ref_no=$1 AND is_deleted=false
         `,
@@ -136,15 +142,21 @@ router.get("/load/:ref_no", async (req, res) => {
       const r = q.rows[0];
 
       (r.hotel_name || []).forEach((name, i) => {
+        const type = r.hotal_type?.[i]
+          ? r.hotal_type[i].toUpperCase()
+          : "";
+        const rooms = Number(r.hotal_rooms?.[i]) || 0;
+        const nights = Number(r.hotal_nights?.[i]) || 0;
+
         rows.push({
-          item: `Hotel ${i + 1} - ${name}`,
-          sale_sar: Number(r.hotel_total[i]) || 0,
+          item: `Hotel ${i + 1} - ${name} (${type}${type ? ", " : ""}${rooms} Room${rooms > 1 ? "s" : ""}, ${nights} Night${nights > 1 ? "s" : ""})`,
+          sale_sar: Number(r.hotel_total?.[i]) || 0,
           sale_rate: r.sar_rate || 0,
-          sale_pkr: (Number(r.hotel_total[i]) || 0) * (r.sar_rate || 0),
+          sale_pkr:
+            (Number(r.hotel_total?.[i]) || 0) * (r.sar_rate || 0),
         });
       });
     }
-
     /* =========================
        VISA ONLY (VISA-)
     ========================= */
@@ -786,6 +798,7 @@ router.get("/missing-supplier", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
