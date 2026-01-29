@@ -100,6 +100,9 @@ app.use("/api/purchase", require("../routes/purchase"));
 app.use("/supplier", require("../routes/supplier"));
 app.use("/api/supplier", require("../routes/supplier"));
 
+app.use("/next", require("./routes/next"));
+app.use("/api/next", require("./routes/next"));
+
 
 // ==========================
 // AUTH
