@@ -3,6 +3,32 @@ const router = express.Router();
 const db = require("../db");
 
 /* =====================================================
+   SMART ITEM KEY (NO DB CHANGE)
+===================================================== */
+const getItemKey = (item = "") => {
+  const s = item.toLowerCase().trim();
+  let m;
+
+  m = s.match(/^(hotel)\s*(\d+)/);
+  if (m) return `${m[1]}_${m[2]}`;
+
+  m = s.match(/^(transport)\s*(\d+)/);
+  if (m) return `${m[1]}_${m[2]}`;
+
+  m = s.match(/^(ziyarat)\s*(\d+)/);
+  if (m) return `${m[1]}_${m[2]}`;
+
+  if (s.includes("ticket") && s.includes("adult")) return "ticket_adult";
+  if (s.includes("ticket") && s.includes("child")) return "ticket_child";
+  if (s.includes("ticket") && s.includes("infant")) return "ticket_infant";
+
+  if (s.startsWith("visa")) return "visa";
+
+  return s.split(" - ")[0];
+};
+
+
+/* =====================================================
    LOAD PURCHASE (SAVE + EDIT AUTO) ✅ SUPPLIER INCLUDED
 ===================================================== */
 router.get("/load/:ref_no", async (req, res) => {
@@ -320,11 +346,11 @@ router.get("/load/:ref_no", async (req, res) => {
     );
 
     rows = rows.map(r => {
-      // base item for matching
-      const baseItem = r.item.split(' - ')[0];
+
+      const rowKey = getItemKey(r.item);
 
       const x = p.rows.find(p =>
-        p.item === r.item || p.item === baseItem
+        getItemKey(p.item) === rowKey
       );
 
       const sale_sar = Number(r.sale_sar) || 0;
@@ -341,17 +367,17 @@ router.get("/load/:ref_no", async (req, res) => {
       return {
         ...r,
 
-        // ✅ SALE ALWAYS FROM CURRENT ROW
+        // SALE (always fresh)
         sale_sar,
         sale_rate,
         sale_pkr,
 
-        // ✅ PURCHASE FROM DB (EDIT)
+        // PURCHASE (edit safe)
         purchase_sar,
         purchase_rate,
         purchase_pkr,
 
-        // ✅ PROFIT AUTO RECALCULATED
+        // PROFIT
         profit: sale_pkr - purchase_pkr,
 
         supplier_code: x?.supplier_code ?? "",
@@ -948,6 +974,7 @@ router.get("/sale-mismatch-report", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
