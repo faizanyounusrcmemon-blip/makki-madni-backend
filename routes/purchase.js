@@ -59,16 +59,19 @@ router.get("/load/:ref_no", async (req, res) => {
 
       // HOTELS
       if (Array.isArray(salesRow.hotels)) {
-        salesRow.hotels.forEach((h,i)=>{
+        salesRow.hotels.forEach((h, i) => {
+          const rooms = Number(h.rooms) || 0;
+          const nights = Number(h.nights) || 0;
+
           rows.push({
-            item: `Hotel ${i+1} - ${h.hotel||""}`,
+            item: `Hotel ${i + 1} - ${h.hotel || ""} (${rooms} Room${rooms > 1 ? "s" : ""}, ${nights} Night${nights > 1 ? "s" : ""})`,
             sale_sar: Number(h.total) || 0,
             sale_rate: salesRow.hotel_sar_rate || 0,
-            sale_pkr: (Number(h.total)||0) * (salesRow.hotel_sar_rate||0)
+            sale_pkr:
+              (Number(h.total) || 0) * (salesRow.hotel_sar_rate || 0),
           });
         });
       }
-
       // VISA
       if (salesRow.visa_persons > 0) {
         const persons = salesRow.visa_persons;
@@ -782,6 +785,7 @@ router.get("/missing-supplier", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
