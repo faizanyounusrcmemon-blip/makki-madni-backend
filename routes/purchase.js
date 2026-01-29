@@ -239,11 +239,13 @@ router.get("/load/:ref_no", async (req, res) => {
 
 /* =====================================================
    SAVE PURCHASE (UPSERT) ✅ SUPPLIER INCLUDED
+   ✅ SMART ITEM_KEY IMPLEMENTED
 ===================================================== */
 router.post("/save", async (req, res) => {
   try {
     const { ref_no, items } = req.body;
-    if (!ref_no || !Array.isArray(items)) return res.json({ success:false, error:"Invalid payload" });
+    if (!ref_no || !Array.isArray(items))
+      return res.json({ success:false, error:"Invalid payload" });
 
     // --- UNIQUE ITEMS BY SMART KEY ---
     const unique = [];
@@ -253,35 +255,37 @@ router.post("/save", async (req, res) => {
       const key = getItemKey(r.item);
       if (seen.has(key)) continue;
       seen.add(key);
-      unique.push(r);
+      unique.push({ ...r, item_key: key }); // attach item_key
     }
 
     for (const r of unique) {
       await db.query(`
         INSERT INTO purchase_entries (
-          ref_no, item,
+          ref_no, item, item_key,
           sale_sar, sale_rate, sale_pkr,
           purchase_sar, purchase_rate, purchase_pkr,
           profit,
           supplier_code,
           supplier_name,
           is_deleted
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false)
-        ON CONFLICT (ref_no, item)
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,false)
+        ON CONFLICT (ref_no, item_key)
         DO UPDATE SET
-          sale_sar       = EXCLUDED.sale_sar,
-          sale_rate      = EXCLUDED.sale_rate,
-          sale_pkr       = EXCLUDED.sale_pkr,
-          purchase_sar   = EXCLUDED.purchase_sar,
-          purchase_rate  = EXCLUDED.purchase_rate,
-          purchase_pkr   = EXCLUDED.purchase_pkr,
-          profit         = EXCLUDED.profit,
-          supplier_code  = EXCLUDED.supplier_code,
-          supplier_name  = EXCLUDED.supplier_name,
-          is_deleted     = false
+          item            = EXCLUDED.item,
+          sale_sar        = EXCLUDED.sale_sar,
+          sale_rate       = EXCLUDED.sale_rate,
+          sale_pkr        = EXCLUDED.sale_pkr,
+          purchase_sar    = EXCLUDED.purchase_sar,
+          purchase_rate   = EXCLUDED.purchase_rate,
+          purchase_pkr    = EXCLUDED.purchase_pkr,
+          profit          = EXCLUDED.profit,
+          supplier_code   = EXCLUDED.supplier_code,
+          supplier_name   = EXCLUDED.supplier_name,
+          is_deleted      = false
       `, [
         ref_no,
         r.item,
+        r.item_key,
         r.sale_sar || 0,
         r.sale_rate || 0,
         r.sale_pkr || 0,
@@ -294,7 +298,7 @@ router.post("/save", async (req, res) => {
       ]);
     }
 
-    res.json({ success:true, message:"✅ Purchase saved /✅ updated saved" });
+    res.json({ success:true, message:"✅ Purchase saved / updated successfully" });
 
   } catch(err){
     console.error("PURCHASE UPSERT ERROR:", err);
@@ -811,6 +815,7 @@ router.get("/sale-mismatch-report", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
