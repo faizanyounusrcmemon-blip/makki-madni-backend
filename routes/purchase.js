@@ -320,20 +320,40 @@ router.get("/load/:ref_no", async (req, res) => {
     );
 
     rows = rows.map(r => {
-      // Base item for matching (remove any ' - ' label part)
+      // base item for matching
       const baseItem = r.item.split(' - ')[0];
 
-      // Try to find matching purchase entry
-      const x = p.rows.find(p => 
+      const x = p.rows.find(p =>
         p.item === r.item || p.item === baseItem
       );
 
+      const sale_sar = Number(r.sale_sar) || 0;
+      const sale_rate = Number(r.sale_rate) || 0;
+      const sale_pkr = sale_sar * sale_rate;
+
+      const purchase_sar = x?.purchase_sar ?? "";
+      const purchase_rate = x?.purchase_rate ?? "";
+      const purchase_pkr =
+        purchase_sar && purchase_rate
+          ? Number(purchase_sar) * Number(purchase_rate)
+          : 0;
+
       return {
         ...r,
-        purchase_sar: x?.purchase_sar ?? "",     // EMPTY if null
-        purchase_rate: x?.purchase_rate ?? "",   // EMPTY if null
-        purchase_pkr: x?.purchase_pkr ?? 0,
-        profit: x?.profit ?? 0,
+
+        // ✅ SALE ALWAYS FROM CURRENT ROW
+        sale_sar,
+        sale_rate,
+        sale_pkr,
+
+        // ✅ PURCHASE FROM DB (EDIT)
+        purchase_sar,
+        purchase_rate,
+        purchase_pkr,
+
+        // ✅ PROFIT AUTO RECALCULATED
+        profit: sale_pkr - purchase_pkr,
+
         supplier_code: x?.supplier_code ?? "",
         supplier_name: x?.supplier_name ?? ""
       };
@@ -798,6 +818,7 @@ router.get("/missing-supplier", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
