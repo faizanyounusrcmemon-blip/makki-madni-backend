@@ -320,8 +320,7 @@ router.get("/load/:ref_no", async (req, res) => {
     );
 
     rows = rows.map(r => {
-      // base item for matching
-      const baseItem = r.item.split(' - ')[0];
+      const baseItem = r.item.split(" - ")[0];
 
       const x = p.rows.find(p =>
         p.item === r.item || p.item === baseItem
@@ -333,26 +332,27 @@ router.get("/load/:ref_no", async (req, res) => {
 
       const purchase_sar = x?.purchase_sar ?? "";
       const purchase_rate = x?.purchase_rate ?? "";
+
       const purchase_pkr =
         purchase_sar && purchase_rate
           ? Number(purchase_sar) * Number(purchase_rate)
           : 0;
 
+      const hasPurchase = !!x;
+
       return {
         ...r,
 
-        // ✅ SALE ALWAYS FROM CURRENT ROW
         sale_sar,
         sale_rate,
         sale_pkr,
 
-        // ✅ PURCHASE FROM DB (EDIT)
         purchase_sar,
         purchase_rate,
         purchase_pkr,
 
-        // ✅ PROFIT AUTO RECALCULATED
-        profit: sale_pkr - purchase_pkr,
+        // 🔥 PROFIT RULE FIX
+        profit: hasPurchase ? sale_pkr - purchase_pkr : 0,
 
         supplier_code: x?.supplier_code ?? "",
         supplier_name: x?.supplier_name ?? ""
@@ -948,6 +948,7 @@ router.get("/sale-mismatch-report", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
