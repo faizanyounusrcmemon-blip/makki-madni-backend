@@ -320,40 +320,24 @@ router.get("/load/:ref_no", async (req, res) => {
     );
 
     rows = rows.map(r => {
-      // base item for matching
       const baseItem = r.item.split(' - ')[0];
-
-      const x = p.rows.find(p =>
-        p.item === r.item || p.item === baseItem
-      );
-
-      const sale_sar = Number(r.sale_sar) || 0;
-      const sale_rate = Number(r.sale_rate) || 0;
-      const sale_pkr = sale_sar * sale_rate;
+      const x = p.rows.find(p => p.item === r.item || p.item === baseItem);
 
       const purchase_sar = x?.purchase_sar ?? "";
       const purchase_rate = x?.purchase_rate ?? "";
       const purchase_pkr =
-        purchase_sar && purchase_rate
-          ? Number(purchase_sar) * Number(purchase_rate)
-          : 0;
+        purchase_sar && purchase_rate ? Number(purchase_sar) * Number(purchase_rate) : 0;
 
       return {
         ...r,
-
-        // ✅ SALE ALWAYS FROM CURRENT ROW
-        sale_sar,
-        sale_rate,
-        sale_pkr,
-
-        // ✅ PURCHASE FROM DB (EDIT)
+        id: x?.id, // ✅ Add ID for edit
+        sale_sar: Number(r.sale_sar) || 0,
+        sale_rate: Number(r.sale_rate) || 0,
+        sale_pkr: Number(r.sale_sar) * Number(r.sale_rate),
         purchase_sar,
         purchase_rate,
         purchase_pkr,
-
-        // ✅ PROFIT AUTO RECALCULATED
-        profit: sale_pkr - purchase_pkr,
-
+        profit: (Number(r.sale_sar) * Number(r.sale_rate)) - purchase_pkr,
         supplier_code: x?.supplier_code ?? "",
         supplier_name: x?.supplier_name ?? ""
       };
@@ -378,57 +362,67 @@ router.post("/save", async (req, res) => {
       return res.json({ success: false, error: "Invalid payload" });
     }
 
-    const unique = [];
-    const seen = new Set();
-
     for (const r of items) {
-      if (!r.item) continue;
-      const key = r.item.trim();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      unique.push(r);
-    }
-
-    for (const r of unique) {
-      await db.query(
-        `
-        INSERT INTO purchase_entries (
-          ref_no, item,
-          sale_sar, sale_rate, sale_pkr,
-          purchase_sar, purchase_rate, purchase_pkr,
-          profit,
-          supplier_code,
-          supplier_name,
-          is_deleted
-        )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false)
-        ON CONFLICT (ref_no, item)
-        DO UPDATE SET
-          sale_sar       = EXCLUDED.sale_sar,
-          sale_rate      = EXCLUDED.sale_rate,
-          sale_pkr       = EXCLUDED.sale_pkr,
-          purchase_sar   = EXCLUDED.purchase_sar,
-          purchase_rate  = EXCLUDED.purchase_rate,
-          purchase_pkr   = EXCLUDED.purchase_pkr,
-          profit         = EXCLUDED.profit,
-          supplier_code  = EXCLUDED.supplier_code,
-          supplier_name  = EXCLUDED.supplier_name,
-          is_deleted     = false
-        `,
-        [
-          ref_no,
-          r.item,
-          r.sale_sar || 0,
-          r.sale_rate || 0,
-          r.sale_pkr || 0,
-          r.purchase_sar || 0,
-          r.purchase_rate || 0,
-          r.purchase_pkr || 0,
-          r.profit || 0,
-          r.supplier_code || "",
-          r.supplier_name || "",
-        ]
-      );
+      // r.id agar edit mode me aya hai
+      if (r.id) {
+        // UPDATE existing row
+        await db.query(
+          `UPDATE purchase_entries SET
+            item = $1,
+            sale_sar = $2,
+            sale_rate = $3,
+            sale_pkr = $4,
+            purchase_sar = $5,
+            purchase_rate = $6,
+            purchase_pkr = $7,
+            profit = $8,
+            supplier_code = $9,
+            supplier_name = $10,
+            is_deleted = false
+          WHERE id = $11
+          `,
+          [
+            r.item,
+            r.sale_sar || 0,
+            r.sale_rate || 0,
+            r.sale_pkr || 0,
+            r.purchase_sar || 0,
+            r.purchase_rate || 0,
+            r.purchase_pkr || 0,
+            r.profit || 0,
+            r.supplier_code || "",
+            r.supplier_name || "",
+            r.id
+          ]
+        );
+      } else {
+        // INSERT new row
+        await db.query(
+          `INSERT INTO purchase_entries (
+            ref_no, item,
+            sale_sar, sale_rate, sale_pkr,
+            purchase_sar, purchase_rate, purchase_pkr,
+            profit,
+            supplier_code,
+            supplier_name,
+            is_deleted
+          )
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false)`,
+          [
+            ref_no,
+            r.item,
+            r.sale_sar || 0,
+            r.sale_rate || 0,
+            r.sale_pkr || 0,
+            r.purchase_sar || 0,
+            r.purchase_rate || 0,
+            r.purchase_pkr || 0,
+            r.profit || 0,
+            r.supplier_code || "",
+            r.supplier_name || "",
+          ]
+        );
+      }
     }
 
     res.json({ success: true, message: "✅ Purchase saved / updated" });
@@ -948,6 +942,7 @@ router.get("/sale-mismatch-report", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
