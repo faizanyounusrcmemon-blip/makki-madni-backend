@@ -815,6 +815,87 @@ router.get("/missing-supplier", async (req, res) => {
   }
 });
 
+/* =====================================================
+   SALE CHANGE CHECK (PURCHASE BASED – ITEM WISE)
+===================================================== */
+router.get("/sale-change-check/:ref_no", async (req, res) => {
+  try {
+    const { ref_no } = req.params;
+
+    /* =========================
+       1️⃣ LOAD PURCHASE ITEMS
+       (ONLY ITEMS ALREADY PURCHASED)
+    ========================= */
+    const p = await db.query(
+      `SELECT item, sale_sar, sale_rate, sale_pkr
+       FROM purchase_entries
+       WHERE ref_no=$1 AND is_deleted=false`,
+      [ref_no]
+    );
+
+    if (!p.rows.length) {
+      return res.json({
+        success: false,
+        error: "No purchase found for this ref"
+      });
+    }
+
+    /* =========================
+       2️⃣ LOAD CURRENT SALE (LIVE)
+       reuse same logic as /load
+    ========================= */
+    const currentSale = await loadSaleItems(ref_no); // 👈 SAME FUNCTION
+    const liveRows = currentSale.rows || [];
+
+    /* =========================
+       3️⃣ ITEM WISE COMPARISON
+    ========================= */
+    const report = p.rows.map(pr => {
+      const baseItem = pr.item.split(" - ")[0];
+
+      const live = liveRows.find(s =>
+        s.item === pr.item || s.item.startsWith(baseItem)
+      );
+
+      const old_sale_pkr = Number(pr.sale_pkr || 0);
+      const current_sale_pkr = Number(live?.sale_pkr || 0);
+
+      const status =
+        old_sale_pkr === current_sale_pkr ? "OK" : "CHANGED";
+
+      return {
+        item: pr.item,
+
+        old_sale_sar: pr.sale_sar,
+        old_sale_rate: pr.sale_rate,
+        old_sale_pkr,
+
+        current_sale_sar: live?.sale_sar || 0,
+        current_sale_rate: live?.sale_rate || 0,
+        current_sale_pkr,
+
+        status,
+        note:
+          status === "OK"
+            ? "No change in sale"
+            : "⚠ Sale changed after purchase entry"
+      };
+    });
+
+    res.json({
+      success: true,
+      ref_no,
+      rows: report
+    });
+
+  } catch (err) {
+    console.error("SALE CHANGE CHECK ERROR:", err);
+    res.json({ success:false, error: err.message });
+  }
+});
+
+
 
 
 module.exports = router;
+
