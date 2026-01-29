@@ -816,81 +816,127 @@ router.get("/missing-supplier", async (req, res) => {
 });
 
 /* =====================================================
-   SALE CHANGE CHECK (PURCHASE BASED – ITEM WISE)
+   SALE vs PURCHASE SALE MISMATCH REPORT (AUTO)
 ===================================================== */
-router.get("/sale-change-check/:ref_no", async (req, res) => {
+router.get("/sale-mismatch-report", async (req, res) => {
   try {
-    const { ref_no } = req.params;
+    const result = [];
 
     /* =========================
-       1️⃣ LOAD PURCHASE ITEMS
-       (ONLY ITEMS ALREADY PURCHASED)
+       1. ALL PURCHASE ENTRIES
     ========================= */
-    const p = await db.query(
-      `SELECT item, sale_sar, sale_rate, sale_pkr
-       FROM purchase_entries
-       WHERE ref_no=$1 AND is_deleted=false`,
-      [ref_no]
-    );
+    const purchase = await db.query(`
+      SELECT
+        ref_no,
+        item,
+        sale_sar,
+        sale_rate,
+        sale_pkr
+      FROM purchase_entries
+      WHERE is_deleted = false
+    `);
 
-    if (!p.rows.length) {
-      return res.json({
-        success: false,
-        error: "No purchase found for this ref"
-      });
+    if (!purchase.rows.length) {
+      return res.json({ success: true, rows: [] });
     }
 
     /* =========================
-       2️⃣ LOAD CURRENT SALE (LIVE)
-       reuse same logic as /load
+       2. GROUP BY REF_NO
     ========================= */
-    const currentSale = await loadSaleItems(ref_no); // 👈 SAME FUNCTION
-    const liveRows = currentSale.rows || [];
+    const byRef = {};
+    purchase.rows.forEach(r => {
+      if (!byRef[r.ref_no]) byRef[r.ref_no] = [];
+      byRef[r.ref_no].push(r);
+    });
 
     /* =========================
-       3️⃣ ITEM WISE COMPARISON
+       3. LOOP EACH REF
     ========================= */
-    const report = p.rows.map(pr => {
-      const baseItem = pr.item.split(" - ")[0];
+    for (const ref_no of Object.keys(byRef)) {
+      let salesRows = [];
 
-      const live = liveRows.find(s =>
-        s.item === pr.item || s.item.startsWith(baseItem)
-      );
+      /* ================= SALES FETCH ================= */
+      if (ref_no.startsWith("PKG-")) {
+        const q = await db.query(
+          `SELECT * FROM bookings WHERE ref_no=$1 AND is_deleted=false`,
+          [ref_no]
+        );
+        if (!q.rows.length) continue;
+        const s = q.rows[0];
 
-      const old_sale_pkr = Number(pr.sale_pkr || 0);
-      const current_sale_pkr = Number(live?.sale_pkr || 0);
+        // Tickets
+        if (s.adult_count > 0)
+          salesRows.push({
+            item: "Ticket – Adult",
+            sale_pkr: s.adult_count * s.adult_rate * (s.flight_sar_rate || 0)
+          });
 
-      const status =
-        old_sale_pkr === current_sale_pkr ? "OK" : "CHANGED";
+        if (s.child_count > 0)
+          salesRows.push({
+            item: "Ticket – Child",
+            sale_pkr: s.child_count * s.child_rate * (s.flight_sar_rate || 0)
+          });
 
-      return {
-        item: pr.item,
+        if (s.infant_count > 0)
+          salesRows.push({
+            item: "Ticket – Infant",
+            sale_pkr: s.infant_count * s.infant_rate * (s.flight_sar_rate || 0)
+          });
 
-        old_sale_sar: pr.sale_sar,
-        old_sale_rate: pr.sale_rate,
-        old_sale_pkr,
+        // Hotels
+        if (Array.isArray(s.hotels)) {
+          s.hotels.forEach((h, i) => {
+            salesRows.push({
+              item: `Hotel ${i + 1}`,
+              sale_pkr:
+                (Number(h.total) || 0) * (s.hotel_sar_rate || 0)
+            });
+          });
+        }
 
-        current_sale_sar: live?.sale_sar || 0,
-        current_sale_rate: live?.sale_rate || 0,
-        current_sale_pkr,
+        // Visa
+        if (s.visa_persons > 0) {
+          const sar =
+            s.visa_total || s.visa_persons * s.visa_rate;
+          salesRows.push({
+            item: "Visa",
+            sale_pkr: sar * (s.visa_sar_rate || 0)
+          });
+        }
+      }
 
-        status,
-        note:
-          status === "OK"
-            ? "No change in sale"
-            : "⚠ Sale changed after purchase entry"
-      };
-    });
+      /* =========================
+         4. COMPARE ITEM-WISE
+      ========================= */
+      for (const p of byRef[ref_no]) {
+        const baseItem = p.item.split(" - ")[0];
 
-    res.json({
-      success: true,
-      ref_no,
-      rows: report
-    });
+        const s = salesRows.find(
+          x => x.item === p.item || x.item === baseItem
+        );
+
+        if (!s) continue;
+
+        const current = Number(s.sale_pkr || 0);
+        const saved = Number(p.sale_pkr || 0);
+
+        if (current !== saved) {
+          result.push({
+            ref_no,
+            item: p.item,
+            purchase_sale_pkr: saved,
+            current_sale_pkr: current,
+            diff: current - saved
+          });
+        }
+      }
+    }
+
+    res.json({ success: true, rows: result });
 
   } catch (err) {
-    console.error("SALE CHANGE CHECK ERROR:", err);
-    res.json({ success:false, error: err.message });
+    console.error("SALE MISMATCH REPORT ERROR:", err);
+    res.json({ success: false, error: err.message });
   }
 });
 
@@ -898,4 +944,5 @@ router.get("/sale-change-check/:ref_no", async (req, res) => {
 
 
 module.exports = router;
+
 
