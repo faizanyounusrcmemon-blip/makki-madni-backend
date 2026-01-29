@@ -59,20 +59,16 @@ router.get("/load/:ref_no", async (req, res) => {
 
       // HOTELS
       if (Array.isArray(salesRow.hotels)) {
-        salesRow.hotels.forEach((h, i) => {
-          const rooms = Number(h.rooms) || 0;
-          const nights = Number(h.nights) || 0;
-          const type = h.type ? h.type.toUpperCase() : "";
-
+        salesRow.hotels.forEach((h,i)=>{
           rows.push({
-            item: `Hotel ${i + 1} - ${h.hotel || ""} (${type}${type ? ", " : ""}${rooms} Room${rooms > 1 ? "s" : ""}, ${nights} Night${nights > 1 ? "s" : ""})`,
+            item: `Hotel ${i+1} - ${h.hotel||""}`,
             sale_sar: Number(h.total) || 0,
             sale_rate: salesRow.hotel_sar_rate || 0,
-            sale_pkr:
-              (Number(h.total) || 0) * (salesRow.hotel_sar_rate || 0),
+            sale_pkr: (Number(h.total)||0) * (salesRow.hotel_sar_rate||0)
           });
         });
       }
+
        // VISA
       if (salesRow.visa_persons > 0) {
         const persons = salesRow.visa_persons;
@@ -123,13 +119,7 @@ router.get("/load/:ref_no", async (req, res) => {
     else if (ref_no.startsWith("HOT-")) {
       const q = await db.query(
         `
-        SELECT
-          hotel_name,
-          hotel_total,
-          sar_rate,
-          hotel_type,
-          hotel_rooms,
-          hotel_nights
+        SELECT hotel_name, hotel_total, sar_rate
         FROM hotels
         WHERE ref_no=$1 AND is_deleted=false
         `,
@@ -142,21 +132,15 @@ router.get("/load/:ref_no", async (req, res) => {
       const r = q.rows[0];
 
       (r.hotel_name || []).forEach((name, i) => {
-        const type = r.hotel_type?.[i]
-          ? r.hotel_type[i].toUpperCase()
-          : "";
-        const rooms = Number(r.hotel_rooms?.[i]) || 0;
-        const nights = Number(r.hotel_nights?.[i]) || 0;
-
         rows.push({
-          item: `Hotel ${i + 1} - ${name} (${type}${type ? ", " : ""}${rooms} Room${rooms > 1 ? "s" : ""}, ${nights} Night${nights > 1 ? "s" : ""})`,
-          sale_sar: Number(r.hotel_total?.[i]) || 0,
+          item: `Hotel ${i + 1} - ${name}`,
+          sale_sar: Number(r.hotel_total[i]) || 0,
           sale_rate: r.sar_rate || 0,
-          sale_pkr:
-            (Number(r.hotel_total?.[i]) || 0) * (r.sar_rate || 0),
+          sale_pkr: (Number(r.hotel_total[i]) || 0) * (r.sar_rate || 0),
         });
       });
     }
+
     /* =========================
        VISA ONLY (VISA-)
     ========================= */
@@ -818,6 +802,7 @@ router.get("/missing-supplier", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
