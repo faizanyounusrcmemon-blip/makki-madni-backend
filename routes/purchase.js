@@ -846,6 +846,19 @@ router.get("/missing-supplier", async (req, res) => {
   }
 });
 
+// server/routes/purchase.js
+router.get("/check/:ref_no", async (req, res) => {
+  const { ref_no } = req.params;
+  const q = await db.query(
+    `SELECT COUNT(*) AS total
+     FROM purchase_entries
+     WHERE ref_no=$1 AND is_deleted=false`,
+    [ref_no]
+  );
+  res.json({ total: Number(q.rows[0].total) });
+});
+
+
 router.get("/sale-mismatch-report", async (req, res) => {
   try {
     const result = [];
@@ -979,6 +992,7 @@ router.get("/sale-mismatch-report", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
