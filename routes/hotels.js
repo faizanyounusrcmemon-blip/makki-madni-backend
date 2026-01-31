@@ -18,6 +18,7 @@ router.post("/save", async (req, res) => {
     const {
       ref_no,
       customer_name,
+      agent_name,          // ✅ NEW
       booking_date,
       hotels,
       hotels_total,
@@ -33,37 +34,39 @@ router.post("/save", async (req, res) => {
         `
         UPDATE hotels SET
           customer_name=$2,
-          booking_date=$3,
-          hotel_checkin=$4,
-          hotel_checkout=$5,
-          hotel_nights=$6,
-          hotel_location=$7,
-          hotel_name=$8,
-          hotel_rooms=$9,
-          hotel_type=$10,
-          hotel_rate=$11,
-          hotel_total=$12,
-          hotels_total=$13,
-          sar_rate=$14,
-          total_pkr=$15
+          agent_name=$3,
+          booking_date=$4,
+          hotel_checkin=$5,
+          hotel_checkout=$6,
+          hotel_nights=$7,
+          hotel_location=$8,
+          hotel_name=$9,
+          hotel_rooms=$10,
+          hotel_type=$11,
+          hotel_rate=$12,
+          hotel_total=$13,
+          hotels_total=$14,
+          sar_rate=$15,
+          total_pkr=$16
         WHERE ref_no=$1
         `,
         [
           ref_no,                                   // $1
           customer_name,                            // $2
-          booking_date,                             // $3
-          JSON.stringify(hotels.map(h => h.checkIn)),   // $4
-          JSON.stringify(hotels.map(h => h.checkOut)),  // $5
-          JSON.stringify(hotels.map(h => h.nights)),    // $6
-          JSON.stringify(hotels.map(h => h.location)),  // $7
-          JSON.stringify(hotels.map(h => h.hotel)),     // $8
-          JSON.stringify(hotels.map(h => h.rooms)),     // $9
-          JSON.stringify(hotels.map(h => h.type)),      // $10
-          JSON.stringify(hotels.map(h => h.rate)),      // $11
-          JSON.stringify(hotels.map(h => h.total)),     // $12
-          hotels_total,                                 // ✅ $13
-          sar_rate,                                     // ✅ $14
-          total_pkr,                                    // $15
+          agent_name,                               // ✅ $3
+          booking_date,                             // $4
+          JSON.stringify(hotels.map(h => h.checkIn)),   // $5
+          JSON.stringify(hotels.map(h => h.checkOut)),  // $6
+          JSON.stringify(hotels.map(h => h.nights)),    // $7
+          JSON.stringify(hotels.map(h => h.location)),  // $8
+          JSON.stringify(hotels.map(h => h.hotel)),     // $9
+          JSON.stringify(hotels.map(h => h.rooms)),     // $10
+          JSON.stringify(hotels.map(h => h.type)),      // $11
+          JSON.stringify(hotels.map(h => h.rate)),      // $12
+          JSON.stringify(hotels.map(h => h.total)),     // $13
+          hotels_total,                                 // $14
+          sar_rate,                                     // $15
+          total_pkr,                                    // $16
         ]
       );
 
@@ -81,6 +84,7 @@ router.post("/save", async (req, res) => {
       (
         ref_no,
         customer_name,
+        agent_name,
         booking_date,
         hotel_checkin,
         hotel_checkout,
@@ -96,24 +100,25 @@ router.post("/save", async (req, res) => {
         total_pkr
       )
       VALUES
-      ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+      ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
       `,
       [
-        newRef,
-        customer_name,
-        booking_date,
-        JSON.stringify(hotels.map(h => h.checkIn)),
-        JSON.stringify(hotels.map(h => h.checkOut)),
-        JSON.stringify(hotels.map(h => h.nights)),
-        JSON.stringify(hotels.map(h => h.location)),
-        JSON.stringify(hotels.map(h => h.hotel)),
-        JSON.stringify(hotels.map(h => h.rooms)),
-        JSON.stringify(hotels.map(h => h.type)),
-        JSON.stringify(hotels.map(h => h.rate)),
-        JSON.stringify(hotels.map(h => h.total)),
-        hotels_total,
-        sar_rate,
-        total_pkr,
+        newRef,                                     // $1
+        customer_name,                              // $2
+        agent_name,                                 // ✅ $3
+        booking_date,                               // $4
+        JSON.stringify(hotels.map(h => h.checkIn)), // $5
+        JSON.stringify(hotels.map(h => h.checkOut)),// $6
+        JSON.stringify(hotels.map(h => h.nights)),  // $7
+        JSON.stringify(hotels.map(h => h.location)),// $8
+        JSON.stringify(hotels.map(h => h.hotel)),   // $9
+        JSON.stringify(hotels.map(h => h.rooms)),   // $10
+        JSON.stringify(hotels.map(h => h.type)),    // $11
+        JSON.stringify(hotels.map(h => h.rate)),    // $12
+        JSON.stringify(hotels.map(h => h.total)),   // $13
+        hotels_total,                               // $14
+        sar_rate,                                   // $15
+        total_pkr,                                  // $16
       ]
     );
 
@@ -126,7 +131,7 @@ router.post("/save", async (req, res) => {
 });
 
 // ===================================
-// GET HOTEL BY REF (EDIT MODE)
+// GET HOTEL BY REF (EDIT + VOUCHER)
 // ===================================
 router.get("/get/:ref", async (req, res) => {
   const q = await db.query(
@@ -157,10 +162,11 @@ router.get("/get/:ref", async (req, res) => {
     row: {
       ref_no: r.ref_no,
       customer_name: r.customer_name,
+      agent_name: r.agent_name || "",   // ✅🔥 FIX HERE
       booking_date: r.booking_date,
       hotels,
       hotels_total: r.hotels_total,
-      sar_rate: r.sar_rate,      // ✅ single value
+      sar_rate: r.sar_rate,
       total_pkr: r.total_pkr,
     },
   });
@@ -233,4 +239,3 @@ router.delete("/delete/:ref_no", async (req, res) => {
 });
 
 module.exports = router;
-
