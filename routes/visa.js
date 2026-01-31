@@ -2,15 +2,18 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-// AUTO REF
-async function generateRef() {
-  const r = await db.query("SELECT COUNT(*) FROM visa");
-  return "VISA-" + (Number(r.rows[0].count) + 1).toString().padStart(5, "0");
+// ============================================
+// AUTO REF NO GENERATOR
+// ============================================
+async function generateRefNo() {
+  const result = await db.query("SELECT COUNT(*) FROM visa");
+  const count = Number(result.rows[0].count) + 1;
+  return "VISA-" + String(count).padStart(5, "0");
 }
 
-// ========================
-// SAVE / UPDATE
-// ========================
+// ============================================
+// SAVE / UPDATE VISA
+// ============================================
 router.post("/save", async (req, res) => {
   try {
     const {
@@ -18,70 +21,64 @@ router.post("/save", async (req, res) => {
       customer_name,
       booking_date,
       rows,
-      persons,
-      rate,
-      total_sar,
       pkr_rate,
-      total_pkr,
     } = req.body;
+
+    // 🔹 CALCULATED FIELDS
+    const totalPersons = (rows || []).reduce((s, r) => s + Number(r.persons || 0), 0);
+    const totalSAR = (rows || []).reduce((s, r) => s + Number(r.total || 0), 0);
+    const totalPKR = totalSAR * (Number(pkr_rate) || 0);
 
     let finalRef = ref_no;
 
     if (!finalRef) {
-      finalRef = await generateRef();
+      // 🔹 NEW INSERT
+      finalRef = await generateRefNo();
 
       await db.query(
-        `
-        INSERT INTO visa
-        (ref_no, customer_name, booking_date,
-         persons, rate, total_sar, pkr_rate, total_pkr, rows)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-        `,
+        `INSERT INTO visa
+         (ref_no, customer_name, booking_date, rows, persons, total_sar, pkr_rate, total_pkr)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
         [
           finalRef,
           customer_name,
           booking_date,
-          persons,
-          rate,
-          total_sar,
-          pkr_rate,
-          total_pkr,
           JSON.stringify(rows || []),
+          totalPersons,
+          totalSAR,
+          pkr_rate,
+          totalPKR,
         ]
       );
     } else {
+      // 🔹 UPDATE EXISTING
       await db.query(
-        `
-        UPDATE visa SET
-          customer_name=$1,
-          booking_date=$2,
-          persons=$3,
-          rate=$4,
-          total_sar=$5,
-          pkr_rate=$6,
-          total_pkr=$7,
-          rows=$8
-        WHERE ref_no=$9
-        `,
+        `UPDATE visa SET
+           customer_name=$1,
+           booking_date=$2,
+           rows=$3,
+           persons=$4,
+           total_sar=$5,
+           pkr_rate=$6,
+           total_pkr=$7
+         WHERE ref_no=$8`,
         [
           customer_name,
           booking_date,
-          persons,
-          rate,
-          total_sar,
-          pkr_rate,
-          total_pkr,
           JSON.stringify(rows || []),
+          totalPersons,
+          totalSAR,
+          pkr_rate,
+          totalPKR,
           finalRef,
         ]
       );
     }
 
     res.json({ success: true, ref_no: finalRef });
-
   } catch (err) {
     console.error("VISA SAVE ERROR:", err);
-    res.json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -166,4 +163,3 @@ router.delete("/delete/:ref_no", async (req, res) => {
 
 
 module.exports = router;
-

@@ -73,19 +73,29 @@ router.get("/load/:ref_no", async (req, res) => {
           });
         });
       }
-       // VISA
-      if (salesRow.visa_persons > 0) {
-        const persons = salesRow.visa_persons;
-        const sar =
-          salesRow.visa_total || persons * salesRow.visa_rate;
 
-        rows.push({
-          item: `Visa (${persons} Person${persons > 1 ? "s" : ""})`,
-          sale_sar: sar,
-          sale_rate: salesRow.visa_sar_rate || 0,
-          sale_pkr: sar * (salesRow.visa_sar_rate || 0),
+      // ---- VISA ----
+      if (Array.isArray(salesRow.visa)) {
+        salesRow.visa.forEach((v,i) => {
+          const persons = Number(v.persons || 0);
+          const rate = Number(v.rate || 0);
+          const total = Number(v.total ?? (persons * rate));
+
+          const itemName = v.type
+            ? `Visa ${i+1} - ${v.type} (${persons} Person${persons>1?"s":""})`
+            : `Visa ${i+1} (${persons} Person${persons>1?"s":""})`;
+
+          rows.push({
+            item: itemName,
+            sale_sar: total,
+            sale_rate: Number(salesRow.visa_sar_rate || 0),
+            sale_pkr: total * Number(salesRow.visa_sar_rate || 0)
+          });
         });
       }
+
+
+
       // TRANSPORT
       if (Array.isArray(salesRow.transport)) {
         salesRow.transport.forEach((t,i)=>{
@@ -157,34 +167,34 @@ router.get("/load/:ref_no", async (req, res) => {
         });
       });
     }
-    /* =========================
-       VISA ONLY (VISA-)
-    ========================= */
+
+    // =======================
+    // VISA ONLY REF (VISA-)
+    // =======================
     else if (ref_no.startsWith("VISA-")) {
       const q = await db.query(
-        `
-        SELECT total_sar, pkr_rate, persons
-        FROM visa
-        WHERE ref_no=$1 AND is_deleted=false
-        `,
+        `SELECT * FROM visa WHERE ref_no=$1 AND is_deleted=false`,
         [ref_no]
       );
+      if (!q.rows.length) return res.json({ success:false, error:"Visa not found" });
 
-      if (!q.rows.length)
-        return res.json({ success: false, error: "Visa not found" });
+      const v = q.rows[0];
+      (v.rows || []).forEach((r, i) => {
+        const sar = Number(r.total) || Number(r.persons * r.rate) || 0;
+        const rate = Number(v.pkr_rate) || 0;
 
-      const r = q.rows[0];
+        const itemName = r.type
+          ? `Visa ${i + 1} - ${r.type} (${r.persons} Person${r.persons > 1 ? "s" : ""})`
+          : `Visa (${r.persons} Person${r.persons > 1 ? "s" : ""})`;
 
-      const persons = r.persons || 0;
-      const sar = Number(r.total_sar) || 0;
-      const rate = Number(r.pkr_rate) || 0;
-
-      rows.push({
-        item: `Visa (${persons} Person${persons > 1 ? "s" : ""})`,
-        sale_sar: sar,
-        sale_rate: rate,
-        sale_pkr: sar * rate,
+        rows.push({
+          item: itemName,
+          sale_sar: sar,
+          sale_rate: rate,
+          sale_pkr: sar * rate
+        });
       });
+
     }
    
    /* =========================
@@ -313,6 +323,10 @@ router.get("/load/:ref_no", async (req, res) => {
        MERGE PURCHASE (EDIT) ✅
        SHOW BLANK FOR EMPTY SAR/RATE
     ========================= */
+    /* =========================
+       MERGE PURCHASE (EDIT) ✅
+       HARD RESET PROFIT IF CLEARED
+    ========================= */
     const p = await db.query(
       `SELECT * FROM purchase_entries
        WHERE ref_no=$1 AND is_deleted=false`,
@@ -326,33 +340,40 @@ router.get("/load/:ref_no", async (req, res) => {
         p.item === r.item || p.item === baseItem
       );
 
-      // SALE (always fixed)
-      const sale_sar = Number(r.sale_sar) || 0;
+      // =====================
+      // SALE (ALWAYS FIXED)
+      // =====================
+      const sale_sar  = Number(r.sale_sar)  || 0;
       const sale_rate = Number(r.sale_rate) || 0;
-      const sale_pkr = sale_sar * sale_rate;
+      const sale_pkr  = sale_sar * sale_rate;
 
-      // PURCHASE — CURRENT ROW FIRST, DB ONLY AS FALLBACK
-      const purchase_sar =
-        r.purchase_sar !== undefined
-          ? r.purchase_sar
-          : x?.purchase_sar ?? "";
+      // =====================
+      // PURCHASE (🔥 FINAL LOGIC)
+      // =====================
 
-      const purchase_rate =
-        r.purchase_rate !== undefined
-          ? r.purchase_rate
-          : x?.purchase_rate ?? "";
+      // RAW values (frontend first, DB only if frontend never sent)
+      const raw_sar =
+        r.purchase_sar !== undefined ? r.purchase_sar : x?.purchase_sar;
 
-      const purchaseComplete =
-        Number(purchase_sar) > 0 &&
-        Number(purchase_rate) > 0;
+      const raw_rate =
+        r.purchase_rate !== undefined ? r.purchase_rate : x?.purchase_rate;
 
-      const purchase_pkr = purchaseComplete
-        ? Number(purchase_sar) * Number(purchase_rate)
-        : 0;
+      // 👉 AGAR USER NE CLEAR KIYA HAI
+      const sarCleared  = raw_sar === "" || raw_sar === null || Number(raw_sar) === 0;
+      const rateCleared = raw_rate === "" || raw_rate === null || Number(raw_rate) === 0;
 
-      const profit = purchaseComplete
-        ? sale_pkr - purchase_pkr
-        : 0;
+      let purchase_sar  = "";
+      let purchase_rate = "";
+      let purchase_pkr  = 0;
+      let profit        = 0;
+
+      if (!sarCleared && !rateCleared) {
+        purchase_sar  = Number(raw_sar);
+        purchase_rate = Number(raw_rate);
+
+        purchase_pkr = purchase_sar * purchase_rate;
+        profit = sale_pkr - purchase_pkr;
+      }
 
       return {
         ...r,
@@ -361,11 +382,10 @@ router.get("/load/:ref_no", async (req, res) => {
         sale_rate,
         sale_pkr,
 
-        purchase_sar,
-        purchase_rate,
-        purchase_pkr,
-
-        profit, // 🔥 NOW RESETS TO 0 IF CLEARED
+        purchase_sar,      // "" if cleared
+        purchase_rate,     // "" if cleared
+        purchase_pkr,      // 0 if cleared
+        profit,            // 🔥 GUARANTEED 0 if cleared
 
         supplier_code: x?.supplier_code ?? "",
         supplier_name: x?.supplier_name ?? ""
@@ -992,7 +1012,6 @@ router.get("/sale-mismatch-report", async (req, res) => {
 
 
 module.exports = router;
-
 
 
 

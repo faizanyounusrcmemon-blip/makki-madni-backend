@@ -29,7 +29,6 @@ router.post("/save", async (req, res) => {
           contact_no=$3,
           booking_date=$4,
 
-
           adult_count=$5,
           adult_rate=$6,
           child_count=$7,
@@ -42,40 +41,37 @@ router.post("/save", async (req, res) => {
           hotels=$13::jsonb,
           hotels_total=$14,
 
-          visa_persons=$15,
-          visa_rate=$16,
-          visa_total=$17,
+          visa=$15::jsonb,
 
-          transport=$18::jsonb,
-          transport_total=$19,
+          transport=$16::jsonb,
+          transport_total=$17,
 
-          ziyarat=$20::jsonb,
-          ziyarat_total=$21,
+          ziyarat=$18::jsonb,
+          ziyarat_total=$19,
 
+          flight_sar_total=$20,
+          hotel_sar_total=$21,
+          visa_sar_total=$22,
+          transport_sar_total=$23,
+          ziyarat_sar_total=$24,
 
-          flight_sar_total=$22,
-          hotel_sar_total=$23,
-          visa_sar_total=$24,
-          transport_sar_total=$25,
-          ziyarat_sar_total=$26,
+          flight_sar_rate=$25,
+          hotel_sar_rate=$26,
+          visa_sar_rate=$27,
+          transport_sar_rate=$28,
+          ziyarat_sar_rate=$29,
 
-          flight_sar_rate=$27,
-          hotel_sar_rate=$28,
-          visa_sar_rate=$29,
-          transport_sar_rate=$30,
-          ziyarat_sar_rate=$31,
+          flight_pkr_total=$30,
+          hotel_pkr_total=$31,
+          visa_pkr_total=$32,
+          transport_pkr_total=$33,
+          ziyarat_pkr_total=$34,
 
-          flight_pkr_total=$32,
-          hotel_pkr_total=$33,
-          visa_pkr_total=$34,
-          transport_pkr_total=$35,
-          ziyarat_pkr_total=$36,
-
-          net_pkr_total=$37,
-          total_sar=$38,
-          total_pkr=$39,
-          per_person_qty=$40,
-          per_person_final=$41
+          net_pkr_total=$35,
+          total_sar=$36,
+          total_pkr=$37,
+          per_person_qty=$38,
+          per_person_final=$39
 
         WHERE ref_no=$1
         `,
@@ -84,7 +80,6 @@ router.post("/save", async (req, res) => {
           d.customer_name,
           d.contact_no,
           d.booking_date,
-
 
           d.adult_count,
           d.adult_rate,
@@ -98,13 +93,11 @@ router.post("/save", async (req, res) => {
           JSON.stringify(d.hotels || []),
           d.hotels_total,
 
-          d.visa_persons,
-          d.visa_rate,
-          d.visa_total,
+          JSON.stringify(d.visa || []),
 
           JSON.stringify(d.transport || []),
           d.transport_total,
-          
+
           JSON.stringify(d.ziyarat || []),
           d.ziyarat_total,
 
@@ -138,7 +131,7 @@ router.post("/save", async (req, res) => {
     }
 
     // ===============================
-    // NEW MODE (INSERT – FULL DATA)
+    // NEW MODE (INSERT)
 // ===============================
     const ref_no = await generateRefNo();
 
@@ -152,18 +145,22 @@ router.post("/save", async (req, res) => {
 
         flights, hotels, hotels_total,
 
-        visa_persons, visa_rate, visa_total,
+        visa,
 
         transport, transport_total,
 
         ziyarat, ziyarat_total,
 
-        flight_sar_total, hotel_sar_total, visa_sar_total, transport_sar_total, ziyarat_sar_total,
-        flight_sar_rate, hotel_sar_rate, visa_sar_rate, transport_sar_rate, ziyarat_sar_rate,
+        flight_sar_total, hotel_sar_total, visa_sar_total,
+        transport_sar_total, ziyarat_sar_total,
 
-        flight_pkr_total, hotel_pkr_total, visa_pkr_total, transport_pkr_total, ziyarat_pkr_total,
+        flight_sar_rate, hotel_sar_rate, visa_sar_rate,
+        transport_sar_rate, ziyarat_sar_rate,
+
+        flight_pkr_total, hotel_pkr_total, visa_pkr_total,
+        transport_pkr_total, ziyarat_pkr_total,
+
         net_pkr_total, total_sar, total_pkr,
-
         per_person_qty, per_person_final
       )
       VALUES (
@@ -171,14 +168,14 @@ router.post("/save", async (req, res) => {
         $5,$6,$7,$8,
         $9,$10,$11,
         $12::jsonb,$13::jsonb,$14,
-        $15,$16,$17,
+        $15::jsonb,
+        $16::jsonb,$17,
         $18::jsonb,$19,
-        $20::jsonb,$21,
-        $22,$23,$24,$25,$26,
-        $27,$28,$29,$30,$31,
-        $32,$33,$34,$35,$36,
-        $37,$38,$39,
-        $40,$41
+        $20,$21,$22,$23,$24,
+        $25,$26,$27,$28,$29,
+        $30,$31,$32,$33,$34,
+        $35,$36,$37,
+        $38,$39
       )
       `,
       [
@@ -199,9 +196,7 @@ router.post("/save", async (req, res) => {
         JSON.stringify(d.hotels || []),
         d.hotels_total,
 
-        d.visa_persons,
-        d.visa_rate,
-        d.visa_total,
+        JSON.stringify(d.visa || []),
 
         JSON.stringify(d.transport || []),
         d.transport_total,
