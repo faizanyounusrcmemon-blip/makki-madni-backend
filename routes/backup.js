@@ -46,10 +46,11 @@ const TABLES = [
 /* ================= JSON COLUMNS ================= */
 
 const JSON_COLUMNS = {
-  bookings: ["flights", "hotels", "transport"],
-  ticketing: ["flight_from", "flight_to", "flight_date"],
+  bookings: ["flights", "hotels", "transport", "visa"],
+  ticketing: ["flight_from", "flight_to", "flight_date", "airline"],
   transport: ["transport"],
   ziyarat: ["ziyarat"],
+  visa: ["rows"],
 };
 
 /* ================= HELPERS ================= */
@@ -369,6 +370,7 @@ router.post("/cleanup", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
