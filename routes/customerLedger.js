@@ -19,37 +19,34 @@ router.get("/:ref_no", async (req, res) => {
       SELECT customer_name, booking_date
       FROM bookings
       WHERE ref_no=$1 AND is_deleted=false
-      LIMIT 1
       
       UNION ALL
       SELECT customer_name, booking_date
       FROM hotels
       WHERE ref_no=$1 AND is_deleted=false
-      LIMIT 1
 
       UNION ALL
       SELECT customer_name, booking_date
       FROM visa
       WHERE ref_no=$1 AND is_deleted=false
-      LIMIT 1
+
 
       UNION ALL
       SELECT customer_name, booking_date
       FROM ticketing
       WHERE ref_no=$1 AND is_deleted=false
-      LIMIT 1
+
 
       UNION ALL
       SELECT customer_name, booking_date
       FROM transport
       WHERE ref_no=$1 AND is_deleted=false
-      LIMIT 1
+
 
       UNION ALL
       SELECT customer_name, booking_date
       FROM ziyarat
       WHERE ref_no=$1 AND is_deleted=false
-      LIMIT 1
       `,
       [ref_no]
     );
@@ -264,6 +261,7 @@ router.delete("/delete/:id", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
