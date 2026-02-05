@@ -6,9 +6,9 @@ const db = require("../db");
 // AUTO REF NO GENERATOR
 // ============================================
 async function generateRefNo() {
-  const result = await db.query("SELECT COUNT(*) FROM bookings");
-  const count = Number(result.rows[0].count) + 1;
-  return "PKG-" + String(count).padStart(5, "0");
+  const q = await db.query("SELECT nextval('booking_ref_seq') AS no");
+  const no = q.rows[0].no;
+  return "PKG-" + String(no).padStart(5, "0");
 }
 
 // ============================================
