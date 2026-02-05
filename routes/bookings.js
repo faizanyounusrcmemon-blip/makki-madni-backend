@@ -10,7 +10,7 @@ router.post("/save", async (req, res) => {
     const d = req.body;
 
     // ===============================
-    // EDIT MODE (UPDATE)
+    // EDIT MODE
     // ===============================
     if (d.ref_no) {
       await db.query(
@@ -33,7 +33,6 @@ router.post("/save", async (req, res) => {
           hotels_total=$14,
 
           visa=$15::jsonb,
-
           transport=$16::jsonb,
           transport_total=$17,
 
@@ -71,7 +70,6 @@ router.post("/save", async (req, res) => {
           d.customer_name,
           d.contact_no,
           d.booking_date,
-
           d.adult_count,
           d.adult_rate,
           d.child_count,
@@ -79,37 +77,29 @@ router.post("/save", async (req, res) => {
           d.infant_count,
           d.infant_rate,
           d.flight_total,
-
           JSON.stringify(d.flights || []),
           JSON.stringify(d.hotels || []),
           d.hotels_total,
-
           JSON.stringify(d.visa || []),
-
           JSON.stringify(d.transport || []),
           d.transport_total,
-
           JSON.stringify(d.ziyarat || []),
           d.ziyarat_total,
-
           d.flight_sar_total,
           d.hotel_sar_total,
           d.visa_sar_total,
           d.transport_sar_total,
           d.ziyarat_sar_total,
-
           d.flight_sar_rate,
           d.hotel_sar_rate,
           d.visa_sar_rate,
           d.transport_sar_rate,
           d.ziyarat_sar_rate,
-
           d.flight_pkr_total,
           d.hotel_pkr_total,
           d.visa_pkr_total,
           d.transport_pkr_total,
           d.ziyarat_pkr_total,
-
           d.net_pkr_total,
           d.total_sar,
           d.total_pkr,
@@ -122,33 +112,24 @@ router.post("/save", async (req, res) => {
     }
 
     // ===============================
-    // NEW MODE (INSERT) ✅ DB GENERATES ref_no
+    // NEW MODE (DATABASE GENERATES ref_no)
     // ===============================
     const q = await db.query(
       `
       INSERT INTO bookings (
         customer_name, contact_no, booking_date,
-
         adult_count, adult_rate, child_count, child_rate,
         infant_count, infant_rate, flight_total,
-
         flights, hotels, hotels_total,
-
         visa,
-
         transport, transport_total,
-
         ziyarat, ziyarat_total,
-
         flight_sar_total, hotel_sar_total, visa_sar_total,
         transport_sar_total, ziyarat_sar_total,
-
         flight_sar_rate, hotel_sar_rate, visa_sar_rate,
         transport_sar_rate, ziyarat_sar_rate,
-
         flight_pkr_total, hotel_pkr_total, visa_pkr_total,
         transport_pkr_total, ziyarat_pkr_total,
-
         net_pkr_total, total_sar, total_pkr,
         per_person_qty, per_person_final
       )
@@ -172,7 +153,6 @@ router.post("/save", async (req, res) => {
         d.customer_name,
         d.contact_no,
         d.booking_date,
-
         d.adult_count,
         d.adult_rate,
         d.child_count,
@@ -180,37 +160,29 @@ router.post("/save", async (req, res) => {
         d.infant_count,
         d.infant_rate,
         d.flight_total,
-
         JSON.stringify(d.flights || []),
         JSON.stringify(d.hotels || []),
         d.hotels_total,
-
         JSON.stringify(d.visa || []),
-
         JSON.stringify(d.transport || []),
         d.transport_total,
-
         JSON.stringify(d.ziyarat || []),
         d.ziyarat_total,
-
         d.flight_sar_total,
         d.hotel_sar_total,
         d.visa_sar_total,
         d.transport_sar_total,
         d.ziyarat_sar_total,
-
         d.flight_sar_rate,
         d.hotel_sar_rate,
         d.visa_sar_rate,
         d.transport_sar_rate,
         d.ziyarat_sar_rate,
-
         d.flight_pkr_total,
         d.hotel_pkr_total,
         d.visa_pkr_total,
         d.transport_pkr_total,
         d.ziyarat_pkr_total,
-
         d.net_pkr_total,
         d.total_sar,
         d.total_pkr,
