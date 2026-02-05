@@ -3,16 +3,7 @@ const router = express.Router();
 const db = require("../db");
 
 // ============================================
-// AUTO REF NO GENERATOR
-// ============================================
-async function generateRefNo() {
-  const result = await db.query("SELECT COUNT(*) FROM bookings");
-  const count = Number(result.rows[0].count) + 1;
-  return "PKG-" + String(count).padStart(5, "0");
-}
-
-// ============================================
-// SAVE BOOKING (NEW + EDIT)
+// SAVE BOOKING (NEW + EDIT) ✅ FIXED
 // ============================================
 router.post("/save", async (req, res) => {
   try {
@@ -20,7 +11,7 @@ router.post("/save", async (req, res) => {
 
     // ===============================
     // EDIT MODE (UPDATE)
-// ===============================
+    // ===============================
     if (d.ref_no) {
       await db.query(
         `
@@ -131,14 +122,12 @@ router.post("/save", async (req, res) => {
     }
 
     // ===============================
-    // NEW MODE (INSERT)
-// ===============================
-    const ref_no = await generateRefNo();
-
-    await db.query(
+    // NEW MODE (INSERT) ✅ DB GENERATES ref_no
+    // ===============================
+    const q = await db.query(
       `
       INSERT INTO bookings (
-        ref_no, customer_name, contact_no, booking_date,
+        customer_name, contact_no, booking_date,
 
         adult_count, adult_rate, child_count, child_rate,
         infant_count, infant_rate, flight_total,
@@ -164,22 +153,22 @@ router.post("/save", async (req, res) => {
         per_person_qty, per_person_final
       )
       VALUES (
-        $1,$2,$3,$4,
-        $5,$6,$7,$8,
-        $9,$10,$11,
-        $12::jsonb,$13::jsonb,$14,
-        $15::jsonb,
-        $16::jsonb,$17,
-        $18::jsonb,$19,
-        $20,$21,$22,$23,$24,
-        $25,$26,$27,$28,$29,
-        $30,$31,$32,$33,$34,
-        $35,$36,$37,
-        $38,$39
+        $1,$2,$3,
+        $4,$5,$6,$7,
+        $8,$9,$10,
+        $11::jsonb,$12::jsonb,$13,
+        $14::jsonb,
+        $15::jsonb,$16,
+        $17::jsonb,$18,
+        $19,$20,$21,$22,$23,
+        $24,$25,$26,$27,$28,
+        $29,$30,$31,$32,$33,
+        $34,$35,$36,
+        $37,$38
       )
+      RETURNING ref_no
       `,
       [
-        ref_no,
         d.customer_name,
         d.contact_no,
         d.booking_date,
@@ -230,13 +219,14 @@ router.post("/save", async (req, res) => {
       ]
     );
 
-    res.json({ success: true, ref_no });
+    res.json({ success: true, ref_no: q.rows[0].ref_no });
 
   } catch (err) {
     console.error("SAVE ERROR:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 // ============================================
 // GET ALL BOOKINGS
