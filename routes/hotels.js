@@ -6,8 +6,8 @@ const db = require("../db");
 // AUTO REF GENERATOR
 // ===================================
 async function generateRef() {
-  const r = await db.query("SELECT COUNT(*) FROM hotels");
-  return "HOT-" + (Number(r.rows[0].count) + 1).toString().padStart(5, "0");
+  const q = await db.query("SELECT nextval('hotels_ref_seq') AS no");
+  return "HOT-" + String(q.rows[0].no).padStart(5, "0");
 }
 
 // ===================================
@@ -239,3 +239,4 @@ router.delete("/delete/:ref_no", async (req, res) => {
 });
 
 module.exports = router;
+
