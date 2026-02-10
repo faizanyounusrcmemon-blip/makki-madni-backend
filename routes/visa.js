@@ -5,10 +5,9 @@ const db = require("../db");
 // ============================================
 // AUTO REF NO GENERATOR
 // ============================================
-async function generateRefNo() {
-  const result = await db.query("SELECT COUNT(*) FROM visa");
-  const count = Number(result.rows[0].count) + 1;
-  return "VISA-" + String(count).padStart(5, "0");
+async function generateRef() {
+  const q = await db.query("SELECT nextval('visa_ref_seq') AS no");
+  return "VISA-" + String(q.rows[0].no).padStart(5, "0");
 }
 
 // ============================================
@@ -163,3 +162,4 @@ router.delete("/delete/:ref_no", async (req, res) => {
 
 
 module.exports = router;
+
