@@ -4,8 +4,8 @@ const db = require("../db");
 
 // AUTO REF
 async function generateRef() {
-  const r = await db.query("SELECT COUNT(*) FROM transport");
-  return "TRN-" + (Number(r.rows[0].count) + 1).toString().padStart(5, "0");
+  const q = await db.query("SELECT nextval('transport_ref_seq') AS no");
+  return "TRN-" + String(q.rows[0].no).padStart(5, "0");
 }
 
 // ========================
@@ -157,4 +157,5 @@ router.delete("/delete/:ref_no", async (req, res) => {
 
 
 module.exports = router;
+
 
