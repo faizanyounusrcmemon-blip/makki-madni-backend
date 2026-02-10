@@ -3,10 +3,9 @@ const router = express.Router();
 const db = require("../db");
 
 // AUTO REF
-async function generateRefNo() {
-  const q = await db.query("SELECT nextval('ziyarat_ref_seq') AS no");
-  const no = q.rows[0].no;
-  return "ZIY-" + String(no).padStart(5, "0");
+async function generateRef() {
+  const r = await db.query("SELECT COUNT(*) FROM ziyarat");
+  return "ZIY-" + (Number(r.rows[0].count) + 1).toString().padStart(5, "0");
 }
 
 // ========================
