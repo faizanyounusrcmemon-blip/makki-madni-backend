@@ -6,8 +6,8 @@ const db = require("../db");
 // AUTO REF NO
 // ========================
 async function generateRefNo() {
-  const r = await db.query("SELECT COUNT(*) FROM ticketing");
-  return "TIC-" + (Number(r.rows[0].count) + 1).toString().padStart(5, "0");
+  const q = await db.query("SELECT nextval('ticketing_ref_seq') AS no");
+  return "TIC-" + String(q.rows[0].no).padStart(5, "0");
 }
 
 // ========================
@@ -231,4 +231,5 @@ router.delete("/delete/:ref_no", async (req, res) => {
 });
 
 module.exports = router;
+
 
