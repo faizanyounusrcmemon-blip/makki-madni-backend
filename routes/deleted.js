@@ -2,6 +2,10 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
+/* =====================================================
+   GET ALL DELETED RECORDS (SALES + PURCHASE)
+===================================================== */
+
 router.get("/list", async (req, res) => {
   try {
     const q = await db.query(`
@@ -164,6 +168,7 @@ router.post("/permanent-delete", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
