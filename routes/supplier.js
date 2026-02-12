@@ -50,7 +50,7 @@ router.get("/list", async (req, res) => {
     SELECT *
     FROM suppliers
     WHERE is_deleted=false
-    ORDER BY supplier_name
+    ORDER BY supplier_code
     `
   );
   res.json({ success: true, rows: q.rows });
