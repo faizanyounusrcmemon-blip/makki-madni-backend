@@ -8,32 +8,38 @@ const db = require("../db");
 router.get("/list", async (req, res) => {
   try {
     const q = await db.query(`
-      SELECT 'PACKAGE' AS type, ref_no, customer_name, booking_date
+      
+      SELECT 'PACKAGE' AS type, ref_no, customer_name, booking_date, total_pkr AS amount
       FROM bookings WHERE is_deleted = true
 
       UNION ALL
-      SELECT 'HOTEL' AS type, ref_no, customer_name, booking_date
+      SELECT 'HOTEL' AS type, ref_no, customer_name, booking_date, total_pkr
       FROM hotels WHERE is_deleted = true
 
       UNION ALL
-      SELECT 'TICKETING' AS type, ref_no, customer_name, booking_date
+      SELECT 'TICKETING' AS type, ref_no, customer_name, booking_date, total_pkr
       FROM ticketing WHERE is_deleted = true
 
       UNION ALL
-      SELECT 'VISA' AS type, ref_no, customer_name, booking_date
+      SELECT 'VISA' AS type, ref_no, customer_name, booking_date, total_pkr
       FROM visa WHERE is_deleted = true
 
       UNION ALL
-      SELECT 'TRANSPORT' AS type, ref_no, customer_name, booking_date
+      SELECT 'TRANSPORT' AS type, ref_no, customer_name, booking_date, total_pkr
       FROM transport WHERE is_deleted = true
 
       UNION ALL
-      SELECT 'ZIYARAT' AS type, ref_no, customer_name, booking_date
+      SELECT 'ZIYARAT' AS type, ref_no, customer_name, booking_date, total_pkr
       FROM ziyarat WHERE is_deleted = true
 
-
+      /* PURCHASE SUM BY REF */
       UNION ALL
-      SELECT 'PURCHASE' AS type, ref_no, '-' AS customer_name, MIN(created_at)::date AS booking_date
+      SELECT 
+        'PURCHASE' AS type,
+        ref_no,
+        '-' AS customer_name,
+        MIN(created_at)::date AS booking_date,
+        SUM(purchase_pkr) AS amount
       FROM purchase_entries
       WHERE is_deleted = true
       GROUP BY ref_no
@@ -146,4 +152,5 @@ router.post("/permanent-delete", async (req, res) => {
 });
 
 module.exports = router;
+
 
