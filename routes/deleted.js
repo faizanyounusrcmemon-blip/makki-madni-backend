@@ -8,7 +8,8 @@ const db = require("../db");
 router.get("/list", async (req, res) => {
   try {
     const q = await db.query(`
-      
+
+      /* BOOKINGS */
       SELECT 'PACKAGE' AS type, ref_no, customer_name, booking_date, total_pkr AS amount
       FROM bookings WHERE is_deleted = true
 
@@ -32,17 +33,17 @@ router.get("/list", async (req, res) => {
       SELECT 'ZIYARAT' AS type, ref_no, customer_name, booking_date, total_pkr
       FROM ziyarat WHERE is_deleted = true
 
-      /* PURCHASE SUM BY REF */
+      /* PURCHASE - GROUP BY REF WITH CUSTOMER NAME */
       UNION ALL
       SELECT 
         'PURCHASE' AS type,
-        ref_no,
-        '-' AS customer_name,
-        MIN(created_at)::date AS booking_date,
-        SUM(purchase_pkr) AS amount
-      FROM purchase_entries
-      WHERE is_deleted = true
-      GROUP BY ref_no
+        pe.ref_no,
+        MAX(pe.customer_name) AS customer_name,  -- correct customer name
+        MIN(pe.created_at)::date AS booking_date,
+        SUM(pe.purchase_pkr) AS amount
+      FROM purchase_entries pe
+      WHERE pe.is_deleted = true
+      GROUP BY pe.ref_no
 
       ORDER BY booking_date DESC NULLS LAST
     `);
@@ -152,5 +153,6 @@ router.post("/permanent-delete", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
