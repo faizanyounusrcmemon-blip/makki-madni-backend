@@ -6,11 +6,8 @@ const db = require("../db");
    AUTO SUPPLIER CODE
 ===================================== */
 const genCode = async () => {
-  const r = await db.query(
-    `SELECT COUNT(*) FROM suppliers`
-  );
-  const n = Number(r.rows[0].count) + 1;
-  return `SUP-${String(n).padStart(4, "0")}`;
+  const r = await db.query("SELECT nextval('suppliers_code_seq') AS seq");
+  return "SUP-" + String(r.rows[0].seq).padStart(4, "0");
 };
 
 /* =====================================
@@ -23,6 +20,7 @@ router.post("/create", async (req, res) => {
     if (!supplier_name)
       return res.json({ success: false, error: "Supplier name required" });
 
+    // 🔹 generate unique code
     const code = await genCode();
 
     await db.query(
@@ -34,9 +32,10 @@ router.post("/create", async (req, res) => {
       [code, supplier_name, category, contact_no]
     );
 
-    res.json({ success: true, message: "Supplier added" });
+    res.json({ success: true, message: "Supplier added", supplier_code: code });
 
   } catch (err) {
+    console.error("SUPPLIER CREATE ERROR:", err);
     res.json({ success: false, error: err.message });
   }
 });
