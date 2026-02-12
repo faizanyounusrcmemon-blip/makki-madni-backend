@@ -30,19 +30,31 @@ router.get("/list", async (req, res) => {
       SELECT 'ZIYARAT' AS type, ref_no, customer_name, booking_date, total_pkr
       FROM ziyarat WHERE is_deleted = true
 
-      /* PURCHASE - get customer_name from bookings, even if booking deleted */
+      /* PURCHASE - get customer_name from any sales table */
       UNION ALL
       SELECT
         'PURCHASE' AS type,
         pe.ref_no,
-        COALESCE(b.customer_name, '-') AS customer_name,
+        COALESCE(
+          b.customer_name,
+          h.customer_name,
+          t.customer_name,
+          v.customer_name,
+          tr.customer_name,
+          z.customer_name,
+          '-'
+        ) AS customer_name,
         MIN(pe.created_at)::date AS booking_date,
         SUM(pe.purchase_pkr) AS amount
       FROM purchase_entries pe
-      LEFT JOIN bookings b
-        ON b.ref_no = pe.ref_no  -- join even if booking deleted
+      LEFT JOIN bookings b ON b.ref_no = pe.ref_no
+      LEFT JOIN hotels h ON h.ref_no = pe.ref_no
+      LEFT JOIN ticketing t ON t.ref_no = pe.ref_no
+      LEFT JOIN visa v ON v.ref_no = pe.ref_no
+      LEFT JOIN transport tr ON tr.ref_no = pe.ref_no
+      LEFT JOIN ziyarat z ON z.ref_no = pe.ref_no
       WHERE pe.is_deleted = true
-      GROUP BY pe.ref_no, b.customer_name
+      GROUP BY pe.ref_no, b.customer_name, h.customer_name, t.customer_name, v.customer_name, tr.customer_name, z.customer_name
 
       ORDER BY booking_date DESC NULLS LAST
     `);
@@ -152,6 +164,7 @@ router.post("/permanent-delete", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
