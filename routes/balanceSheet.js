@@ -3,7 +3,7 @@ const router = express.Router();
 const db = require("../db");
 
 /* =========================================
-   BALANCE SHEET (FIXED: NO is_deleted ON PAYMENTS)
+   BALANCE SHEET (CUSTOMER + SUPPLIER STATUS)
 ========================================= */
 router.get("/", async (req, res) => {
   try {
@@ -59,18 +59,24 @@ router.get("/", async (req, res) => {
       const cname =
         customers.rows.find(c => c.ref_no === s.ref_no)?.customer_name || "";
 
+      const balance = Number(s.sale_total) - Number(paid);
+
+      // --- CUSTOMER STATUS ---
+      const status =
+        balance === 0 ? "PAID" : paid > 0 ? "PARTIAL" : "PENDING";
+
       return {
         ref_no: s.ref_no,
         customer_name: cname,
         sale_total: Number(s.sale_total),
         received: Number(paid),
-        balance: Number(s.sale_total) - Number(paid)
+        balance,
+        status
       };
     });
 
     /* ========== SUPPLIERS ========== */
 
-    // --- Purchase totals (is_deleted exists) ---
     const purchaseTotals = await db.query(`
       SELECT supplier_code, SUM(purchase_pkr) AS purchase_total
       FROM purchase_entries
@@ -78,7 +84,6 @@ router.get("/", async (req, res) => {
       GROUP BY supplier_code
     `);
 
-    // --- Supplier payments (NO is_deleted here) ---
     const paymentTotals = await db.query(`
       SELECT s.supplier_code, COALESCE(SUM(sp.amount),0) AS paid
       FROM suppliers s
@@ -88,7 +93,6 @@ router.get("/", async (req, res) => {
       GROUP BY s.supplier_code
     `);
 
-    // --- Active suppliers only ---
     const suppliersData = await db.query(`
       SELECT supplier_code, supplier_name
       FROM suppliers
