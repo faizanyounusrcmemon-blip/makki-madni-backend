@@ -3,9 +3,8 @@ const router = express.Router();
 const db = require("../db");
 
 /* =====================================================
-   GET ALL DELETED RECORDS (SALES + PURCHASE)
+   GET ALL DELETED RECORDS (SALES + PURCHASE + SUPPLIERS)
 ===================================================== */
-
 router.get("/list", async (req, res) => {
   try {
     const q = await db.query(`
@@ -99,15 +98,16 @@ router.post("/restore", async (req, res) => {
     else if (type === "TRANSPORT") table = "transport";
     else if (type === "ZIYARAT") table = "ziyarat";
     else if (type === "PURCHASE") table = "purchase_entries";
+    else if (type === "SUPPLIER") table = "suppliers";
     else return res.json({ success: false, error: "Invalid type" });
 
     const q = await db.query(
       `
       UPDATE ${table}
       SET is_deleted = false
-      WHERE ref_no = $1
+      WHERE ${type === "SUPPLIER" ? "supplier_code" : "ref_no"} = $1
         AND is_deleted = true
-      RETURNING ref_no
+      RETURNING ${type === "SUPPLIER" ? "supplier_code" : "ref_no"} AS ref_no
       `,
       [ref_no]
     );
@@ -128,7 +128,7 @@ router.post("/restore", async (req, res) => {
 });
 
 /* =====================================================
-   PERMANENT DELETE (🔥 FIXED & SAFE)
+   PERMANENT DELETE (🔥 SAFE)
    👉 sirf is_deleted=true wali rows delete hongi
 ===================================================== */
 router.post("/permanent-delete", async (req, res) => {
@@ -148,17 +148,15 @@ router.post("/permanent-delete", async (req, res) => {
     else if (type === "TRANSPORT") table = "transport";
     else if (type === "ZIYARAT") table = "ziyarat";
     else if (type === "PURCHASE") table = "purchase_entries";
+    else if (type === "SUPPLIER") table = "suppliers";
     else return res.json({ success: false, error: "Invalid type" });
 
-    // 🔥 CRITICAL FIX
-    // ❌ active rows (is_deleted=false) untouched
-    // ✅ sirf deleted rows permanently remove
     const q = await db.query(
       `
       DELETE FROM ${table}
-      WHERE ref_no = $1
+      WHERE ${type === "SUPPLIER" ? "supplier_code" : "ref_no"} = $1
         AND is_deleted = true
-      RETURNING ref_no
+      RETURNING ${type === "SUPPLIER" ? "supplier_code" : "ref_no"} AS ref_no
       `,
       [ref_no]
     );
@@ -179,13 +177,3 @@ router.post("/permanent-delete", async (req, res) => {
 });
 
 module.exports = router;
-
-
-
-
-
-
-
-
-
-
