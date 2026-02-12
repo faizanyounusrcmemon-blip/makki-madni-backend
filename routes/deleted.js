@@ -2,9 +2,6 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-/* =====================================================
-   GET ALL DELETED RECORDS (SALES + PURCHASE)
-===================================================== */
 router.get("/list", async (req, res) => {
   try {
     const q = await db.query(`
@@ -33,7 +30,7 @@ router.get("/list", async (req, res) => {
       SELECT 'ZIYARAT' AS type, ref_no, customer_name, booking_date, total_pkr
       FROM ziyarat WHERE is_deleted = true
 
-      /* PURCHASE - get customer_name from related bookings (if exists) */
+      /* PURCHASE - get customer_name from bookings, even if booking deleted */
       UNION ALL
       SELECT
         'PURCHASE' AS type,
@@ -43,7 +40,7 @@ router.get("/list", async (req, res) => {
         SUM(pe.purchase_pkr) AS amount
       FROM purchase_entries pe
       LEFT JOIN bookings b
-        ON b.ref_no = pe.ref_no AND b.is_deleted = false
+        ON b.ref_no = pe.ref_no  -- join even if booking deleted
       WHERE pe.is_deleted = true
       GROUP BY pe.ref_no, b.customer_name
 
@@ -155,6 +152,7 @@ router.post("/permanent-delete", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
