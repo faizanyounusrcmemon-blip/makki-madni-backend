@@ -60,6 +60,17 @@ router.get("/list", async (req, res) => {
       WHERE pe.is_deleted = true
       GROUP BY pe.ref_no, b.customer_name, h.customer_name, t.customer_name, v.customer_name, tr.customer_name, z.customer_name
 
+      /* SUPPLIERS */
+      UNION ALL
+      SELECT
+        'SUPPLIER' AS type,
+        supplier_code AS ref_no,
+        supplier_name AS customer_name,
+        NULL::date AS booking_date,
+        NULL::numeric AS amount
+      FROM suppliers
+      WHERE is_deleted = true
+
       ORDER BY booking_date DESC NULLS LAST
     `);
 
@@ -168,6 +179,7 @@ router.post("/permanent-delete", async (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
