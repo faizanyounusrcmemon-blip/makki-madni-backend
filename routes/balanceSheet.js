@@ -7,9 +7,10 @@ const db = require("../db");
 ========================================= */
 router.get("/", async (req, res) => {
   try {
+
     /* ========== CUSTOMERS ========== */
 
-    // --- Customer Names (sales tables only) ---
+    // --- Customer Names ---
     const customers = await db.query(`
       SELECT ref_no, MAX(customer_name) AS customer_name FROM (
         SELECT ref_no, customer_name FROM bookings   WHERE is_deleted = false
@@ -45,7 +46,7 @@ router.get("/", async (req, res) => {
       GROUP BY ref_no
     `);
 
-    // --- Customer Payments (NO is_deleted here) ---
+    // --- Customer Payments ---
     const payments = await db.query(`
       SELECT ref_no, COALESCE(SUM(amount),0) AS received
       FROM customer_payments
@@ -59,21 +60,26 @@ router.get("/", async (req, res) => {
       const cname =
         customers.rows.find(c => c.ref_no === s.ref_no)?.customer_name || "";
 
-      const balance = Number(s.sale_total) - Number(paid);
+      const saleTotal = Number(s.sale_total);
+      const received = Number(paid);
+      const balance = saleTotal - received;
 
-      // --- CUSTOMER STATUS ---
-      const status =
-        balance === 0 ? "PAID" : paid > 0 ? "PARTIAL" : "PENDING";
+      // ✅ CUSTOMER STATUS FIXED
+      let status = "PENDING";
+      if (balance < 0) status = "EXTRA PAID";
+      else if (balance === 0) status = "PAID";
+      else if (received > 0) status = "PARTIAL";
 
       return {
         ref_no: s.ref_no,
         customer_name: cname,
-        sale_total: Number(s.sale_total),
-        received: Number(paid),
+        sale_total: saleTotal,
+        received,
         balance,
         status
       };
     });
+
 
     /* ========== SUPPLIERS ========== */
 
@@ -114,8 +120,12 @@ router.get("/", async (req, res) => {
           );
 
         const balance = purchase - paid;
-        const status =
-          balance === 0 ? "PAID" : paid > 0 ? "PARTIAL" : "PENDING";
+
+        // ✅ SUPPLIER STATUS FIXED
+        let status = "PENDING";
+        if (balance < 0) status = "EXTRA PAID";
+        else if (balance === 0) status = "PAID";
+        else if (paid > 0) status = "PARTIAL";
 
         return {
           supplier_code: s.supplier_code,
@@ -126,25 +136,37 @@ router.get("/", async (req, res) => {
           status
         };
       })
-      .filter(s => s.balance > 0)
-      .sort((a, b) => b.balance - a.balance);
+      .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
+
 
     /* ========== RESPONSE ========== */
+
     res.json({
       success: true,
 
-      customers: customerRows
-        .filter(c => c.balance > 0)
-        .sort((a, b) => b.balance - a.balance),
+      // ❗ extra paid include — filter remove
+      customers: customerRows.sort(
+        (a, b) => Math.abs(b.balance) - Math.abs(a.balance)
+      ),
 
       suppliers,
 
       summary: {
-        total_receivable: customerRows.reduce((a, r) => a + r.balance, 0),
-        total_payable: suppliers.reduce((a, r) => a + r.balance, 0),
-        net_position:
-          customerRows.reduce((a, r) => a + r.balance, 0) -
-          suppliers.reduce((a, r) => a + r.balance, 0)
+        total_receivable: customerRows
+          .filter(r => r.balance > 0)
+          .reduce((a, r) => a + r.balance, 0),
+
+        total_payable: suppliers
+          .filter(r => r.balance > 0)
+          .reduce((a, r) => a + r.balance, 0),
+
+        total_extra_received: customerRows
+          .filter(r => r.balance < 0)
+          .reduce((a, r) => a + Math.abs(r.balance), 0),
+
+        total_extra_paid: suppliers
+          .filter(r => r.balance < 0)
+          .reduce((a, r) => a + Math.abs(r.balance), 0)
       }
     });
 
