@@ -86,29 +86,45 @@ router.get("/sale-adjustments", async (req, res) => {
 });
 
 /* =========================================
-   SUPPLIER ADJUSTMENT (SAFE + FINAL)
+   SUPPLIER ADJUSTMENT (DATE FILTER)
 ========================================= */
 router.get("/supplier-adjustment-only", async (req, res) => {
   try {
-    const q = await db.query(`
+    const { from, to } = req.query;
+
+    let dateFilter = "";
+    let params = [];
+
+    if (from && to) {
+      params.push(from);
+      params.push(to);
+      dateFilter = ` AND sp.payment_date BETWEEN $1 AND $2 `;
+    }
+
+    const q = await db.query(
+      `
       SELECT
         s.id AS supplier_id,
         s.supplier_code,
         s.supplier_name,
-
         SUM(sp.amount) AS adjustment_amount
 
       FROM suppliers s
       JOIN supplier_payments sp
         ON sp.supplier_id = s.id
 
-      WHERE LOWER(sp.payment_method) = 'adjustment'
-         OR LOWER(sp.type) = 'adjustment'
+      WHERE (
+        LOWER(sp.payment_method) = 'adjustment'
+        OR LOWER(sp.type) = 'adjustment'
+      )
+      ${dateFilter}
 
       GROUP BY s.id, s.supplier_code, s.supplier_name
       HAVING SUM(sp.amount) > 0
       ORDER BY s.supplier_name
-    `);
+      `,
+      params
+    );
 
     res.json({
       success: true,
@@ -120,7 +136,6 @@ router.get("/supplier-adjustment-only", async (req, res) => {
     res.status(500).json({ success:false, error: err.message });
   }
 });
-
 /* =====================================================
    🔹 ALL REPORTS (UNCHANGED)
 ===================================================== */
@@ -218,6 +233,7 @@ router.get("/supplier-purchase", async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
