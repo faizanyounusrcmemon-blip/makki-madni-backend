@@ -33,29 +33,53 @@ router.get("/load/:ref_no", async (req, res) => {
       salesRow = q.rows[0];
 
       // TICKETS
-      if (salesRow.adult_count > 0)
-        rows.push({
-          item: "Ticket – Adult",
-          sale_sar: salesRow.adult_count * salesRow.adult_rate,
-          sale_rate: salesRow.flight_sar_rate || 0,
-          sale_pkr: (salesRow.adult_count * salesRow.adult_rate) * (salesRow.flight_sar_rate || 0),
-        });
+// ========= SAFE FLIGHT INFO =========
+let airline = "";
+let from = "";
+let to = "";
 
-      if (salesRow.child_count > 0)
-        rows.push({
-          item: "Ticket – Child",
-          sale_sar: salesRow.child_count * salesRow.child_rate,
-          sale_rate: salesRow.flight_sar_rate || 0,
-          sale_pkr: (salesRow.child_count * salesRow.child_rate) * (salesRow.flight_sar_rate || 0),
-        });
+if (Array.isArray(salesRow.flights) && salesRow.flights.length > 0) {
+  const f = salesRow.flights[0]; // first segment (agar multiple ho to baad me loop bhi kar sakte ho)
 
-      if (salesRow.infant_count > 0)
-        rows.push({
-          item: "Ticket – Infant",
-          sale_sar: salesRow.infant_count * salesRow.infant_rate,
-          sale_rate: salesRow.flight_sar_rate || 0,
-          sale_pkr: (salesRow.infant_count * salesRow.infant_rate) * (salesRow.flight_sar_rate || 0),
-        });
+  airline = f.airline || f.airline_name || "";
+  from = f.from || f.flight_from || "";
+  to = f.to || f.flight_to || "";
+}
+
+const routeText = from && to ? `${from} → ${to}` : "";
+const extraInfo = [airline, routeText].filter(Boolean).join(" | ");
+
+
+// ========= TICKETS =========
+if (salesRow.adult_count > 0)
+  rows.push({
+    item: `Ticket – Adult (${salesRow.adult_count} Person${salesRow.adult_count > 1 ? "s" : ""})${extraInfo ? " - " + extraInfo : ""}`,
+    sale_sar: salesRow.adult_count * salesRow.adult_rate,
+    sale_rate: salesRow.flight_sar_rate || 0,
+    sale_pkr:
+      (salesRow.adult_count * salesRow.adult_rate) *
+      (salesRow.flight_sar_rate || 0),
+  });
+
+if (salesRow.child_count > 0)
+  rows.push({
+    item: `Ticket – Child (${salesRow.child_count} Person${salesRow.child_count > 1 ? "s" : ""})${extraInfo ? " - " + extraInfo : ""}`,
+    sale_sar: salesRow.child_count * salesRow.child_rate,
+    sale_rate: salesRow.flight_sar_rate || 0,
+    sale_pkr:
+      (salesRow.child_count * salesRow.child_rate) *
+      (salesRow.flight_sar_rate || 0),
+  });
+
+if (salesRow.infant_count > 0)
+  rows.push({
+    item: `Ticket – Infant (${salesRow.infant_count} Person${salesRow.infant_count > 1 ? "s" : ""})${extraInfo ? " - " + extraInfo : ""}`,
+    sale_sar: salesRow.infant_count * salesRow.infant_rate,
+    sale_rate: salesRow.flight_sar_rate || 0,
+    sale_pkr:
+      (salesRow.infant_count * salesRow.infant_rate) *
+      (salesRow.flight_sar_rate || 0),
+  });
 
       // HOTELS
       if (Array.isArray(salesRow.hotels)) {
@@ -272,13 +296,19 @@ router.get("/load/:ref_no", async (req, res) => {
     /* =========================
        TICKETING ONLY (TIC-)
     ========================= */
+    /* =========================
+       TICKETING ONLY (TIC-)
+    ========================= */
     else if (ref_no.startsWith("TIC-")) {
       const q = await db.query(
         `
         SELECT adult_qty, adult_rate,
                child_qty, child_rate,
                infant_qty, infant_rate,
-               pkr_rate
+               pkr_rate,
+               flight_from,
+               flight_to,
+               airline
         FROM ticketing
         WHERE ref_no=$1 AND is_deleted=false
         `,
@@ -290,9 +320,19 @@ router.get("/load/:ref_no", async (req, res) => {
 
       const r = q.rows[0];
 
+      /* ========= SAFE ROUTE + AIRLINE TEXT ========= */
+      const from = Array.isArray(r.flight_from) ? r.flight_from.join(", ") : r.flight_from || "";
+      const to = Array.isArray(r.flight_to) ? r.flight_to.join(", ") : r.flight_to || "";
+      const airline = Array.isArray(r.airline) ? r.airline.join(", ") : r.airline || "";
+
+      const routeText = from && to ? `${from} → ${to}` : "";
+      const extraInfo = [airline, routeText].filter(Boolean).join(" | ");
+
+      /* ========= TICKETS ========= */
+
       if (r.adult_qty > 0)
         rows.push({
-          item: "Ticket – Adult",
+          item: `Ticket – Adult (${r.adult_qty} Person${r.adult_qty > 1 ? "s" : ""})${extraInfo ? " - " + extraInfo : ""}`,
           sale_sar: r.adult_qty * r.adult_rate,
           sale_rate: r.pkr_rate,
           sale_pkr: r.adult_qty * r.adult_rate * r.pkr_rate,
@@ -300,7 +340,7 @@ router.get("/load/:ref_no", async (req, res) => {
 
       if (r.child_qty > 0)
         rows.push({
-          item: "Ticket – Child",
+          item: `Ticket – Child (${r.child_qty} Person${r.child_qty > 1 ? "s" : ""})${extraInfo ? " - " + extraInfo : ""}`,
           sale_sar: r.child_qty * r.child_rate,
           sale_rate: r.pkr_rate,
           sale_pkr: r.child_qty * r.child_rate * r.pkr_rate,
@@ -308,11 +348,12 @@ router.get("/load/:ref_no", async (req, res) => {
 
       if (r.infant_qty > 0)
         rows.push({
-          item: "Ticket – Infant",
+          item: `Ticket – Infant (${r.infant_qty} Person${r.infant_qty > 1 ? "s" : ""})${extraInfo ? " - " + extraInfo : ""}`,
           sale_sar: r.infant_qty * r.infant_rate,
           sale_rate: r.pkr_rate,
           sale_pkr: r.infant_qty * r.infant_rate * r.pkr_rate,
         });
+
     } else {
       return res.json({ success: false, error: "Invalid Ref No" });
     }
