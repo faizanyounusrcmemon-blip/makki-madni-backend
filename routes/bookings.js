@@ -71,7 +71,10 @@ router.post("/save", async (req, res) => {
           total_sar=$36,
           total_pkr=$37,
           per_person_qty=$38,
-          per_person_final=$39
+          per_person_final=$39,
+          adult_per_person=$40,
+          child_per_person=$41,
+          infant_per_person=$42
 
         WHERE ref_no=$1
         `,
@@ -123,7 +126,10 @@ router.post("/save", async (req, res) => {
           d.total_sar,
           d.total_pkr,
           d.per_person_qty,
-          d.per_person_final
+          d.per_person_final,
+          d.adult_per_person,
+          d.child_per_person,
+          d.infant_per_person
         ]
       );
 
@@ -161,7 +167,7 @@ router.post("/save", async (req, res) => {
         transport_pkr_total, ziyarat_pkr_total,
 
         net_pkr_total, total_sar, total_pkr,
-        per_person_qty, per_person_final
+        per_person_qty, per_person_final, adult_per_person, child_per_person, infant_per_person
       )
       VALUES (
         $1,$2,$3,$4,
@@ -175,7 +181,7 @@ router.post("/save", async (req, res) => {
         $25,$26,$27,$28,$29,
         $30,$31,$32,$33,$34,
         $35,$36,$37,
-        $38,$39
+        $38,$39,$40,$41,$42
       )
       `,
       [
@@ -226,7 +232,10 @@ router.post("/save", async (req, res) => {
         d.total_sar,
         d.total_pkr,
         d.per_person_qty,
-        d.per_person_final
+        d.per_person_final,
+        d.adult_per_person,
+        d.child_per_person,
+        d.infant_per_person
       ]
     );
 
