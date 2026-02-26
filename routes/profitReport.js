@@ -22,6 +22,7 @@ router.get("/", async (req, res) => {
       db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM bookings WHERE is_deleted=false ${yCond} ${mCond}`),
       db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM hotels WHERE is_deleted=false ${yCond} ${mCond}`),
       db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM visa WHERE is_deleted=false ${yCond} ${mCond}`),
+      db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM card WHERE is_deleted=false ${yCond} ${mCond}`),
       db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM ticketing WHERE is_deleted=false ${yCond} ${mCond}`),
       db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM transport WHERE is_deleted=false ${yCond} ${mCond}`),
       db.query(`SELECT COALESCE(SUM(total_pkr),0) AS total FROM ziyarat WHERE is_deleted=false ${yCond} ${mCond}`)
@@ -30,6 +31,7 @@ router.get("/", async (req, res) => {
     const totalSales = Number(bookingsQ.rows[0].total) +
                        Number(hotelsQ.rows[0].total) +
                        Number(visaQ.rows[0].total) +
+                       Number(cardQ.rows[0].total) +
                        Number(ticketingQ.rows[0].total) +
                        Number(transportQ.rows[0].total) +
                        Number(ziyaratQ.rows[0].total);

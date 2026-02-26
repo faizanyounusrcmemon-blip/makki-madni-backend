@@ -30,6 +30,11 @@ router.get("/:ref_no", async (req, res) => {
       FROM visa
       WHERE ref_no=$1 AND is_deleted=false
 
+      UNION ALL
+      SELECT customer_name, booking_date
+      FROM card
+      WHERE ref_no=$1 AND is_deleted=false
+
 
       UNION ALL
       SELECT customer_name, booking_date
@@ -73,6 +78,7 @@ router.get("/:ref_no", async (req, res) => {
       SELECT SUM(total_pkr) AS amount FROM bookings WHERE ref_no=$1 AND is_deleted=false
       UNION ALL SELECT SUM(total_pkr) FROM hotels WHERE ref_no=$1 AND is_deleted=false
       UNION ALL SELECT SUM(total_pkr) FROM visa WHERE ref_no=$1 AND is_deleted=false
+      UNION ALL SELECT SUM(total_pkr) FROM card WHERE ref_no=$1 AND is_deleted=false
       UNION ALL SELECT SUM(total_pkr) FROM ticketing WHERE ref_no=$1 AND is_deleted=false
       UNION ALL SELECT SUM(total_pkr) FROM transport WHERE ref_no=$1 AND is_deleted=false
       UNION ALL SELECT SUM(total_pkr) FROM ziyarat WHERE ref_no=$1 AND is_deleted=false
@@ -157,6 +163,11 @@ router.get("/pending/list", async (req, res) => {
         UNION ALL
         SELECT ref_no, customer_name, total_pkr
         FROM visa
+        WHERE is_deleted=false
+
+        UNION ALL
+        SELECT ref_no, customer_name, total_pkr
+        FROM card
         WHERE is_deleted=false
 
         UNION ALL

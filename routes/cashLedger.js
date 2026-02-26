@@ -19,6 +19,8 @@ router.get("/", async (req, res) => {
         UNION ALL
         SELECT ref_no, customer_name FROM visa
         UNION ALL
+        SELECT ref_no, customer_name FROM card
+        UNION ALL
         SELECT ref_no, customer_name FROM ticketing
         UNION ALL
         SELECT ref_no, customer_name FROM transport

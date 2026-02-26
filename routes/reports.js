@@ -12,6 +12,8 @@ const CUSTOMER_SQL = `
   UNION ALL
   SELECT ref_no, customer_name FROM visa
   UNION ALL
+  SELECT ref_no, customer_name FROM card
+  UNION ALL
   SELECT ref_no, customer_name FROM ticketing
   UNION ALL
   SELECT ref_no, customer_name FROM transport
@@ -32,6 +34,8 @@ router.get("/sale-adjustments", async (req, res) => {
         SELECT ref_no, total_pkr FROM hotels WHERE is_deleted=false
         UNION ALL
         SELECT ref_no, total_pkr FROM visa WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, total_pkr FROM card WHERE is_deleted=false
         UNION ALL
         SELECT ref_no, total_pkr FROM ticketing WHERE is_deleted=false
         UNION ALL
@@ -64,6 +68,8 @@ router.get("/sale-adjustments", async (req, res) => {
         SELECT ref_no, customer_name FROM hotels
         UNION ALL
         SELECT ref_no, customer_name FROM visa
+        UNION ALL
+        SELECT ref_no, customer_name FROM card
         UNION ALL
         SELECT ref_no, customer_name FROM ticketing
         UNION ALL
@@ -158,6 +164,10 @@ router.get("/all", async (req, res) => {
       FROM visa WHERE is_deleted=false
 
       UNION ALL
+      SELECT 'Card', id, ref_no, customer_name, booking_date, total_pkr
+      FROM card WHERE is_deleted=false
+
+      UNION ALL
       SELECT 'Transport', id, ref_no, customer_name, booking_date, total_pkr
       FROM transport WHERE is_deleted=false
 
@@ -233,26 +243,6 @@ router.get("/supplier-purchase", async (req, res) => {
 
 
 module.exports = router;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

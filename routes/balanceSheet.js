@@ -19,6 +19,8 @@ router.get("/", async (req, res) => {
         UNION ALL
         SELECT ref_no, customer_name FROM hotels     WHERE is_deleted = false
         UNION ALL
+        SELECT ref_no, customer_name FROM card     WHERE is_deleted = false
+        UNION ALL
         SELECT ref_no, customer_name FROM visa       WHERE is_deleted = false
         UNION ALL
         SELECT ref_no, customer_name FROM transport  WHERE is_deleted = false
@@ -38,6 +40,8 @@ router.get("/", async (req, res) => {
         SELECT ref_no, total_pkr FROM hotels     WHERE is_deleted = false
         UNION ALL
         SELECT ref_no, total_pkr FROM visa       WHERE is_deleted = false
+        UNION ALL
+        SELECT ref_no, total_pkr FROM  card     WHERE is_deleted = false
         UNION ALL
         SELECT ref_no, total_pkr FROM transport  WHERE is_deleted = false
         UNION ALL

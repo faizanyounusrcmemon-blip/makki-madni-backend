@@ -26,6 +26,10 @@ router.get("/list", async (req, res) => {
       FROM visa WHERE is_deleted = true
 
       UNION ALL
+      SELECT 'CARD' AS type, ref_no, customer_name, booking_date, total_pkr
+      FROM card WHERE is_deleted = true
+
+      UNION ALL
       SELECT 'TRANSPORT' AS type, ref_no, customer_name, booking_date, total_pkr
       FROM transport WHERE is_deleted = true
 
@@ -43,6 +47,7 @@ router.get("/list", async (req, res) => {
           h.customer_name,
           t.customer_name,
           v.customer_name,
+          c.customer_name,
           tr.customer_name,
           z.customer_name,
           '-'
@@ -54,10 +59,11 @@ router.get("/list", async (req, res) => {
       LEFT JOIN hotels h ON h.ref_no = pe.ref_no
       LEFT JOIN ticketing t ON t.ref_no = pe.ref_no
       LEFT JOIN visa v ON v.ref_no = pe.ref_no
+      LEFT JOIN card v ON v.ref_no = pe.ref_no
       LEFT JOIN transport tr ON tr.ref_no = pe.ref_no
       LEFT JOIN ziyarat z ON z.ref_no = pe.ref_no
       WHERE pe.is_deleted = true
-      GROUP BY pe.ref_no, b.customer_name, h.customer_name, t.customer_name, v.customer_name, tr.customer_name, z.customer_name
+      GROUP BY pe.ref_no, b.customer_name, h.customer_name, t.customer_name, v.customer_name, c.customer_name, tr.customer_name, z.customer_name
 
       /* SUPPLIERS */
       UNION ALL
@@ -95,6 +101,7 @@ router.post("/restore", async (req, res) => {
     else if (type === "HOTEL") table = "hotels";
     else if (type === "TICKETING") table = "ticketing";
     else if (type === "VISA") table = "visa";
+    else if (type === "CARD") table = "card";
     else if (type === "TRANSPORT") table = "transport";
     else if (type === "ZIYARAT") table = "ziyarat";
     else if (type === "PURCHASE") table = "purchase_entries";
@@ -145,6 +152,7 @@ router.post("/permanent-delete", async (req, res) => {
     else if (type === "HOTEL") table = "hotels";
     else if (type === "TICKETING") table = "ticketing";
     else if (type === "VISA") table = "visa";
+    else if (type === "CARD") table = "card";
     else if (type === "TRANSPORT") table = "transport";
     else if (type === "ZIYARAT") table = "ziyarat";
     else if (type === "PURCHASE") table = "purchase_entries";

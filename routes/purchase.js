@@ -220,6 +220,36 @@ if (salesRow.infant_count > 0)
       });
 
     }
+
+    // =======================
+    // CARD ONLY REF (CARD-)
+    // =======================
+    else if (ref_no.startsWith("CARD-")) {
+      const q = await db.query(
+        `SELECT * FROM card WHERE ref_no=$1 AND is_deleted=false`,
+        [ref_no]
+      );
+      if (!q.rows.length) return res.json({ success:false, error:"Card not found" });
+
+      const v = q.rows[0];
+      (v.rows || []).forEach((r, i) => {
+        const sar = Number(r.total) || Number(r.persons * r.rate) || 0;
+        const rate = Number(v.pkr_rate) || 0;
+
+        const itemName = r.type
+          ? `Card ${i + 1} - ${r.type} (${r.persons} Person${r.persons > 1 ? "s" : ""})`
+          : `Card (${r.persons} Person${r.persons > 1 ? "s" : ""})`;
+
+        rows.push({
+          item: itemName,
+          sale_sar: sar,
+          sale_rate: rate,
+          sale_pkr: sar * rate
+        });
+      });
+
+    }
+
    
    /* =========================
        TRANSPORT ONLY (TRN-)
@@ -578,6 +608,8 @@ router.get("/list", async (req, res) => {
         UNION ALL
         SELECT ref_no, customer_name FROM visa
         UNION ALL
+        SELECT ref_no, customer_name FROM card
+        UNION ALL
         SELECT ref_no, customer_name FROM ticketing
         UNION ALL
         SELECT ref_no, customer_name FROM transport
@@ -693,6 +725,8 @@ router.get("/detail/:ref_no", async (req, res) => {
         UNION ALL
         SELECT ref_no, customer_name FROM visa
         UNION ALL
+        SELECT ref_no, customer_name FROM card
+        UNION ALL
         SELECT ref_no, customer_name FROM ticketing
         UNION ALL
         SELECT ref_no, customer_name FROM transport
@@ -756,6 +790,12 @@ router.get("/pending", async (req, res) => {
 
         SELECT ref_no, customer_name, booking_date
         FROM visa
+        WHERE is_deleted=false
+
+        UNION ALL
+
+        SELECT ref_no, customer_name, booking_date
+        FROM card
         WHERE is_deleted=false
 
         UNION ALL
@@ -873,6 +913,8 @@ router.get("/missing-supplier", async (req, res) => {
         SELECT ref_no, customer_name FROM hotels WHERE is_deleted=false
         UNION ALL
         SELECT ref_no, customer_name FROM visa WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, customer_name FROM card WHERE is_deleted=false
         UNION ALL
         SELECT ref_no, customer_name FROM ticketing WHERE is_deleted=false
         UNION ALL
@@ -994,6 +1036,15 @@ router.get("/sale-mismatch-report", async (req, res) => {
         if (q.rows.length) {
           const r = q.rows[0];
           salesRows.push({ item: "Visa", sale_pkr: Number(r.total_sar || 0) * Number(r.pkr_rate || 0) });
+        }
+      }
+
+      // 🔹 CARD ONLY
+      if (ref_no.startsWith("CARD-")) {
+        const q = await db.query(`SELECT total_sar, pkr_rate FROM card WHERE ref_no=$1 AND is_deleted=false`, [ref_no]);
+        if (q.rows.length) {
+          const r = q.rows[0];
+          salesRows.push({ item: "Card", sale_pkr: Number(r.total_sar || 0) * Number(r.pkr_rate || 0) });
         }
       }
 
