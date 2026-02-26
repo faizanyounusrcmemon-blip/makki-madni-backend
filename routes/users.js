@@ -23,7 +23,7 @@ router.post("/create", async (req, res) => {
       INSERT INTO users (
         name, username, password, role,
 
-        packages, ticketing, transport, ziyarat, visa, hotels,
+        packages, ticketing, transport, ziyarat, visa, hotels, card,
         purchase_entry, purchase_list, pending_purchase,
         customer_ledger, supplier_ledger, bank_ledger, expense_ledger, balance_sheet, cash_ledger,
         hotel_voucher, transport_voucher,
@@ -33,7 +33,7 @@ router.post("/create", async (req, res) => {
       VALUES (
         $1, $2, $3, $4,
 
-        false, false, false, false, false, false,
+        false, false, false, false, false, false, false,
         false, false, false,
         false, false, false, false, false, false,
         false, false,
@@ -126,7 +126,7 @@ router.post("/permissions/update", async (req, res) => {
     const { users } = req.body;
 
     const perms = [
-      "packages","ticketing","transport","ziyarat","visa","hotels",
+      "packages","ticketing","transport","ziyarat","visa","hotels","card",
       "purchase_entry","purchase_list","pending_purchase",
       "customer_ledger","supplier_ledger","bank_ledger","expense_ledger","balance_sheet","cash_ledger",
       "hotel_voucher","transport_voucher",
