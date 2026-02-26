@@ -47,6 +47,9 @@ app.use("/api/ticketing", require("../routes/ticketing"));
 app.use("/visa", require("../routes/visa"));
 app.use("/api/visa", require("../routes/visa"));
 
+app.use("/card", require("../routes/card"));
+app.use("/api/card", require("../routes/card"));
+
 app.use("/transport", require("../routes/transport"));
 app.use("/api/transport", require("../routes/transport"));
 
