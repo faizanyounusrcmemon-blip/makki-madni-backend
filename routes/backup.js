@@ -31,6 +31,7 @@ const TABLES = [
   "hotels",
   "ticketing",
   "visa",
+  "card",
   "transport",
   "purchase_entries",
   "users",
@@ -51,6 +52,7 @@ const JSON_COLUMNS = {
   transport: ["transport"],
   ziyarat: ["ziyarat"],
   visa: ["rows"],
+  card: ["rows"],
 };
 
 /* ================= HELPERS ================= */
