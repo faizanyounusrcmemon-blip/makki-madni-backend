@@ -15,6 +15,7 @@ router.get("/", async (req, res) => {
       bookingsQ,
       hotelsQ,
       visaQ,
+      cardQ,
       ticketingQ,
       transportQ,
       ziyaratQ
@@ -107,4 +108,5 @@ router.get("/", async (req, res) => {
 });
 
 module.exports = router;
+
 
