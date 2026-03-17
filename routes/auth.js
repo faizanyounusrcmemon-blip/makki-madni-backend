@@ -2,10 +2,7 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-/* ================================
-   LOGIN
-   POST /api/auth/login
-================================ */
+/* ================= LOGIN ================= */
 router.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -13,20 +10,34 @@ router.post("/login", async (req, res) => {
     if (!username || !password)
       return res.json({ success: false, error: "Missing credentials" });
 
-    // 🔥 IMPORTANT: SELECT * (with permissions)
-    const result = await db.query(
-      `SELECT * FROM users
-       WHERE username=$1 AND password=$2`,
+    const r = await db.query(
+      "SELECT * FROM users WHERE username=$1 AND password=$2",
       [username, password]
     );
 
-    if (result.rows.length === 0)
+    if (r.rows.length === 0)
       return res.json({ success: false, error: "Invalid login" });
 
-    res.json({
-      success: true,
-      user: result.rows[0]   // 👈 FULL USER WITH PERMISSIONS
-    });
+    const user = r.rows[0];
+
+    // ✅ SIMPLE & CLEAN UPDATE
+    const updateRes = await db.query(
+      `UPDATE users
+       SET last_login = NOW(),
+           is_online = true
+       WHERE id = $1
+       RETURNING 
+         id,
+         name,
+         username,
+         role,
+         is_online,
+         last_login,
+         last_logout`,
+      [user.id]
+    );
+
+    res.json({ success: true, user: updateRes.rows[0] });
 
   } catch (err) {
     console.error("LOGIN ERROR:", err);
@@ -34,5 +45,37 @@ router.post("/login", async (req, res) => {
   }
 });
 
-module.exports = router;
+/* ================= LOGOUT ================= */
+router.post("/logout", async (req, res) => {
+  try {
+    const { id } = req.body;
 
+    if (!id)
+      return res.json({ success: false, error: "User ID required" });
+
+    // ✅ SIMPLE & CLEAN UPDATE
+    const updateRes = await db.query(
+      `UPDATE users
+       SET last_logout = NOW(),
+           is_online = false
+       WHERE id = $1
+       RETURNING 
+         id,
+         name,
+         username,
+         role,
+         is_online,
+         last_login,
+         last_logout`,
+      [id]
+    );
+
+    res.json({ success: true, user: updateRes.rows[0] });
+
+  } catch (err) {
+    console.error("LOGOUT ERROR:", err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
+module.exports = router;

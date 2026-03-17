@@ -55,14 +55,30 @@ router.post("/create", async (req, res) => {
 /* ================= LIST USERS ================= */
 router.get("/list", async (req, res) => {
   try {
+
     const r = await db.query(
-      "SELECT id, name, username, password, role FROM users ORDER BY id DESC"
+      `
+      SELECT 
+      id,
+      name,
+      username,
+      password,
+      role,
+      is_online,
+      last_login,
+      last_logout
+      FROM users
+      ORDER BY id DESC
+      `
     );
+
     res.json({ success: true, rows: r.rows });
+
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
 });
+
 
 /* ================= UPDATE USER ================= */
 router.post("/update", async (req, res) => {
@@ -150,6 +166,8 @@ router.post("/permissions/update", async (req, res) => {
     res.json({ success: false, error: err.message });
   }
 });
+
+
 
 module.exports = router;
 
