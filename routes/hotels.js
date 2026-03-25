@@ -238,5 +238,53 @@ router.delete("/delete/:ref_no", async (req, res) => {
   }
 });
 
+// DELETED VIEW
+router.get("/get-deleted/:ref_no", async (req, res) => {
+  try {
+    const { ref_no } = req.params;
+
+    const q = await db.query(
+      `
+      SELECT *
+      FROM hotels
+      WHERE ref_no=$1 AND is_deleted=true
+      `,
+      [ref_no]
+    );
+
+    if (!q.rows.length) {
+      return res.json({ success: false, error: "Deleted hotel not found" });
+    }
+
+    const r = q.rows[0];
+
+    // 🔥 ARRAY → OBJECT CONVERSION
+    const hotels = (r.hotel_name || []).map((name, i) => ({
+      hotel: name || "",
+      location: r.hotel_location?.[i] || "",
+      type: r.hotel_type?.[i] || "",
+      rooms: r.hotel_rooms?.[i] || 0,
+      nights: r.hotel_nights?.[i] || 0,
+      rate: r.hotel_rate?.[i] || 0,
+      total: r.hotel_total?.[i] || 0,
+      checkIn: r.hotel_checkin?.[i] || "",
+      checkOut: r.hotel_checkout?.[i] || "",
+    }));
+
+    // ✅ FINAL RESPONSE
+    res.json({
+      success: true,
+      row: {
+        ...r,
+        hotels, // 🔥 IMPORTANT
+      },
+    });
+
+  } catch (err) {
+    console.error("GET DELETED HOTEL ERROR:", err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
 

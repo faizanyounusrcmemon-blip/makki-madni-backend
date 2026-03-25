@@ -276,6 +276,7 @@ router.get("/get/:ref", async (req, res) => {
   }
 });
 
+
 // ============================================
 // HOTEL VOUCHER
 // ============================================
@@ -351,6 +352,22 @@ router.delete("/delete/:ref", async (req, res) => {
   } catch (err) {
     console.error("DELETE ERROR:", err);
     res.json({ success: false, error: err.message });
+  }
+});
+
+// DELETED VIEW
+router.get("/get-deleted/:ref", async (req, res) => {
+  try {
+    const q = await db.query(
+      "SELECT * FROM bookings WHERE ref_no=$1 AND is_deleted=true",
+      [req.params.ref]
+    );
+
+    if (!q.rows.length) return res.json({ success: false });
+
+    res.json({ success: true, row: q.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
