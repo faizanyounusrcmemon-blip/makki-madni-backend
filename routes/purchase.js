@@ -463,7 +463,36 @@ if (salesRow.infant_count > 0)
       };
     });
 
-    res.json({ success: true, is_edit: isEdit, rows });
+    // customer name nikaalo bookings / other tables se
+let customer_name = "";
+
+const cust = await db.query(`
+  SELECT customer_name FROM bookings WHERE ref_no=$1
+  UNION
+  SELECT customer_name FROM hotels WHERE ref_no=$1
+  UNION
+  SELECT customer_name FROM visa WHERE ref_no=$1
+  UNION
+  SELECT customer_name FROM card WHERE ref_no=$1
+  UNION
+  SELECT customer_name FROM ticketing WHERE ref_no=$1
+  UNION
+  SELECT customer_name FROM transport WHERE ref_no=$1
+  UNION
+  SELECT customer_name FROM ziyarat WHERE ref_no=$1
+  LIMIT 1
+`, [ref_no]);
+
+if (cust.rows.length) {
+  customer_name = cust.rows[0].customer_name;
+}
+
+res.json({
+  success: true,
+  is_edit: isEdit,
+  customer_name,   // ⭐ ADD THIS
+  rows
+});
      
   } catch(err){
     console.error("PURCHASE LOAD ERROR:", err);
