@@ -22,18 +22,13 @@ router.post("/login", async (req, res) => {
 
     // ✅ SIMPLE & CLEAN UPDATE
     const updateRes = await db.query(
-      `UPDATE users
-       SET last_login = NOW(),
-           is_online = true
-       WHERE id = $1
-       RETURNING 
-         id,
-         name,
-         username,
-         role,
-         is_online,
-         last_login,
-         last_logout`,
+      `
+      UPDATE users
+      SET last_login = NOW(),
+          is_online = true
+      WHERE id = $1
+      RETURNING *
+      `,
       [user.id]
     );
 
@@ -48,33 +43,47 @@ router.post("/login", async (req, res) => {
 /* ================= LOGOUT ================= */
 router.post("/logout", async (req, res) => {
   try {
+
     const { id } = req.body;
 
     if (!id)
-      return res.json({ success: false, error: "User ID required" });
+      return res.json({
+        success: false,
+        error: "User ID required"
+      });
 
-    // ✅ SIMPLE & CLEAN UPDATE
     const updateRes = await db.query(
-      `UPDATE users
-       SET last_logout = NOW(),
-           is_online = false
-       WHERE id = $1
-       RETURNING 
-         id,
-         name,
-         username,
-         role,
-         is_online,
-         last_login,
-         last_logout`,
-      [id]
+      `
+      UPDATE users
+      SET
+        last_logout = NOW(),
+        is_online = false
+      WHERE id = $1
+      RETURNING
+        id,
+        name,
+        username,
+        role,
+        is_online,
+        last_login,
+        last_logout
+      `,
+      [id] // ✅ YAHAN FIX HAI
     );
 
-    res.json({ success: true, user: updateRes.rows[0] });
+    res.json({
+      success: true,
+      user: updateRes.rows[0]
+    });
 
   } catch (err) {
+
     console.error("LOGOUT ERROR:", err);
-    res.json({ success: false, error: err.message });
+
+    res.json({
+      success: false,
+      error: err.message
+    });
   }
 });
 
