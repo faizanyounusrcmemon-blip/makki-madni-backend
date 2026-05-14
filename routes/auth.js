@@ -8,19 +8,42 @@ router.post("/login", async (req, res) => {
     const { username, password } = req.body;
 
     if (!username || !password)
-      return res.json({ success: false, error: "Missing credentials" });
+      return res.json({
+        success: false,
+        error: "Missing credentials"
+      });
 
+    // 1️⃣ user only by username
     const r = await db.query(
-      "SELECT * FROM users WHERE username=$1 AND password=$2",
-      [username, password]
+      "SELECT * FROM users WHERE username=$1",
+      [username]
     );
 
     if (r.rows.length === 0)
-      return res.json({ success: false, error: "Invalid login" });
+      return res.json({
+        success: false,
+        error: "Username not found"
+      });
 
     const user = r.rows[0];
 
-    // ✅ SIMPLE & CLEAN UPDATE
+    // 2️⃣ inactive check
+    if (user.is_active === false) {
+      return res.json({
+        success: false,
+        error: "User inactive"
+      });
+    }
+
+    // 3️⃣ password check
+    if (user.password !== password) {
+      return res.json({
+        success: false,
+        error: "Wrong password"
+      });
+    }
+
+    // 4️⃣ login success update
     const updateRes = await db.query(
       `
       UPDATE users
@@ -32,11 +55,17 @@ router.post("/login", async (req, res) => {
       [user.id]
     );
 
-    res.json({ success: true, user: updateRes.rows[0] });
+    res.json({
+      success: true,
+      user: updateRes.rows[0]
+    });
 
   } catch (err) {
-    console.error("LOGIN ERROR:", err);
-    res.json({ success: false, error: err.message });
+    console.error(err);
+    res.json({
+      success: false,
+      error: err.message
+    });
   }
 });
 
@@ -68,7 +97,7 @@ router.post("/logout", async (req, res) => {
         last_login,
         last_logout
       `,
-      [id] // ✅ YAHAN FIX HAI
+      [id]
     );
 
     res.json({

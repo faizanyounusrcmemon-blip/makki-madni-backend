@@ -5,7 +5,7 @@ const db = require("../db");
 /* ================= CREATE USER ================= */
 router.post("/create", async (req, res) => {
   try {
-    const { name, username, password, role } = req.body;
+    const { name, username, password, role, is_active } = req.body;
 
     if (!name || !username || !password)
       return res.json({ success: false, error: "Missing fields" });
@@ -21,7 +21,7 @@ router.post("/create", async (req, res) => {
     await db.query(
       `
       INSERT INTO users (
-        name, username, password, role,
+        name, username, password, role, is_active,
 
         packages, ticketing, transport, ziyarat, visa, hotels, card,
         purchase_entry, purchase_list, pending_purchase,
@@ -31,7 +31,7 @@ router.post("/create", async (req, res) => {
         create_user, manage_users, supplier, deleted_reports, restore, system_storage
       )
       VALUES (
-        $1, $2, $3, $4,
+        $1, $2, $3, $4, $5,
 
         false, false, false, false, false, false, false,
         false, false, false,
@@ -41,7 +41,13 @@ router.post("/create", async (req, res) => {
         false, false, false, false, false, false
       )
       `,
-      [name, username, password, role || "user"]
+      [
+        name,
+        username,
+        password,
+        role || "user",
+        is_active === true
+      ]
     );
 
     res.json({ success: true });
@@ -64,6 +70,7 @@ router.get("/list", async (req, res) => {
       username,
       password,
       role,
+      is_active,
       is_online,
       last_login,
       last_logout
@@ -83,7 +90,14 @@ router.get("/list", async (req, res) => {
 /* ================= UPDATE USER ================= */
 router.post("/update", async (req, res) => {
   try {
-    const { id, name, username, password, role } = req.body;
+    const {
+      id,
+      name,
+      username,
+      password,
+      role,
+      is_active
+    } = req.body;
 
     if (!id || !name || !username || !role)
       return res.json({ success: false, error: "Missing data" });
@@ -92,19 +106,41 @@ router.post("/update", async (req, res) => {
       await db.query(
         `
         UPDATE users
-        SET name=$1, username=$2, password=$3, role=$4
-        WHERE id=$5
+        SET
+          name=$1,
+          username=$2,
+          password=$3,
+          role=$4,
+          is_active=$5
+        WHERE id=$6
         `,
-        [name, username, password, role, id]
+        [
+          name,
+          username,
+          password,
+          role,
+          is_active === true,
+          id
+        ]
       );
     } else {
       await db.query(
         `
         UPDATE users
-        SET name=$1, username=$2, role=$3
-        WHERE id=$4
+        SET
+          name=$1,
+          username=$2,
+          role=$3,
+          is_active=$4
+        WHERE id=$5
         `,
-        [name, username, role, id]
+        [
+          name,
+          username,
+          role,
+          is_active === true,
+          id
+        ]
       );
     }
 
@@ -119,10 +155,15 @@ router.post("/update", async (req, res) => {
 router.delete("/delete/:id", async (req, res) => {
   try {
     const { password } = req.body;
+
     if (password !== "786")
       return res.json({ success: false, error: "Wrong password" });
 
-    await db.query("DELETE FROM users WHERE id=$1", [req.params.id]);
+    await db.query(
+      "DELETE FROM users WHERE id=$1",
+      [req.params.id]
+    );
+
     res.json({ success: true });
 
   } catch (err) {
@@ -132,8 +173,14 @@ router.delete("/delete/:id", async (req, res) => {
 
 /* ================= PERMISSIONS LIST ================= */
 router.get("/permissions/list", async (req, res) => {
-  const r = await db.query("SELECT * FROM users ORDER BY id");
-  res.json({ success: true, rows: r.rows });
+  const r = await db.query(
+    "SELECT * FROM users ORDER BY id"
+  );
+
+  res.json({
+    success: true,
+    rows: r.rows
+  });
 });
 
 /* ================= PERMISSIONS UPDATE ================= */
@@ -151,8 +198,14 @@ router.post("/permissions/update", async (req, res) => {
     ];
 
     for (const u of users) {
-      const values = perms.map(p => u[p] === true);
-      const setSQL = perms.map((p, i) => `${p}=$${i + 1}`).join(", ");
+
+      const values = perms.map(
+        p => u[p] === true
+      );
+
+      const setSQL = perms
+        .map((p, i) => `${p}=$${i + 1}`)
+        .join(", ");
 
       await db.query(
         `UPDATE users SET ${setSQL} WHERE id=$${perms.length + 1}`,
@@ -167,10 +220,4 @@ router.post("/permissions/update", async (req, res) => {
   }
 });
 
-
-
 module.exports = router;
-
-
-
-
