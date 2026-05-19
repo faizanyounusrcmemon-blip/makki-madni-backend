@@ -92,6 +92,9 @@ app.use("/api/expense-ledger", require("../routes/expenseLedger"));
 app.use("/supplier-ledger", require("../routes/supplierLedger"));
 app.use("/api/supplier-ledger", require("../routes/supplierLedger"));
 
+app.use("/monthly-profit-report", require("../routes/monthlyProfitReport"));
+app.use("/api/monthly-profit-report", require("../routes/monthlyProfitReport"));
+
 
 
 // ==========================
