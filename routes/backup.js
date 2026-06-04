@@ -1,5 +1,13 @@
 const express = require("express");
 const router = express.Router();
+const multer = require("multer");
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 50 * 1024 * 1024,
+  },
+});
 
 const fs = require("fs-extra");
 const path = require("path");
@@ -371,10 +379,132 @@ router.post("/cleanup", async (req, res) => {
 });
 
 
+router.post(
+  "/restore/upload/full",
+  upload.single("backup"),
+  async (req, res) => {
+    try {
+      const { password } = req.body;
+
+      if (password !== ACTION_PASSWORD)
+        return res.json({ success: false, error: "Wrong password" });
+
+      const zip = new AdmZip(req.file.buffer);
+
+      const client = await db.connect();
+
+      try {
+        await client.query("BEGIN");
+
+        for (const table of TABLES) {
+          const entry = zip.getEntry(`${table}.csv`);
+          if (!entry) continue;
+
+          await restoreTable(
+            client,
+            table,
+            entry.getData().toString("utf8")
+          );
+        }
+
+        await client.query("COMMIT");
+        res.json({ success: true });
+      } catch (e) {
+        await client.query("ROLLBACK");
+        res.json({ success: false, error: e.message });
+      } finally {
+        client.release();
+      }
+    } catch (e) {
+      res.json({ success: false, error: e.message });
+    }
+  }
+);
+
+
+router.post(
+  "/restore/upload/table",
+  upload.single("backup"),
+  async (req, res) => {
+    try {
+      const { password, table } = req.body;
+
+      if (password !== ACTION_PASSWORD)
+        return res.json({ success: false, error: "Wrong password" });
+
+      const zip = new AdmZip(req.file.buffer);
+
+      const entry = zip.getEntry(`${table}.csv`);
+
+      if (!entry) {
+        return res.json({
+          success: false,
+          error: `${table}.csv not found`,
+        });
+      }
+
+      const client = await db.connect();
+
+      try {
+        await client.query("BEGIN");
+
+        await restoreTable(
+          client,
+          table,
+          entry.getData().toString("utf8")
+        );
+
+        await client.query("COMMIT");
+
+        res.json({ success: true });
+      } catch (e) {
+        await client.query("ROLLBACK");
+        res.json({ success: false, error: e.message });
+      } finally {
+        client.release();
+      }
+    } catch (e) {
+      res.json({ success: false, error: e.message });
+    }
+  }
+);
+
+
+router.post(
+  "/restore/csv",
+  upload.single("csv"),
+  async (req, res) => {
+    try {
+      const { password, table } = req.body;
+
+      if (password !== ACTION_PASSWORD)
+        return res.json({ success: false, error: "Wrong password" });
+
+      const csv = req.file.buffer.toString("utf8");
+
+      const client = await db.connect();
+
+      try {
+        await client.query("BEGIN");
+
+        await restoreTable(client, table, csv);
+
+        await client.query("COMMIT");
+
+        res.json({ success: true });
+      } catch (e) {
+        await client.query("ROLLBACK");
+        res.json({ success: false, error: e.message });
+      } finally {
+        client.release();
+      }
+    } catch (e) {
+      res.json({ success: false, error: e.message });
+    }
+  }
+);
+
+
+
 module.exports = router;
-
-
-
-
-
 
