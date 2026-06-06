@@ -504,7 +504,232 @@ router.post(
   }
 );
 
+router.post("/fix-sequences", async (req, res) => {
+  try {
 
+    /* =========================
+       FIX ID SEQUENCES
+    ========================= */
+
+    const tables = [
+      "bookings",
+      "expense_ledger",
+      "hotels",
+      "ticketing",
+      "visa",
+      "card",
+      "transport",
+      "purchase_entries",
+      "users",
+      "bank_transactions",
+      "cash_transactions",
+      "customer_payments",
+      "purchase_payments",
+      "supplier_payments",
+      "suppliers",
+      "ziyarat",
+    ];
+
+    for (const table of tables) {
+
+      const seq = await db.query(`
+        SELECT pg_get_serial_sequence(
+          '${table}',
+          'id'
+        ) AS seq
+      `);
+
+      const sequenceName =
+        seq.rows[0]?.seq;
+
+      if (!sequenceName) continue;
+
+      await db.query(`
+        SELECT setval(
+          '${sequenceName}',
+          COALESCE(
+            (
+              SELECT MAX(id)
+              FROM ${table}
+            ),
+            1
+          )
+        );
+      `);
+    }
+
+    /* =========================
+       VISA SEQUENCE
+    ========================= */
+
+    await db.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_class
+          WHERE relname='visa_ref_seq'
+        ) THEN
+          CREATE SEQUENCE visa_ref_seq;
+        END IF;
+      END $$;
+    `);
+
+    await db.query(`
+      SELECT setval(
+        'visa_ref_seq',
+        COALESCE(
+          (
+            SELECT MAX(
+              CAST(
+                REPLACE(
+                  ref_no,
+                  'VISA-',
+                  ''
+                ) AS INTEGER
+              )
+            )
+            FROM visa
+          ),
+          0
+        )
+      );
+    `);
+
+    /* =========================
+       CARD SEQUENCE
+    ========================= */
+
+    await db.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_class
+          WHERE relname='card_ref_seq'
+        ) THEN
+          CREATE SEQUENCE card_ref_seq;
+        END IF;
+      END $$;
+    `);
+
+    await db.query(`
+      SELECT setval(
+        'card_ref_seq',
+        COALESCE(
+          (
+            SELECT MAX(
+              CAST(
+                REPLACE(
+                  ref_no,
+                  'CARD-',
+                  ''
+                ) AS INTEGER
+              )
+            )
+            FROM card
+          ),
+          0
+        )
+      );
+    `);
+
+    /* =========================
+       BOOKING SEQUENCE
+    ========================= */
+
+    await db.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_class
+        WHERE relname='booking_ref_seq'
+      ) THEN
+        CREATE SEQUENCE booking_ref_seq;
+      END IF;
+    END $$;
+    `);
+
+    await db.query(`
+    SELECT setval(
+      'booking_ref_seq',
+      COALESCE(
+        (
+          SELECT MAX(
+            CAST(
+              REPLACE(
+                ref_no,
+                'PKG-',
+                ''
+              ) AS INTEGER
+            )
+          )
+          FROM bookings
+        ),
+        0
+      )
+    );
+    `);
+
+
+    /* =========================
+       SUPPLIER CODE SEQUENCE
+    ========================= */
+
+    await db.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_class
+          WHERE relname='suppliers_code_seq'
+        ) THEN
+          CREATE SEQUENCE suppliers_code_seq;
+        END IF;
+      END $$;
+    `);
+
+    await db.query(`
+      SELECT setval(
+        'suppliers_code_seq',
+        (
+          SELECT COALESCE(
+            MAX(
+              CAST(
+                REPLACE(
+                  supplier_code,
+                  'SUP-',
+                  ''
+                ) AS INTEGER
+              )
+            ),
+            0
+          )
+          FROM suppliers
+        )
+      );
+    `);
+
+    return res.json({
+      success: true,
+      message:
+        "All sequences fixed successfully"
+    });
+
+  } catch (err) {
+
+    console.error(
+      "FIX SEQUENCES ERROR:",
+      err
+    );
+
+    return res.json({
+      success: false,
+      error: err.message
+    });
+  }
+});
 
 module.exports = router;
 
