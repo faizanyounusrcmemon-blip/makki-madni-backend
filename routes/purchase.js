@@ -501,14 +501,17 @@ res.json({
 });
 
 /* =====================================================
-   SAVE PURCHASE (UPSERT) ✅ PROFIT AUTO RECALC
+   SAVE PURCHASE (UPSERT) + PURCHASE STATUS
 ===================================================== */
 router.post("/save", async (req, res) => {
   try {
     const { ref_no, items } = req.body;
 
     if (!ref_no || !Array.isArray(items)) {
-      return res.json({ success: false, error: "Invalid payload" });
+      return res.json({
+        success: false,
+        error: "Invalid payload"
+      });
     }
 
     const unique = [];
@@ -516,26 +519,35 @@ router.post("/save", async (req, res) => {
 
     for (const r of items) {
       if (!r.item) continue;
+
       const key = r.item.trim();
+
       if (seen.has(key)) continue;
+
       seen.add(key);
       unique.push(r);
     }
 
+    // ==========================
+    // SAVE PURCHASE ENTRIES
+    // ==========================
     for (const r of unique) {
+
       const sale_sar = Number(r.sale_sar) || 0;
       const sale_rate = Number(r.sale_rate) || 0;
       const sale_pkr = sale_sar * sale_rate;
 
       const purchase_sar = Number(r.purchase_sar) || 0;
       const purchase_rate = Number(r.purchase_rate) || 0;
+
       const purchase_pkr =
         purchase_sar > 0 && purchase_rate > 0
           ? purchase_sar * purchase_rate
           : 0;
 
       const purchaseComplete =
-        purchase_sar > 0 && purchase_rate > 0;
+        purchase_sar > 0 &&
+        purchase_rate > 0;
 
       const profit = purchaseComplete
         ? sale_pkr - purchase_pkr
@@ -544,27 +556,37 @@ router.post("/save", async (req, res) => {
       await db.query(
         `
         INSERT INTO purchase_entries (
-          ref_no, item,
-          sale_sar, sale_rate, sale_pkr,
-          purchase_sar, purchase_rate, purchase_pkr,
+          ref_no,
+          item,
+          sale_sar,
+          sale_rate,
+          sale_pkr,
+          purchase_sar,
+          purchase_rate,
+          purchase_pkr,
           profit,
           supplier_code,
           supplier_name,
           is_deleted
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false)
-        ON CONFLICT (ref_no, item)
+        VALUES (
+          $1,$2,$3,$4,$5,
+          $6,$7,$8,$9,
+          $10,$11,false
+        )
+
+        ON CONFLICT (ref_no,item)
         DO UPDATE SET
-          sale_sar       = EXCLUDED.sale_sar,
-          sale_rate      = EXCLUDED.sale_rate,
-          sale_pkr       = EXCLUDED.sale_pkr,
-          purchase_sar   = EXCLUDED.purchase_sar,
-          purchase_rate  = EXCLUDED.purchase_rate,
-          purchase_pkr   = EXCLUDED.purchase_pkr,
-          profit         = EXCLUDED.profit,
-          supplier_code  = EXCLUDED.supplier_code,
-          supplier_name  = EXCLUDED.supplier_name,
-          is_deleted     = false
+          sale_sar      = EXCLUDED.sale_sar,
+          sale_rate     = EXCLUDED.sale_rate,
+          sale_pkr      = EXCLUDED.sale_pkr,
+          purchase_sar  = EXCLUDED.purchase_sar,
+          purchase_rate = EXCLUDED.purchase_rate,
+          purchase_pkr  = EXCLUDED.purchase_pkr,
+          profit        = EXCLUDED.profit,
+          supplier_code = EXCLUDED.supplier_code,
+          supplier_name = EXCLUDED.supplier_name,
+          is_deleted    = false
         `,
         [
           ref_no,
@@ -575,18 +597,120 @@ router.post("/save", async (req, res) => {
           purchase_sar,
           purchase_rate,
           purchase_pkr,
-          profit, // ✅ ALWAYS CORRECT
+          profit,
           r.supplier_code || "",
-          r.supplier_name || "",
+          r.supplier_name || ""
         ]
       );
     }
 
-    res.json({ success: true, message: "✅ Purchase saved / updated" });
+    // ==========================
+    // CALCULATE STATUS
+    // ==========================
+    const totalRows = unique.length;
+
+    const completedRows = unique.filter(
+      r =>
+        Number(r.purchase_sar) > 0 &&
+        Number(r.purchase_rate) > 0
+    ).length;
+
+    let purchaseStatus = "PENDING";
+
+    if (completedRows === 0) {
+      purchaseStatus = "PENDING";
+    }
+    else if (completedRows < totalRows) {
+      purchaseStatus = "PARTIAL";
+    }
+    else {
+      purchaseStatus = "COMPLETE";
+    }
+
+    // ==========================
+    // UPDATE SALES TABLE STATUS
+    // ==========================
+    if (ref_no.startsWith("PKG-")) {
+
+      await db.query(
+        `UPDATE bookings
+         SET purchase_status=$1
+         WHERE ref_no=$2`,
+        [purchaseStatus, ref_no]
+      );
+
+    } else if (ref_no.startsWith("HOT-")) {
+
+      await db.query(
+        `UPDATE hotels
+         SET purchase_status=$1
+         WHERE ref_no=$2`,
+        [purchaseStatus, ref_no]
+      );
+
+    } else if (ref_no.startsWith("VISA-")) {
+
+      await db.query(
+        `UPDATE visa
+         SET purchase_status=$1
+         WHERE ref_no=$2`,
+        [purchaseStatus, ref_no]
+      );
+
+    } else if (ref_no.startsWith("CARD-")) {
+
+      await db.query(
+        `UPDATE card
+         SET purchase_status=$1
+         WHERE ref_no=$2`,
+        [purchaseStatus, ref_no]
+      );
+
+    } else if (ref_no.startsWith("TIC-")) {
+
+      await db.query(
+        `UPDATE ticketing
+         SET purchase_status=$1
+         WHERE ref_no=$2`,
+        [purchaseStatus, ref_no]
+      );
+
+    } else if (ref_no.startsWith("TRN-")) {
+
+      await db.query(
+        `UPDATE transport
+         SET purchase_status=$1
+         WHERE ref_no=$2`,
+        [purchaseStatus, ref_no]
+      );
+
+    } else if (ref_no.startsWith("ZIY-")) {
+
+      await db.query(
+        `UPDATE ziyarat
+         SET purchase_status=$1
+         WHERE ref_no=$2`,
+        [purchaseStatus, ref_no]
+      );
+    }
+
+    // ==========================
+    // FINAL RESPONSE
+    // ==========================
+    res.json({
+      success: true,
+      purchase_status: purchaseStatus,
+      message: "✅ Purchase saved / updated"
+    });
 
   } catch (err) {
+
     console.error("PURCHASE UPSERT ERROR:", err);
-    res.json({ success: false, error: err.message });
+
+    res.json({
+      success: false,
+      error: err.message
+    });
   }
 });
 
@@ -662,35 +786,18 @@ router.get("/list", async (req, res) => {
 
 
 /* =====================================================
-   PURCHASE SOFT DELETE WITH PAYMENT CHECK
+   PURCHASE SOFT DELETE WITH STATUS RESET
 ===================================================== */
 router.delete("/delete/:ref_no", async (req, res) => {
   try {
     const { ref_no } = req.params;
-    const { password } = req.body; // 🔐 password frontend se aayega
+    const { password } = req.body;
 
     // 🔒 PASSWORD CHECK
     if (password !== "786") {
       return res.json({
         success: false,
         error: "Invalid password",
-      });
-    }
-
-    // ===============================
-    // CHECK IF PAYMENT EXISTS
-    // ===============================
-    const paymentCheck = await db.query(
-      `SELECT SUM(amount) AS total
-       FROM purchase_payments
-       WHERE ref_no = $1 AND is_deleted = false`,
-      [ref_no]
-    );
-
-    if (paymentCheck.rows[0].total > 0) {
-      return res.json({
-        success: false,
-        error: "❌ Cannot delete purchase. Payment has been received for this ref. Delete payments first."
       });
     }
 
@@ -714,11 +821,84 @@ router.delete("/delete/:ref_no", async (req, res) => {
       });
     }
 
-    res.json({ success: true, message: "✅ Purchase soft deleted successfully" });
+    // ===============================
+    // RESET PURCHASE STATUS
+    // ===============================
+    if (ref_no.startsWith("PKG-")) {
+      await db.query(
+        `UPDATE bookings
+         SET purchase_status='PENDING'
+         WHERE ref_no=$1`,
+        [ref_no]
+      );
+    }
+
+    else if (ref_no.startsWith("HOT-")) {
+      await db.query(
+        `UPDATE hotels
+         SET purchase_status='PENDING'
+         WHERE ref_no=$1`,
+        [ref_no]
+      );
+    }
+
+    else if (ref_no.startsWith("VISA-")) {
+      await db.query(
+        `UPDATE visa
+         SET purchase_status='PENDING'
+         WHERE ref_no=$1`,
+        [ref_no]
+      );
+    }
+
+    else if (ref_no.startsWith("CARD-")) {
+      await db.query(
+        `UPDATE card
+         SET purchase_status='PENDING'
+         WHERE ref_no=$1`,
+        [ref_no]
+      );
+    }
+
+    else if (ref_no.startsWith("TIC-")) {
+      await db.query(
+        `UPDATE ticketing
+         SET purchase_status='PENDING'
+         WHERE ref_no=$1`,
+        [ref_no]
+      );
+    }
+
+    else if (ref_no.startsWith("TRN-")) {
+      await db.query(
+        `UPDATE transport
+         SET purchase_status='PENDING'
+         WHERE ref_no=$1`,
+        [ref_no]
+      );
+    }
+
+    else if (ref_no.startsWith("ZIY-")) {
+      await db.query(
+        `UPDATE ziyarat
+         SET purchase_status='PENDING'
+         WHERE ref_no=$1`,
+        [ref_no]
+      );
+    }
+
+    res.json({
+      success: true,
+      message: "✅ Purchase deleted successfully"
+    });
 
   } catch (err) {
     console.error("PURCHASE DELETE ERROR:", err);
-    res.json({ success: false, error: err.message });
+
+    res.json({
+      success: false,
+      error: err.message
+    });
   }
 });
 
@@ -794,115 +974,103 @@ router.get("/detail/:ref_no", async (req, res) => {
 
 
 /* =====================================================
-   PENDING + PARTIAL PURCHASE (FINAL SAFE – WITH CUSTOMER NAME)
+   PENDING + PARTIAL PURCHASE
 ===================================================== */
 router.get("/pending", async (req, res) => {
   try {
-    // 🔹 refs + customer_name from all sales tables
-    const sales = await db.query(`
-      SELECT
-        ref_no,
-        MAX(customer_name) AS customer_name,
-        MIN(booking_date)  AS created_at
+
+    const result = await db.query(`
+      SELECT *
       FROM (
-        SELECT ref_no, customer_name, booking_date
+
+        SELECT
+          ref_no,
+          customer_name,
+          booking_date AS created_at,
+          purchase_status
         FROM bookings
-        WHERE is_deleted=false
+        WHERE is_deleted = false
+          AND purchase_status IN ('PENDING','PARTIAL')
 
         UNION ALL
 
-        SELECT ref_no, customer_name, booking_date
+        SELECT
+          ref_no,
+          customer_name,
+          booking_date AS created_at,
+          purchase_status
         FROM hotels
-        WHERE is_deleted=false
+        WHERE is_deleted = false
+          AND purchase_status IN ('PENDING','PARTIAL')
 
         UNION ALL
 
-        SELECT ref_no, customer_name, booking_date
+        SELECT
+          ref_no,
+          customer_name,
+          booking_date AS created_at,
+          purchase_status
         FROM visa
-        WHERE is_deleted=false
+        WHERE is_deleted = false
+          AND purchase_status IN ('PENDING','PARTIAL')
 
         UNION ALL
 
-        SELECT ref_no, customer_name, booking_date
+        SELECT
+          ref_no,
+          customer_name,
+          booking_date AS created_at,
+          purchase_status
         FROM card
-        WHERE is_deleted=false
+        WHERE is_deleted = false
+          AND purchase_status IN ('PENDING','PARTIAL')
 
         UNION ALL
 
-        SELECT ref_no, customer_name, booking_date
+        SELECT
+          ref_no,
+          customer_name,
+          booking_date AS created_at,
+          purchase_status
         FROM ticketing
-        WHERE is_deleted=false
+        WHERE is_deleted = false
+          AND purchase_status IN ('PENDING','PARTIAL')
 
         UNION ALL
 
-        SELECT ref_no, customer_name, booking_date
+        SELECT
+          ref_no,
+          customer_name,
+          booking_date AS created_at,
+          purchase_status
         FROM transport
-        WHERE is_deleted=false
+        WHERE is_deleted = false
+          AND purchase_status IN ('PENDING','PARTIAL')
 
         UNION ALL
 
-        SELECT ref_no, customer_name, booking_date
+        SELECT
+          ref_no,
+          customer_name,
+          booking_date AS created_at,
+          purchase_status
         FROM ziyarat
-        WHERE is_deleted=false
-      ) s
-      GROUP BY ref_no
+        WHERE is_deleted = false
+          AND purchase_status IN ('PENDING','PARTIAL')
+
+      ) x
+      ORDER BY created_at DESC
     `);
 
-    // 🔹 purchase completeness check
-    const purchase = await db.query(`
-      SELECT
-        ref_no,
-        BOOL_AND(
-          purchase_sar > 0 AND purchase_rate > 0
-        ) AS completed
-      FROM purchase_entries
-      WHERE is_deleted=false
-      GROUP BY ref_no
-    `);
-
-    // 🔹 map for quick lookup
-    const map = {};
-    purchase.rows.forEach(r => {
-      map[r.ref_no] = r.completed; // true / false
-    });
-
-    const result = [];
-
-    for (const r of sales.rows) {
-      const done = map[r.ref_no];
-
-      // 🔴 Purchase not started
-      if (done === undefined) {
-        result.push({
-          ref_no: r.ref_no,
-          customer_name: r.customer_name || "",
-          created_at: r.created_at,
-          status: "PENDING",
-          note: "Purchase not started"
-        });
-        continue;
-      }
-
-      // 🟡 Purchase incomplete
-      if (done === false) {
-        result.push({
-          ref_no: r.ref_no,
-          customer_name: r.customer_name || "",
-          created_at: r.created_at,
-          status: "PARTIAL",
-          note: "Purchase incomplete"
-        });
-      }
-    }
-
-    return res.json({
+    res.json({
       success: true,
-      rows: result
+      rows: result.rows
     });
 
   } catch (err) {
     console.error("PENDING PURCHASE ERROR:", err);
-    return res.status(500).json({
+
+    res.status(500).json({
       success: false,
       error: err.message
     });
@@ -1031,9 +1199,3 @@ router.get("/detail-deleted/:ref_no", async (req, res) => {
 
 
 module.exports = router;
-
-
-
-
-
-
