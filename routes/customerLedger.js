@@ -2,6 +2,80 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
+ /* ===============================
+   PAYMENT STATUS UPDATE
+================================ */
+async function updatePaymentStatus(ref_no) {
+
+  const sale = await db.query(
+    `
+    SELECT SUM(amount) AS total_sale
+    FROM (
+      SELECT total_pkr AS amount FROM bookings WHERE ref_no=$1 AND is_deleted=false
+      UNION ALL
+      SELECT total_pkr FROM hotels WHERE ref_no=$1 AND is_deleted=false
+      UNION ALL
+      SELECT total_pkr FROM visa WHERE ref_no=$1 AND is_deleted=false
+      UNION ALL
+      SELECT total_pkr FROM card WHERE ref_no=$1 AND is_deleted=false
+      UNION ALL
+      SELECT total_pkr FROM ticketing WHERE ref_no=$1 AND is_deleted=false
+      UNION ALL
+      SELECT total_pkr FROM transport WHERE ref_no=$1 AND is_deleted=false
+      UNION ALL
+      SELECT total_pkr FROM ziyarat WHERE ref_no=$1 AND is_deleted=false
+    ) x
+    `,
+    [ref_no]
+  );
+
+  const totalSale = Number(sale.rows[0]?.total_sale || 0);
+
+  const paid = await db.query(
+    `
+    SELECT COALESCE(SUM(amount),0) AS total_paid
+    FROM customer_payments
+    WHERE ref_no=$1
+    `,
+    [ref_no]
+  );
+
+  const totalPaid = Number(paid.rows[0]?.total_paid || 0);
+
+  let paymentStatus = "PENDING";
+
+  if (totalPaid <= 0) {
+    paymentStatus = "PENDING";
+  } else if (totalPaid < totalSale) {
+    paymentStatus = "PARTIAL";
+  } else {
+    paymentStatus = "COMPLETE";
+  }
+
+  let tableName = null;
+
+  if (ref_no.startsWith("PKG-")) tableName = "bookings";
+  else if (ref_no.startsWith("HOT-")) tableName = "hotels";
+  else if (ref_no.startsWith("VISA-")) tableName = "visa";
+  else if (ref_no.startsWith("CARD-")) tableName = "card";
+  else if (ref_no.startsWith("TIC-")) tableName = "ticketing";
+  else if (ref_no.startsWith("TRN-")) tableName = "transport";
+  else if (ref_no.startsWith("ZIY-")) tableName = "ziyarat";
+
+  if (tableName) {
+    await db.query(
+      `UPDATE ${tableName}
+       SET payment_status=$1
+       WHERE ref_no=$2`,
+      [paymentStatus, ref_no]
+    );
+  }
+
+  return paymentStatus;
+}
+
+
+
 /* ===============================
    CUSTOMER LEDGER (DETAIL)
 ================================ */
@@ -139,90 +213,97 @@ router.get("/:ref_no", async (req, res) => {
 });
 
 /* =====================================================
-   ✅ PENDING / PARTIAL LEDGER LIST (WITH CUSTOMER NAME)
-   ❌ DELETED DATA EXCLUDED
+   PAYMENT PENDING / PARTIAL LIST
 ===================================================== */
 router.get("/pending/list", async (req, res) => {
   try {
-    // 🔹 total sale + customer name
-    const sales = await db.query(`
-      SELECT
-        ref_no,
-        MAX(customer_name) AS customer_name,
-        SUM(total_pkr) AS total_sale
+
+    const result = await db.query(`
+      SELECT *
       FROM (
-        SELECT ref_no, customer_name, total_pkr
+
+        SELECT
+          ref_no,
+          customer_name,
+          payment_status
         FROM bookings
         WHERE is_deleted=false
+          AND payment_status IN ('PENDING','PARTIAL')
 
         UNION ALL
-        SELECT ref_no, customer_name, total_pkr
+
+        SELECT
+          ref_no,
+          customer_name,
+          payment_status
         FROM hotels
         WHERE is_deleted=false
+          AND payment_status IN ('PENDING','PARTIAL')
 
         UNION ALL
-        SELECT ref_no, customer_name, total_pkr
+
+        SELECT
+          ref_no,
+          customer_name,
+          payment_status
         FROM visa
         WHERE is_deleted=false
+          AND payment_status IN ('PENDING','PARTIAL')
 
         UNION ALL
-        SELECT ref_no, customer_name, total_pkr
+
+        SELECT
+          ref_no,
+          customer_name,
+          payment_status
         FROM card
         WHERE is_deleted=false
+          AND payment_status IN ('PENDING','PARTIAL')
 
         UNION ALL
-        SELECT ref_no, customer_name, total_pkr
+
+        SELECT
+          ref_no,
+          customer_name,
+          payment_status
         FROM ticketing
         WHERE is_deleted=false
+          AND payment_status IN ('PENDING','PARTIAL')
 
         UNION ALL
-        SELECT ref_no, customer_name, total_pkr
+
+        SELECT
+          ref_no,
+          customer_name,
+          payment_status
         FROM transport
         WHERE is_deleted=false
+          AND payment_status IN ('PENDING','PARTIAL')
 
         UNION ALL
-        SELECT ref_no, customer_name, total_pkr
+
+        SELECT
+          ref_no,
+          customer_name,
+          payment_status
         FROM ziyarat
         WHERE is_deleted=false
+          AND payment_status IN ('PENDING','PARTIAL')
+
       ) x
-      GROUP BY ref_no
+      ORDER BY ref_no DESC
     `);
 
-    // 🔹 payments
-    const pays = await db.query(`
-      SELECT ref_no, SUM(amount) AS paid
-      FROM customer_payments
-      GROUP BY ref_no
-    `);
-
-    const paidMap = {};
-    pays.rows.forEach((p) => {
-      paidMap[p.ref_no] = Math.round(Number(p.paid || 0));
+    res.json({
+      success: true,
+      rows: result.rows
     });
 
-    const result = [];
-
-    for (const r of sales.rows) {
-      const totalSale = Math.round(Number(r.total_sale || 0));
-      const totalPaid = paidMap[r.ref_no] || 0;
-
-      if (totalSale <= 0) continue;          // 🔒 safety
-      if (totalPaid >= totalSale) continue; // ✅ cleared hide
-
-      result.push({
-        ref_no: r.ref_no,
-        customer_name: r.customer_name || "",
-        status: totalPaid > 0 ? "PARTIAL" : "PENDING",
-        note:
-          totalPaid > 0
-            ? "Payment partially received"
-            : "Payment not received",
-      });
-    }
-
-    res.json({ success: true, rows: result });
   } catch (err) {
-    res.json({ success: false, error: err.message });
+    res.json({
+      success: false,
+      error: err.message
+    });
   }
 });
 
@@ -249,6 +330,8 @@ router.post("/payment", async (req, res) => {
       [ref_no, amount, payment_method, type, payment_date]
     );
 
+    await updatePaymentStatus(ref_no);
+
     res.json({ success: true });
   } catch (err) {
     res.json({ success: false, error: err.message });
@@ -259,16 +342,47 @@ router.post("/payment", async (req, res) => {
    DELETE PAYMENT
 ================================ */
 router.delete("/delete/:id", async (req, res) => {
-  const { password } = req.body;
+  try {
 
-  if (password !== "786")
-    return res.json({ success: false, error: "Wrong password" });
+    const { password } = req.body;
 
-  await db.query(`DELETE FROM customer_payments WHERE id=$1`, [
-    req.params.id,
-  ]);
+    if (password !== "786") {
+      return res.json({
+        success: false,
+        error: "Wrong password"
+      });
+    }
 
-  res.json({ success: true });
+    const p = await db.query(
+      `SELECT ref_no FROM customer_payments WHERE id=$1`,
+      [req.params.id]
+    );
+
+    if (!p.rows.length) {
+      return res.json({
+        success: false,
+        error: "Payment not found"
+      });
+    }
+
+    const ref_no = p.rows[0].ref_no;
+
+    await db.query(
+      `DELETE FROM customer_payments WHERE id=$1`,
+      [req.params.id]
+    );
+
+    await updatePaymentStatus(ref_no);
+
+    res.json({ success: true });
+
+  } catch (err) {
+
+    res.json({
+      success: false,
+      error: err.message
+    });
+  }
 });
 
 module.exports = router;
