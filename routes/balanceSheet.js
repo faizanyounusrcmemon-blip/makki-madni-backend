@@ -8,81 +8,123 @@ const db = require("../db");
 router.get("/", async (req, res) => {
   try {
 
-    /* ========== CUSTOMERS ========== */
+/* ========== CUSTOMERS (ONLY PENDING + PARTIAL) ========== */
 
-    // --- Customer Names ---
-    const customers = await db.query(`
-      SELECT ref_no, MAX(customer_name) AS customer_name FROM (
-        SELECT ref_no, customer_name FROM bookings   WHERE is_deleted = false
-        UNION ALL
-        SELECT ref_no, customer_name FROM ticketing  WHERE is_deleted = false
-        UNION ALL
-        SELECT ref_no, customer_name FROM hotels     WHERE is_deleted = false
-        UNION ALL
-        SELECT ref_no, customer_name FROM card     WHERE is_deleted = false
-        UNION ALL
-        SELECT ref_no, customer_name FROM visa       WHERE is_deleted = false
-        UNION ALL
-        SELECT ref_no, customer_name FROM transport  WHERE is_deleted = false
-        UNION ALL
-        SELECT ref_no, customer_name FROM ziyarat    WHERE is_deleted = false
-      ) x
-      GROUP BY ref_no
-    `);
+const customersData = await db.query(`
+  SELECT *
+  FROM (
 
-    // --- Sales Total ---
-    const sales = await db.query(`
-      SELECT ref_no, SUM(total_pkr) AS sale_total FROM (
-        SELECT ref_no, total_pkr FROM bookings   WHERE is_deleted = false
-        UNION ALL
-        SELECT ref_no, total_pkr FROM ticketing  WHERE is_deleted = false
-        UNION ALL
-        SELECT ref_no, total_pkr FROM hotels     WHERE is_deleted = false
-        UNION ALL
-        SELECT ref_no, total_pkr FROM visa       WHERE is_deleted = false
-        UNION ALL
-        SELECT ref_no, total_pkr FROM  card     WHERE is_deleted = false
-        UNION ALL
-        SELECT ref_no, total_pkr FROM transport  WHERE is_deleted = false
-        UNION ALL
-        SELECT ref_no, total_pkr FROM ziyarat    WHERE is_deleted = false
-      ) x
-      GROUP BY ref_no
-    `);
+    SELECT
+      ref_no,
+      customer_name,
+      payment_status,
+      total_pkr
+    FROM bookings
+    WHERE is_deleted = false
+      AND payment_status IN ('PENDING','PARTIAL')
 
-    // --- Customer Payments ---
-    const payments = await db.query(`
-      SELECT ref_no, COALESCE(SUM(amount),0) AS received
-      FROM customer_payments
-      GROUP BY ref_no
-    `);
+    UNION ALL
 
-    const customerRows = sales.rows.map(s => {
-      const paid =
-        payments.rows.find(p => p.ref_no === s.ref_no)?.received || 0;
+    SELECT
+      ref_no,
+      customer_name,
+      payment_status,
+      total_pkr
+    FROM hotels
+    WHERE is_deleted = false
+      AND payment_status IN ('PENDING','PARTIAL')
 
-      const cname =
-        customers.rows.find(c => c.ref_no === s.ref_no)?.customer_name || "";
+    UNION ALL
 
-      const saleTotal = Number(s.sale_total);
-      const received = Number(paid);
-      const balance = saleTotal - received;
+    SELECT
+      ref_no,
+      customer_name,
+      payment_status,
+      total_pkr
+    FROM visa
+    WHERE is_deleted = false
+      AND payment_status IN ('PENDING','PARTIAL')
 
-      // ✅ CUSTOMER STATUS FIXED
-      let status = "PENDING";
-      if (balance < 0) status = "EXTRA PAID";
-      else if (balance === 0) status = "PAID";
-      else if (received > 0) status = "PARTIAL";
+    UNION ALL
 
-      return {
-        ref_no: s.ref_no,
-        customer_name: cname,
-        sale_total: saleTotal,
-        received,
-        balance,
-        status
-      };
-    });
+    SELECT
+      ref_no,
+      customer_name,
+      payment_status,
+      total_pkr
+    FROM card
+    WHERE is_deleted = false
+      AND payment_status IN ('PENDING','PARTIAL')
+
+    UNION ALL
+
+    SELECT
+      ref_no,
+      customer_name,
+      payment_status,
+      total_pkr
+    FROM ticketing
+    WHERE is_deleted = false
+      AND payment_status IN ('PENDING','PARTIAL')
+
+    UNION ALL
+
+    SELECT
+      ref_no,
+      customer_name,
+      payment_status,
+      total_pkr
+    FROM transport
+    WHERE is_deleted = false
+      AND payment_status IN ('PENDING','PARTIAL')
+
+    UNION ALL
+
+    SELECT
+      ref_no,
+      customer_name,
+      payment_status,
+      total_pkr
+    FROM ziyarat
+    WHERE is_deleted = false
+      AND payment_status IN ('PENDING','PARTIAL')
+
+  ) x
+`);
+
+const payments = await db.query(`
+  SELECT
+    ref_no,
+    COALESCE(SUM(amount),0) AS received
+  FROM customer_payments
+  GROUP BY ref_no
+`);
+
+const customerRows = customersData.rows.map(r => {
+
+  const received = Number(
+    payments.rows.find(p => p.ref_no === r.ref_no)?.received || 0
+  );
+
+  const saleTotal = Number(r.total_pkr || 0);
+
+  const balance = saleTotal - received;
+
+  return {
+    ref_no: r.ref_no,
+    customer_name: r.customer_name,
+    sale_total: saleTotal,
+    received,
+    balance,
+    status: r.payment_status
+  };
+})
+.sort((a, b) => b.balance - a.balance);
+
+
+
+
+
 
 
     /* ========== SUPPLIERS ========== */
