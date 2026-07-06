@@ -6,7 +6,7 @@ require("../db"); // ✅ ROOT db.js (Vercel FIX)
 const app = express();
 
 app.use(cors({
-  origin: ["https://makki-madni-travel-software.vercel.app", "http://localhost:5173"], // Apne frontend ka sahi URL lagayein
+  origin: ["https://makki-madni-travel-software.vercel.app", "http://localhost:5173"], // Apne frontend ka sahi URL lagayein.
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 }));
