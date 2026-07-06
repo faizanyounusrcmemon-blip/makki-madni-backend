@@ -609,7 +609,7 @@ router.post("/delete", async (req, res) => {
 
     await client.query(`
       INSERT INTO archive_logs (snapshot_id, date_from, date_to, bookings_count, hotels_count, visa_count, card_count, ticketing_count, transport_count, ziyarat_count, groups_count, customer_payments_count, purchase_entries_count, supplier_payments_count, deleted_at, backup_file)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,14, NOW(), $15)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, NOW(), $15)
     `, [
       snapshotId, fromDate, toDate,
       Number(bookingsCount.rows[0].count), Number(hotelsCount.rows[0].count), Number(visaCount.rows[0].count), Number(cardCount.rows[0].count), Number(ticketingCount.rows[0].count), Number(transportCount.rows[0].count), Number(groupsCount.rows[0].count), Number(ziyaratCount.rows[0].count),
@@ -1101,63 +1101,57 @@ router.delete("/delete/:id", async (req, res) => {
     `,[fromDate,toDate]);
 
 /* =========================
-       CREATE LOG
-    ========================= */
+   CREATE LOG (FIXED PLACEHOLDERS)
+========================= */
 
-    await client.query(`
+await client.query(`
+  INSERT INTO archive_logs
+  (
+    snapshot_id,
+    date_from,
+    date_to,
 
-      INSERT INTO archive_logs
-      (
-        snapshot_id,
-        date_from,
-        date_to,
+    bookings_count,
+    hotels_count,
+    visa_count,
+    card_count,
+    groups_count,
+    ticketing_count,
+    transport_count,
+    ziyarat_count,
 
-        bookings_count,
-        hotels_count,
-        visa_count,
-        card_count,
-        groups_count,
-        ticketing_count,
-        transport_count,
-        ziyarat_count,
+    customer_payments_count,
+    purchase_entries_count,
+    supplier_payments_count,
 
-        customer_payments_count,
-        purchase_entries_count,
-        supplier_payments_count,
-
-        deleted_at,
-        backup_file
-      )
-
-      VALUES
-      (
-        $1, $2, $3,
-        $4, $5, $6, $7, $8, $9, $10, $11,  -- <-- Yahan $11 fix kar diya hai
-        $12, $13, $14,
-        NOW(),
-        $15
-      )
-
-    `, [
-      snapshotId,
-      fromDate,
-      toDate,
-
-      Number(bookingsCount.rows[0].count),
-      Number(hotelsCount.rows[0].count),
-      Number(visaCount.rows[0].count),
-      Number(cardCount.rows[0].count),
-      Number(groupsCount.rows[0].count),
-      Number(ticketingCount.rows[0].count),
-      Number(transportCount.rows[0].count),
-      Number(ziyaratCount.rows[0].count),
-
-      Number(customerPaymentsCount.rows[0].count),
-      Number(purchaseEntriesCount.rows[0].count),
-      Number(supplierPaymentsCount.rows[0].count),
-
-      row.backup_file || null
-    ]);
+    deleted_at,
+    backup_file
+  )
+  VALUES
+  (
+    $1, $2, $3,
+    $4, $5, $6, $7, $8, $9, $10, $11,
+    $12, $13, $14,
+    NOW(),
+    $15
+  )
+`, [
+  snapshotId,                                  // $1
+  fromDate,                                    // $2
+  toDate,                                      // $3
+  Number(bookingsCount.rows[0].count),         // $4
+  Number(hotelsCount.rows[0].count),           // $5
+  Number(visaCount.rows[0].count),             // $6
+  Number(cardCount.rows[0].count),             // $7
+  Number(groupsCount.rows[0].count),           // $8
+  Number(ticketingCount.rows[0].count),        // $9
+  Number(transportCount.rows[0].count),        // $10
+  Number(ziyaratCount.rows[0].count),          // $11
+  Number(customerPaymentsCount.rows[0].count), // $12
+  Number(purchaseEntriesCount.rows[0].count),  // $13
+  Number(supplierPaymentsCount.rows[0].count),  // $14
+  row.backup_file || null                      // $15
+]);
 
     await client.query("COMMIT");
 
