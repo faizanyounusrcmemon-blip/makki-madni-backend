@@ -7,47 +7,154 @@ const db = require("../db");
 ================================ */
 router.get("/pending", async (req, res) => {
   try {
-    const q = await db.query(`
-      WITH purchase_totals AS (
-        SELECT supplier_code, SUM(purchase_pkr) AS total_purchase
-        FROM purchase_entries
-        WHERE is_deleted = false
-        GROUP BY supplier_code
-      ),
-      payment_totals AS (
-        SELECT s.id AS supplier_id, s.supplier_code,
-               COALESCE(SUM(sp.amount),0) AS total_paid
-        FROM suppliers s
-        LEFT JOIN supplier_payments sp ON sp.supplier_id = s.id
-        WHERE s.is_deleted = false
-        GROUP BY s.id, s.supplier_code
-      )
-      SELECT
-        s.supplier_code,
-        s.supplier_name,
-        COALESCE(pt.total_purchase,0) AS total_purchase,
-        COALESCE(ptot.total_paid,0) AS total_paid,
-        COALESCE(pt.total_purchase,0) - COALESCE(ptot.total_paid,0) AS pending_amount,
-        CASE
-          WHEN (COALESCE(ptot.total_paid,0) - COALESCE(pt.total_purchase,0)) > 0.5
-            THEN 'EXTRA PAID'
-          WHEN abs(COALESCE(pt.total_purchase,0) - COALESCE(ptot.total_paid,0)) <= 0.5
-            THEN 'PAID'
-          WHEN COALESCE(ptot.total_paid,0) > 0
-            THEN 'PARTIAL'
-          ELSE 'PENDING'
-        END AS status
-      FROM suppliers s
-      LEFT JOIN purchase_totals pt ON pt.supplier_code = s.supplier_code
-      LEFT JOIN payment_totals ptot ON ptot.supplier_code = s.supplier_code
-      WHERE s.is_deleted = false
-      ORDER BY pending_amount DESC, s.supplier_name
+
+    let snapshotId = null;
+    let snapshotDate = null;
+
+    const snapshot = await db.query(`
+      SELECT id, date_to
+      FROM archive_snapshots
+      ORDER BY id DESC
+      LIMIT 1
     `);
 
-    res.json({ success: true, pending: q.rows });
+    if (snapshot.rows.length) {
+      snapshotId = snapshot.rows[0].id;
+      snapshotDate = snapshot.rows[0].date_to;
+    }
+
+    const q = await db.query(`
+      WITH purchase_totals AS (
+
+        SELECT
+          supplier_code,
+          COALESCE(SUM(purchase_pkr), 0) AS total_purchase
+
+        FROM purchase_entries
+
+        WHERE is_deleted = false
+        AND (
+          $2::date IS NULL
+          OR created_at::date > $2
+        )
+
+        GROUP BY supplier_code
+
+      ),
+
+      payment_totals AS (
+
+        SELECT
+          s.id AS supplier_id,
+          s.supplier_code,
+          COALESCE(SUM(sp.amount), 0) AS total_paid
+
+        FROM suppliers s
+
+        LEFT JOIN supplier_payments sp
+          ON sp.supplier_id = s.id
+          AND (
+            $2::date IS NULL
+            OR sp.payment_date > $2
+          )
+
+        WHERE s.is_deleted = false
+
+        GROUP BY s.id, s.supplier_code
+
+      ),
+
+snapshot_balances AS (
+
+SELECT
+code,
+balance
+
+FROM archive_balances
+
+WHERE snapshot_id = $1
+AND balance_type='SUPPLIER'
+
+)
+
+      SELECT
+
+        s.supplier_code,
+        s.supplier_name,
+
+        COALESCE(sb.balance, 0) +
+        COALESCE(pt.total_purchase, 0)
+          AS total_purchase,
+
+        COALESCE(ptot.total_paid, 0)
+          AS total_paid,
+
+        (
+          COALESCE(sb.balance, 0)
+          +
+          COALESCE(pt.total_purchase, 0)
+          -
+          COALESCE(ptot.total_paid, 0)
+        ) AS pending_amount,
+
+        CASE
+
+          WHEN (
+            COALESCE(sb.balance, 0)
+            +
+            COALESCE(pt.total_purchase, 0)
+            -
+            COALESCE(ptot.total_paid, 0)
+          ) < -0.5
+          THEN 'EXTRA PAID'
+
+          WHEN ABS(
+            COALESCE(sb.balance, 0)
+            +
+            COALESCE(pt.total_purchase, 0)
+            -
+            COALESCE(ptot.total_paid, 0)
+          ) <= 0.5
+          THEN 'PAID'
+
+          WHEN COALESCE(ptot.total_paid, 0) > 0
+          THEN 'PARTIAL'
+
+          ELSE 'PENDING'
+
+        END AS status
+
+      FROM suppliers s
+
+      LEFT JOIN purchase_totals pt
+        ON pt.supplier_code = s.supplier_code
+
+      LEFT JOIN payment_totals ptot
+        ON ptot.supplier_code = s.supplier_code
+
+      LEFT JOIN snapshot_balances sb
+        ON sb.code = s.supplier_code
+
+      WHERE s.is_deleted = false
+
+      ORDER BY pending_amount DESC, s.supplier_name
+
+    `, [
+      snapshotId,
+      snapshotDate
+    ]);
+
+    res.json({
+      success: true,
+      pending: q.rows
+    });
+
   } catch (e) {
     console.error("Pending suppliers error:", e);
-    res.status(500).json({ success: false, error: e.message });
+    res.status(500).json({
+      success: false,
+      error: e.message
+    });
   }
 });
 
@@ -75,7 +182,10 @@ router.delete("/delete/:entryId", async (req, res) => {
       if (!check.rows.length)
         return res.json({ success: false, error: "Purchase not found" });
 
-      if (check.rows[0].status === "Live Purchase")
+      if(
+ check.rows[0].status &&
+ check.rows[0].status === "Live Purchase"
+)
         return res.json({
           success: false,
           error: "Cannot delete Live Purchase",
@@ -165,6 +275,36 @@ router.get("/:supplierCode", async (req, res) => {
 
     const supplierId = supplier.rows[0].id;
 
+let openingBalance = 0;
+let snapshotDate = null;
+
+const snapshot = await db.query(`
+  SELECT id,date_to
+  FROM archive_snapshots
+  ORDER BY id DESC
+  LIMIT 1
+`);
+
+if(snapshot.rows.length){
+
+  snapshotDate =
+    snapshot.rows[0].date_to;
+
+  const bal = await db.query(`
+    SELECT balance
+    FROM archive_balances
+    WHERE snapshot_id=$1
+    AND balance_type='SUPPLIER'
+    AND code=$2
+  `,[
+    snapshot.rows[0].id,
+    supplierCode
+  ]);
+
+  openingBalance =
+    Number(bal.rows[0]?.balance || 0);
+}
+
     const purchases = await db.query(`
       SELECT 
         pe.id,
@@ -178,9 +318,16 @@ router.get("/:supplierCode", async (req, res) => {
         pe.ref_no
       FROM purchase_entries pe
       JOIN suppliers s ON s.supplier_code = pe.supplier_code
-      WHERE pe.supplier_code=$1
-        AND pe.is_deleted=false
-    `, [supplierCode]);
+WHERE pe.supplier_code=$1
+AND pe.is_deleted=false
+AND (
+  $2::date IS NULL
+  OR pe.created_at::date > $2
+)
+    `, [
+ supplierCode,
+ snapshotDate
+]);
 
     const payments = await db.query(`
       SELECT
@@ -192,30 +339,102 @@ router.get("/:supplierCode", async (req, res) => {
         amount AS credit
       FROM supplier_payments
       WHERE supplier_id=$1
-    `, [supplierId]);
+AND (
+  $2::date IS NULL
+  OR payment_date > $2
+)
+    `, [
+ supplierId,
+ snapshotDate
+]);
 
-    const ledgerAll = [...purchases.rows, ...payments.rows]
-      .sort((a, b) => new Date(a.date) - new Date(b.date));
+const ledgerAll = [];
 
-    let balance = 0;
-    const finalLedger = ledgerAll.map(r => {
-      balance += Number(r.debit || 0) - Number(r.credit || 0);
-      return {
-        ...r,
-        balance,
-        entry_type:
-          r.type.toLowerCase().includes("payment") ||
-          r.type.toLowerCase().includes("adjustment")
-            ? "payment"
-            : "purchase"
-      };
-    });
+if(openingBalance !== 0){
 
-    res.json({ success: true, ledger: finalLedger });
+  ledgerAll.push({
+    id:0,
+    date:snapshotDate,
+    type:"Snapshot Opening",
 
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+    debit:
+      openingBalance > 0 
+      ? openingBalance 
+      : 0,
+
+    credit:
+      openingBalance < 0
+      ? Math.abs(openingBalance)
+      : 0,
+
+    entry_type:"snapshot"
+  });
+
+}
+
+ledgerAll.push(
+  ...purchases.rows,
+  ...payments.rows
+);
+
+ledgerAll.sort((a,b)=>{
+
+ const d =
+ new Date(a.date)-new Date(b.date);
+
+ if(d!==0) return d;
+
+ return Number(a.id)-Number(b.id);
+
+});
+
+let balance = 0;
+
+const finalLedger = ledgerAll.map(r => {
+
+  balance +=
+    Number(r.debit || 0) -
+    Number(r.credit || 0);
+
+  return {
+    ...r,
+    balance,
+
+    entry_type:
+      String(r.type || "")
+      .toLowerCase()
+      .includes("payment") ||
+
+      String(r.type || "")
+      .toLowerCase()
+      .includes("adjustment")
+
+        ? "payment"
+
+        : r.type === "Snapshot Opening"
+
+        ? "snapshot"
+
+        : "purchase"
+  };
+
+});
+
+return res.json({
+  success: true,
+  ledger: finalLedger,
+  snapshotDate,
+  openingBalance
+});
+
+} catch (e) {
+
+  res.status(500).json({
+    success:false,
+    error:e.message
+  });
+
+}
 });
 
 module.exports = router;

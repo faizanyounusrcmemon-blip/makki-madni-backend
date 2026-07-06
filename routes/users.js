@@ -23,22 +23,25 @@ router.post("/create", async (req, res) => {
       INSERT INTO users (
         name, username, password, role, is_active,
 
-        packages, ticketing, transport, ziyarat, visa, hotels, card,
+        packages, ticketing, transport, ziyarat, visa, hotels, card, groups,
         purchase_entry, purchase_list, pending_purchase,
         customer_ledger, supplier_ledger, bank_ledger, expense_ledger, balance_sheet, cash_ledger,
         hotel_voucher, hotel_voucher3in1, transport_voucher,
         all_reports, profit_report, monthly_profit_dashboard, sale_adjustment_report, supplier_purchase_detail_report, supplier_adjustment_only, item_loss_zero_report, sale_change_check_report,
-        create_user, manage_users, supplier, deleted_reports, restore, system_storage
+        create_user, manage_users, supplier, deleted_reports, restore, system_storage,
+        archive_manager, archive_list
       )
       VALUES (
         $1, $2, $3, $4, $5,
 
-        false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false,
         false, false, false,
         false, false, false, false, false, false,
         false, false, false,
         false, false, false, false, false, false, false, false,
-        false, false, false, false, false, false
+        false, false, false, false, false, false,
+        false, false
+
       )
       `,
       [
@@ -189,12 +192,13 @@ router.post("/permissions/update", async (req, res) => {
     const { users } = req.body;
 
     const perms = [
-      "packages","ticketing","transport","ziyarat","visa","hotels","card",
+      "packages","ticketing","transport","ziyarat","visa","hotels","card","groups",
       "purchase_entry","purchase_list","pending_purchase",
       "customer_ledger","supplier_ledger","bank_ledger","expense_ledger","balance_sheet","cash_ledger",
       "hotel_voucher","hotel_voucher3in1","transport_voucher",
       "all_reports","profit_report","monthly_profit_dashboard","sale_adjustment_report","supplier_purchase_detail_report","supplier_adjustment_only","item_loss_zero_report","sale_change_check_report",
-      "create_user","manage_users","supplier","deleted_reports","restore","system_storage"
+      "create_user","manage_users","supplier","deleted_reports","restore","system_storage",
+      "archive_manager","archive_list"
     ];
 
     for (const u of users) {

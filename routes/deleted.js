@@ -30,6 +30,10 @@ router.get("/list", async (req, res) => {
       FROM card WHERE is_deleted = true
 
       UNION ALL
+      SELECT 'groups' AS type, ref_no, customer_name, booking_date, total_pkr
+      FROM groups WHERE is_deleted = true
+
+      UNION ALL
       SELECT 'TRANSPORT' AS type, ref_no, customer_name, booking_date, total_pkr
       FROM transport WHERE is_deleted = true
 
@@ -60,6 +64,7 @@ router.get("/list", async (req, res) => {
       LEFT JOIN ticketing t ON t.ref_no = pe.ref_no
       LEFT JOIN visa v ON v.ref_no = pe.ref_no
       LEFT JOIN card c ON c.ref_no = pe.ref_no
+      LEFT JOIN groups g ON g.ref_no = pe.ref_no
       LEFT JOIN transport tr ON tr.ref_no = pe.ref_no
       LEFT JOIN ziyarat z ON z.ref_no = pe.ref_no
       WHERE pe.is_deleted = true
@@ -102,6 +107,7 @@ router.post("/restore", async (req, res) => {
     else if (type === "TICKETING") table = "ticketing";
     else if (type === "VISA") table = "visa";
     else if (type === "CARD") table = "card";
+    else if (type === "GROUPS") table = "groups";
     else if (type === "TRANSPORT") table = "transport";
     else if (type === "ZIYARAT") table = "ziyarat";
     else if (type === "PURCHASE") table = "purchase_entries";
@@ -153,6 +159,7 @@ router.post("/permanent-delete", async (req, res) => {
     else if (type === "TICKETING") table = "ticketing";
     else if (type === "VISA") table = "visa";
     else if (type === "CARD") table = "card";
+    else if (type === "GROUPS") table = "groups";
     else if (type === "TRANSPORT") table = "transport";
     else if (type === "ZIYARAT") table = "ziyarat";
     else if (type === "PURCHASE") table = "purchase_entries";

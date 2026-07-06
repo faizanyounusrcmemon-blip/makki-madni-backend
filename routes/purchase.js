@@ -250,6 +250,36 @@ if (salesRow.infant_count > 0)
 
     }
 
+    // =======================
+    // GROUPS ONLY REF (GRP-)
+    // =======================
+    else if (ref_no.startsWith("GRP-")) {
+      const q = await db.query(
+        `SELECT * FROM groups WHERE ref_no=$1 AND is_deleted=false`,
+        [ref_no]
+      );
+      if (!q.rows.length) return res.json({ success:false, error:"Groups not found" });
+
+      const v = q.rows[0];
+      (v.rows || []).forEach((r, i) => {
+        const sar = Number(r.total) || Number(r.persons * r.rate) || 0;
+        const rate = Number(v.pkr_rate) || 0;
+
+        const itemName = r.type
+          ? `Groups ${i + 1} - ${r.type} (${r.persons} Person${r.persons > 1 ? "s" : ""})`
+          : `Groups (${r.persons} Person${r.persons > 1 ? "s" : ""})`;
+
+        rows.push({
+          item: itemName,
+          sale_sar: sar,
+          sale_rate: rate,
+          sale_pkr: sar * rate
+        });
+      });
+
+    }
+
+
    
    /* =========================
        TRANSPORT ONLY (TRN-)
@@ -475,6 +505,8 @@ const cust = await db.query(`
   UNION
   SELECT customer_name FROM card WHERE ref_no=$1
   UNION
+  SELECT customer_name FROM groups WHERE ref_no=$1
+  UNION
   SELECT customer_name FROM ticketing WHERE ref_no=$1
   UNION
   SELECT customer_name FROM transport WHERE ref_no=$1
@@ -666,6 +698,16 @@ router.post("/save", async (req, res) => {
         [purchaseStatus, ref_no]
       );
 
+    } else if (ref_no.startsWith("GRP-")) {
+
+      await db.query(
+        `UPDATE groups
+         SET purchase_status=$1
+         WHERE ref_no=$2`,
+        [purchaseStatus, ref_no]
+      );
+
+
     } else if (ref_no.startsWith("TIC-")) {
 
       await db.query(
@@ -762,6 +804,8 @@ router.get("/list", async (req, res) => {
         SELECT ref_no, customer_name FROM visa
         UNION ALL
         SELECT ref_no, customer_name FROM card
+        UNION ALL
+        SELECT ref_no, customer_name FROM groups
         UNION ALL
         SELECT ref_no, customer_name FROM ticketing
         UNION ALL
@@ -860,6 +904,15 @@ router.delete("/delete/:ref_no", async (req, res) => {
       );
     }
 
+    else if (ref_no.startsWith("GRP-")) {
+      await db.query(
+        `UPDATE groups
+         SET purchase_status='PENDING'
+         WHERE ref_no=$1`,
+        [ref_no]
+      );
+    }
+
     else if (ref_no.startsWith("TIC-")) {
       await db.query(
         `UPDATE ticketing
@@ -935,6 +988,8 @@ router.get("/detail/:ref_no", async (req, res) => {
         SELECT ref_no, customer_name FROM visa
         UNION ALL
         SELECT ref_no, customer_name FROM card
+        UNION ALL
+        SELECT ref_no, customer_name FROM groups
         UNION ALL
         SELECT ref_no, customer_name FROM ticketing
         UNION ALL
@@ -1032,6 +1087,17 @@ router.get("/pending", async (req, res) => {
           customer_name,
           booking_date AS created_at,
           purchase_status
+        FROM groups
+        WHERE is_deleted = false
+          AND purchase_status IN ('PENDING','PARTIAL')
+
+        UNION ALL
+
+        SELECT
+          ref_no,
+          customer_name,
+          booking_date AS created_at,
+          purchase_status
         FROM ticketing
         WHERE is_deleted = false
           AND purchase_status IN ('PENDING','PARTIAL')
@@ -1112,6 +1178,8 @@ router.get("/missing-supplier", async (req, res) => {
         SELECT ref_no, customer_name FROM visa WHERE is_deleted=false
         UNION ALL
         SELECT ref_no, customer_name FROM card WHERE is_deleted=false
+        UNION ALL
+        SELECT ref_no, customer_name FROM groups WHERE is_deleted=false
         UNION ALL
         SELECT ref_no, customer_name FROM ticketing WHERE is_deleted=false
         UNION ALL

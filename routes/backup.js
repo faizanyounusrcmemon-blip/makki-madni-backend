@@ -40,16 +40,21 @@ const TABLES = [
   "ticketing",
   "visa",
   "card",
+  "groups",
   "transport",
   "purchase_entries",
   "users",
   "bank_transactions",
   "cash_transactions",
   "customer_payments",
+  "suppliers",
   "purchase_payments",
   "supplier_payments",
-  "suppliers",
   "ziyarat",
+  "archive_snapshots",
+  "archive_balances", 
+  "archive_profit_monthly",
+  "archive_logs",
 ];
 
 /* ================= JSON COLUMNS ================= */
@@ -61,6 +66,7 @@ const JSON_COLUMNS = {
   ziyarat: ["ziyarat"],
   visa: ["rows"],
   card: ["rows"],
+  groups: ["rows"],
 };
 
 /* ================= HELPERS ================= */
@@ -215,6 +221,26 @@ router.post("/restore/full", async (req, res) => {
       if (!entry) continue;
       await restoreTable(client, table, entry.getData().toString("utf8"));
     }
+
+for (const table of TABLES) {
+  console.log("RESTORING:", table);
+
+  const entry = zip.getEntry(`${table}.csv`);
+
+  if (!entry) {
+    console.log("NOT FOUND:", table);
+    continue;
+  }
+
+  await restoreTable(
+    client,
+    table,
+    entry.getData().toString("utf8")
+  );
+
+  console.log("DONE:", table);
+}
+
 
     await client.query("COMMIT");
     res.json({ success: true, progress: 100 });
@@ -518,16 +544,21 @@ router.post("/fix-sequences", async (req, res) => {
       "ticketing",
       "visa",
       "card",
+      "groups",
       "transport",
       "purchase_entries",
       "users",
       "bank_transactions",
       "cash_transactions",
       "customer_payments",
+      "suppliers",
       "purchase_payments",
       "supplier_payments",
-      "suppliers",
       "ziyarat",
+      "archive_snapshots",
+      "archive_balances", 
+      "archive_profit_monthly",
+      "archive_logs",
     ];
 
     for (const table of tables) {
@@ -633,6 +664,45 @@ router.post("/fix-sequences", async (req, res) => {
         )
       );
     `);
+
+    /* =========================
+       GROUP SEQUENCE
+    ========================= */
+
+    await db.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_class
+          WHERE relname='groups_ref_seq'
+        ) THEN
+          CREATE SEQUENCE groups_ref_seq;
+        END IF;
+      END $$;
+    `);
+
+    await db.query(`
+      SELECT setval(
+        'groups_ref_seq',
+        COALESCE(
+          (
+            SELECT MAX(
+              CAST(
+                REPLACE(
+                  ref_no,
+                  'GRP-',
+                  ''
+                ) AS INTEGER
+              )
+            )
+            FROM groups
+          ),
+          0
+        )
+      );
+    `);
+
 
     /* =========================
        BOOKING SEQUENCE
