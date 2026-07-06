@@ -5,7 +5,31 @@ require("../db"); // ✅ ROOT db.js (Vercel FIX)
 
 const app = express();
 
-app.use(cors());
+// ==========================
+// ✅ CORS FIX FOR VERCEL CREDENTIALS
+// ==========================
+const allowedOrigins = [
+  "https://makki-madni-travel-software.vercel.app",
+  "http://localhost:5173", // Local testing ke liye (Vite default)
+  "http://localhost:3000"  // Local testing ke liye (CRA default)
+];
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps, postman, curl)
+      if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error("Blocked by CORS policy - Makki Madni Security"));
+      }
+    },
+    credentials: true, // ✅ Dynamic origins ke sath ye allow karega cookes/credentials headers
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"]
+  })
+);
+
 app.use(express.json());
 
 // ==========================
@@ -35,7 +59,6 @@ app.get("/ping", (req, res) => {
 // ==========================
 // ARCHIVE
 // ==========================
-
 app.use("/archive", require("../routes/archive"));
 app.use("/api/archive", require("../routes/archive"));
 
@@ -105,17 +128,17 @@ app.use("/api/supplier-ledger", require("../routes/supplierLedger"));
 app.use("/monthly-profit-report", require("../routes/monthlyProfitReport"));
 app.use("/api/monthly-profit-report", require("../routes/monthlyProfitReport"));
 
-
-
 // ==========================
 // PURCHASE
 // ==========================
 app.use("/purchase", require("../routes/purchase"));
 app.use("/api/purchase", require("../routes/purchase"));
 
+// ==========================
+// SUPPLIER
+// ==========================
 app.use("/supplier", require("../routes/supplier"));
 app.use("/api/supplier", require("../routes/supplier"));
-
 
 // ==========================
 // AUTH
