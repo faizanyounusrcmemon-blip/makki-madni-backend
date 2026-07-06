@@ -33,6 +33,13 @@ app.get("/ping", (req, res) => {
 });
 
 // ==========================
+// ARCHIVE
+// ==========================
+
+app.use("/archive", require("../routes/archive"));
+app.use("/api/archive", require("../routes/archive"));
+
+// ==========================
 // SALES
 // ==========================
 app.use("/bookings", require("../routes/bookings"));
@@ -49,6 +56,9 @@ app.use("/api/visa", require("../routes/visa"));
 
 app.use("/card", require("../routes/card"));
 app.use("/api/card", require("../routes/card"));
+
+app.use("/groups", require("../routes/groups"));
+app.use("/api/groups", require("../routes/groups"));
 
 app.use("/transport", require("../routes/transport"));
 app.use("/api/transport", require("../routes/transport"));
