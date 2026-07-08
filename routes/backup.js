@@ -203,49 +203,76 @@ async function restoreTable(client, table, csv) {
   }
 }
 
-/* ================= FULL RESTORE ================= */
+/* ================= FULL RESTORE (FIXED DUPLICATE LOOP & ROUTE CRASH) ================= */
 
 router.post("/restore/full", async (req, res) => {
   if (req.body.password !== ACTION_PASSWORD)
     return res.json({ success: false, error: "Wrong password" });
 
-  const zipData = await supabase.storage.from(BUCKET).download(req.body.file);
-  const zip = new AdmZip(Buffer.from(await zipData.data.arrayBuffer()));
-
   const client = await db.connect();
   try {
+    const zipData = await supabase.storage.from(BUCKET).download(req.body.file);
+    const zip = new AdmZip(Buffer.from(await zipData.data.arrayBuffer()));
+
     await client.query("BEGIN");
 
+    // ✅ Clean Single Loop Execution (Duplicate Loop Removed)
     for (const table of TABLES) {
+      console.log("RESTORING TABLE:", table);
       const entry = zip.getEntry(`${table}.csv`);
-      if (!entry) continue;
+      
+      if (!entry) {
+        console.log("NOT FOUND IN ZIP:", table);
+        continue;
+      }
+      
+      // Table data string text conversion and restoration
       await restoreTable(client, table, entry.getData().toString("utf8"));
+      console.log("SUCCESSFULLY RESTORED:", table);
     }
 
-for (const table of TABLES) {
-  console.log("RESTORING:", table);
+    /* ==========================================================================
+       SUPERSAFE SEQUENCE FIXING INSIDE FULL RESTORE (Prevents Route 500 Crash)
+       ========================================================================== */
+    console.log("SYNCHRONIZING SEQUENCES AFTER FULL RESTORE...");
+    
+    // 1. Safe Booking Sequence Sync
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname='booking_ref_seq') THEN
+          CREATE SEQUENCE booking_ref_seq;
+        END IF;
+      END $$;
+    `);
+    await client.query(`
+      SELECT setval('booking_ref_seq', COALESCE((
+        SELECT MAX(CAST(NULLIF(regexp_replace(ref_no, '[^0-9]', '', 'g'), '') AS INTEGER))
+        FROM bookings WHERE ref_no IS NOT NULL AND ref_no <> ''
+      ), 0));
+    `);
 
-  const entry = zip.getEntry(`${table}.csv`);
-
-  if (!entry) {
-    console.log("NOT FOUND:", table);
-    continue;
-  }
-
-  await restoreTable(
-    client,
-    table,
-    entry.getData().toString("utf8")
-  );
-
-  console.log("DONE:", table);
-}
-
+    // 2. Safe Supplier Sequence Sync
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname='suppliers_code_seq') THEN
+          CREATE SEQUENCE suppliers_code_seq;
+        END IF;
+      END $$;
+    `);
+    await client.query(`
+      SELECT setval('suppliers_code_seq', COALESCE((
+        SELECT MAX(CAST(NULLIF(regexp_replace(supplier_code, '[^0-9]', '', 'g'), '') AS INTEGER))
+        FROM suppliers WHERE supplier_code IS NOT NULL AND supplier_code <> ''
+      ), 0));
+    `);
 
     await client.query("COMMIT");
+    console.log("FULL RESTORE COMPLETED SUCCESSFULLY!");
+    
     res.json({ success: true, progress: 100 });
   } catch (e) {
     await client.query("ROLLBACK");
+    console.error("CRITICAL RESTORE ERROR DETECTED:", e.message);
     res.json({ success: false, error: e.message });
   } finally {
     client.release();
