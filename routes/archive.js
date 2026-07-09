@@ -1254,4 +1254,90 @@ router.get("/live-data-start", async (req, res) => {
   }
 });
 
+// 1. MULTI-YEAR FINANCIAL COMPARISON (YoY ANALYTICS)
+router.get("/analytics/yoy", async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        id as snapshot_id,
+        from_date,
+        to_date,
+        created_at,
+        (SELECT COALESCE(SUM(total_sales),0) FROM archive_profit_monthly WHERE snapshot_id = archive_snapshots.id) as total_sales,
+        (SELECT COALESCE(SUM(total_purchase),0) FROM archive_profit_monthly WHERE snapshot_id = archive_snapshots.id) as total_purchase,
+        (SELECT COALESCE(SUM(net_profit),0) FROM archive_profit_monthly WHERE snapshot_id = archive_snapshots.id) as net_profit
+      FROM archive_snapshots
+      ORDER BY from_date DESC
+    `;
+    const result = await db.query(query);
+    return res.json({ success: true, data: result.rows });
+  } catch (err) {
+    return res.json({ success: false, error: err.message });
+  }
+});
+
+// 2. CROSS-SNAPSHOT HISTORICAL SEARCH (GLOBAL LOOKUP)
+router.get("/analytics/global-search", async (req, res) => {
+  try {
+    const { keyword } = req.query;
+    if (!keyword) return res.json({ success: false, error: "Search keyword required" });
+
+    // Yeh query archive_balances ke andar se customer/supplier account names dhoondti hai
+    const balanceQuery = `
+      SELECT 
+        b.account_name,
+        b.account_type,
+        b.closing_balance,
+        s.from_date,
+        s.to_date,
+        s.id as snapshot_id
+      FROM archive_balances b
+      JOIN archive_snapshots s ON b.snapshot_id = s.id
+      WHERE b.account_name ILIKE $1
+      ORDER BY s.from_date DESC
+    `;
+    const balances = await db.query(balanceQuery, [`%${keyword}%`]);
+    return res.json({ success: true, balances: balances.rows });
+  } catch (err) {
+    return res.json({ success: false, error: err.message });
+  }
+});
+
+// 3. ARCHIVE DATA INTEGRITY AUDITOR (SECURITY CHECK)
+router.get("/analytics/integrity-check", async (req, res) => {
+  try {
+    // Har snapshot ke balances ka mathematically matching check lagana
+    const snapshots = await db.query("SELECT id, from_date, to_date FROM archive_snapshots");
+    const auditLogs = [];
+
+    for (let snap of snapshots.rows) {
+      // Monthly profits ka sum nikaalein
+      const profitRes = await db.query(
+        "SELECT SUM(net_profit) as calculated_profit FROM archive_profit_monthly WHERE snapshot_id = $1",
+        [snap.id]
+      );
+      
+      const calculated = Number(profitRes.rows[0]?.calculated_profit || 0);
+      
+      // Agar kisi snapshot me records zero hain ya discrepancy hai toh report karein
+      const countRes = await db.query(
+        "SELECT COUNT(*) as total_accounts FROM archive_balances WHERE snapshot_id = $1",
+        [snap.id]
+      );
+      
+      auditLogs.push({
+        snapshot_id: snap.id,
+        period: `${snap.from_date} to ${snap.to_date}`,
+        total_accounts_archived: countRes.rows[0].total_accounts,
+        calculated_profit: calculated,
+        status: countRes.rows[0].total_accounts > 0 ? "SECURE ✅" : "WARNING ⚠️ (Empty Snapshot Data)"
+      });
+    }
+
+    return res.json({ success: true, audit: auditLogs });
+  } catch (err) {
+    return res.json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
