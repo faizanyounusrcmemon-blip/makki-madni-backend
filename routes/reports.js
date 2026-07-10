@@ -252,8 +252,67 @@ router.get("/supplier-purchase", async (req, res) => {
 });
 
 
+
+
+/* =====================================================
+   🔐 AUTHORITY CONTROL FOR ALLREPORTS TODAY (BILKUL TOP PAR)
+   ⚠️ NOTE: Is block ko file ke BAAQI SAARE routes se UPAR rakhna zaroori hai!
+===================================================== */
+let allowedAccessDays = 7; // Default 7 din ka access
+
+// 1. Get Current Access Days
+router.get("/authority/get-days", async (req, res) => {
+  res.json({ success: true, days: allowedAccessDays });
+});
+
+// 2. Set Access Days Authority
+router.post("/authority/set-days", async (req, res) => {
+  const { password, days } = req.body;
+  
+  if (password !== "786f") {
+    return res.status(403).json({ success: false, message: "Wrong Admin Password 😎" });
+  }
+  
+  allowedAccessDays = Number(days) || 7;
+  res.json({ success: true, message: `Access updated to last ${allowedAccessDays} days successfully!` });
+});
+
+// 3. Get Restricted Data for Employees
+router.get("/today-restricted", async (req, res) => {
+  try {
+    const sql = `
+      SELECT 'Packages' AS type, id, ref_no, customer_name, booking_date, total_pkr, created_at
+      FROM bookings WHERE is_deleted=false AND created_at >= NOW() - (INTERVAL '1 day' * $1)
+      UNION ALL
+      SELECT 'Ticketing', id, ref_no, customer_name, booking_date, total_pkr, created_at
+      FROM ticketing WHERE is_deleted=false AND created_at >= NOW() - (INTERVAL '1 day' * $1)
+      UNION ALL
+      SELECT 'Hotels', id, ref_no, customer_name, booking_date, total_pkr, created_at
+      FROM hotels WHERE is_deleted=false AND created_at >= NOW() - (INTERVAL '1 day' * $1)
+      UNION ALL
+      SELECT 'Visa', id, ref_no, customer_name, booking_date, total_pkr, created_at
+      FROM visa WHERE is_deleted=false AND created_at >= NOW() - (INTERVAL '1 day' * $1)
+      UNION ALL
+      SELECT 'Card', id, ref_no, customer_name, booking_date, total_pkr, created_at
+      FROM card WHERE is_deleted=false AND created_at >= NOW() - (INTERVAL '1 day' * $1)
+      UNION ALL
+      SELECT 'Groups', id, ref_no, customer_name, booking_date, total_pkr, created_at
+      FROM groups WHERE is_deleted=false AND created_at >= NOW() - (INTERVAL '1 day' * $1)
+      UNION ALL
+      SELECT 'Transport', id, ref_no, customer_name, booking_date, total_pkr, created_at
+      FROM transport WHERE is_deleted=false AND created_at >= NOW() - (INTERVAL '1 day' * $1)
+      UNION ALL
+      SELECT 'Ziyarat', id, ref_no, customer_name, booking_date, total_pkr, created_at
+      FROM ziyarat WHERE is_deleted=false AND created_at >= NOW() - (INTERVAL '1 day' * $1)
+      ORDER BY created_at DESC
+    `;
+    const q = await db.query(sql, [allowedAccessDays]);
+    res.json(q.rows);
+  } catch (err) {
+    console.error("RESTRICTED REPORTS ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
 module.exports = router;
-
-
-
-
