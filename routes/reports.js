@@ -258,7 +258,7 @@ router.get("/supplier-purchase", async (req, res) => {
    🔐 AUTHORITY CONTROL FOR ALLREPORTS TODAY (BILKUL TOP PAR)
    ⚠️ NOTE: Is block ko file ke BAAQI SAARE routes se UPAR rakhna zaroori hai!
 ===================================================== */
-let allowedAccessDays = 7; // Default 7 din ka access
+let allowedAccessDays = 2; // Default 2 din ka access
 
 // 1. Get Current Access Days
 router.get("/authority/get-days", async (req, res) => {
@@ -273,7 +273,7 @@ router.post("/authority/set-days", async (req, res) => {
     return res.status(403).json({ success: false, message: "Wrong Admin Password 😎" });
   }
   
-  allowedAccessDays = Number(days) || 7;
+  allowedAccessDays = Number(days) || 2;
   res.json({ success: true, message: `Access updated to last ${allowedAccessDays} days successfully!` });
 });
 
