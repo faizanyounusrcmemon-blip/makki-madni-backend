@@ -62,6 +62,9 @@ app.get("/ping", (req, res) => {
 app.use("/archive", require("../routes/archive"));
 app.use("/api/archive", require("../routes/archive"));
 
+app.use("/system-settings", require("../routes/passwordRoutes"));
+app.use("/api/system-settings", require("../routes/passwordRoutes"));
+
 // ==========================
 // SALES
 // ==========================
