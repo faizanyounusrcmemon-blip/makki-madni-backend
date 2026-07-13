@@ -81,25 +81,57 @@ router.put("/update/:id", async (req, res) => {
 });
 
 /* =====================================
-   DELETE SUPPLIER (PASSWORD)
+   VERIFY EDIT PASSWORD (DATABASE LOOKUP)
+===================================== */
+router.post("/verify-edit-password", async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) return res.json({ success: false, error: "Password required" });
+
+    const passCheck = await db.query(
+      "SELECT password_val FROM public.system_passwords WHERE key_name = 'edit_supplier_pass'"
+    );
+
+    if (passCheck.rows.length === 0 || password !== passCheck.rows[0].password_val) {
+      return res.json({ success: false, error: "Wrong Password 😎" });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+/* =====================================
+   DELETE SUPPLIER (DATABASE LOOKUP)
 ===================================== */
 router.delete("/delete/:id", async (req, res) => {
-  const { password } = req.body;
+  try {
+    const { password } = req.body;
+    if (!password) return res.json({ success: false, error: "Password required" });
 
-  if (password !== "786") {
-    return res.json({ success: false, error: "Invalid password" });
+    // Database lookup for delete password
+    const passCheck = await db.query(
+      "SELECT password_val FROM public.system_passwords WHERE key_name = 'delete_supplier_pass'"
+    );
+
+    if (passCheck.rows.length === 0 || password !== passCheck.rows[0].password_val) {
+      return res.json({ success: false, error: "Wrong Password 😎" });
+    }
+
+    await db.query(
+      `
+      UPDATE suppliers
+      SET is_deleted=true
+      WHERE id=$1
+      `,
+      [req.params.id]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
   }
-
-  await db.query(
-    `
-    UPDATE suppliers
-    SET is_deleted=true
-    WHERE id=$1
-    `,
-    [req.params.id]
-  );
-
-  res.json({ success: true });
 });
 
 module.exports = router;

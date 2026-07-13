@@ -255,31 +255,91 @@ router.get("/supplier-purchase", async (req, res) => {
 
 
 /* =====================================================
-   🔐 AUTHORITY CONTROL FOR ALLREPORTS TODAY (BILKUL TOP PAR)
-   ⚠️ NOTE: Is block ko file ke BAAQI SAARE routes se UPAR rakhna zaroori hai!
+   🔐 AUTHORITY CONTROL FOR ALLREPORTS TODAY (DATABASE PERSISTED)
 ===================================================== */
-let allowedAccessDays = 2; // Default 2 din ka access
 
-// 1. Get Current Access Days
-router.get("/authority/get-days", async (req, res) => {
-  res.json({ success: true, days: allowedAccessDays });
-});
-
-// 2. Set Access Days Authority
-router.post("/authority/set-days", async (req, res) => {
-  const { password, days } = req.body;
-  
-  if (password !== "786f") {
-    return res.status(403).json({ success: false, message: "Wrong Admin Password 😎" });
+// Helper function to get days from DB (Aapki new authority_settings table ke mutabik)
+async function getAccessDaysFromDB() {
+  try {
+    // 🔍 public.authority_settings table se 'allowed_access_days' ka record uthaya
+    const res = await db.query(
+      "SELECT value FROM public.authority_settings WHERE key = 'allowed_access_days'"
+    );
+    
+    if (res.rows.length > 0 && res.rows[0].value !== null) {
+      return parseInt(res.rows[0].value, 10) || 7;
+    }
+    return 7; // Database fallback agar setting row na mile
+  } catch (err) {
+    console.error("Error fetching access days from DB:", err);
+    return 7; // Error code fallback
   }
-  
-  allowedAccessDays = Number(days) || 2;
-  res.json({ success: true, message: `Access updated to last ${allowedAccessDays} days successfully!` });
+}
+
+/* =====================================================
+   🔍 GET CURRENT AUTHORITY DAYS FOR BADGE DISPLAY
+===================================================== */
+router.get("/authority/get-days", async (req, res) => {
+  try {
+    const currentDays = await getAccessDaysFromDB();
+    res.json({ success: true, days: currentDays });
+  } catch (err) {
+    console.error("GET AUTHORITY DAYS ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
-// 3. Get Restricted Data for Employees
+/* =====================================================
+   ✅ UPDATE AUTHORITY DAYS (system_passwords se lookup)
+===================================================== */
+router.post("/authority/update-days", async (req, res) => {
+  const { days, password } = req.body;
+  
+  if (!days || !password) {
+    return res.status(400).json({ success: false, message: "Missing required attributes!" });
+  }
+
+  try {
+    // 🔍 FIX: Seedha public.system_passwords table se 'authority_pass' ka password_val check karega
+    const passCheck = await db.query(
+      "SELECT password_val FROM public.system_passwords WHERE key_name = 'authority_pass'"
+    );
+    
+    if (passCheck.rows.length === 0) {
+      return res.status(444).json({ success: false, message: "Authority password key setup not found in DB!" });
+    }
+
+    const currentAuthorityPass = passCheck.rows[0].password_val;
+
+    // Frontend se aaye password ko DB wale password ('786f') se match karega
+    if (password !== currentAuthorityPass) {
+      return res.status(403).json({ success: false, message: "Invalid Authority Security Password! 😎" });
+    }
+
+    // Naye days ko public.authority_settings table mein save karega
+    await db.query(
+      `INSERT INTO public.authority_settings (key, value) 
+       VALUES ('allowed_access_days', $1) 
+       ON CONFLICT (key) 
+       DO UPDATE SET value = $1`,
+      [parseInt(days, 10)]
+    );
+
+    res.json({ success: true, message: "Authority timeline configuration updated successfully." });
+  } catch (err) {
+    console.error("UPDATE AUTHORITY DAYS ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/* =====================================================
+   🔹 3. GET RESTRICTED DATA FOR EMPLOYEES
+===================================================== */
 router.get("/today-restricted", async (req, res) => {
   try {
+    // New dynamic database values ke sath filtered rows uthayega
+    const currentDays = await getAccessDaysFromDB(); 
+
     const sql = `
       SELECT 'Packages' AS type, id, ref_no, customer_name, booking_date, total_pkr, created_at
       FROM bookings WHERE is_deleted=false AND created_at >= NOW() - (INTERVAL '1 day' * $1)
@@ -306,13 +366,16 @@ router.get("/today-restricted", async (req, res) => {
       FROM ziyarat WHERE is_deleted=false AND created_at >= NOW() - (INTERVAL '1 day' * $1)
       ORDER BY created_at DESC
     `;
-    const q = await db.query(sql, [allowedAccessDays]);
+    
+    const q = await db.query(sql, [currentDays]);
     res.json(q.rows);
   } catch (err) {
     console.error("RESTRICTED REPORTS ERROR:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+
 
 
 module.exports = router;

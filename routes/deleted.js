@@ -93,15 +93,30 @@ router.get("/list", async (req, res) => {
 });
 
 /* =====================================================
-   RESTORE RECORD
-   👉 sirf deleted (is_deleted=true) ko restore kare
+   ♻ RESTORE RECORD ROUTE (DYNAMIC DB PASSWORD)
 ===================================================== */
 router.post("/restore", async (req, res) => {
   try {
-    const { type, ref_no } = req.body;
+    const { type, ref_no, password } = req.body;
+
+    if (!password) {
+      return res.json({ success: false, error: "Password required" });
+    }
+
+    // 🔍 DB Lookup for Restore Password
+    const passCheck = await db.query(
+      "SELECT password_val FROM public.system_passwords WHERE key_name = 'restore_report_pass'"
+    );
+    
+    if (passCheck.rows.length === 0) {
+      return res.json({ success: false, error: "Restore password configuration missing in DB!" });
+    }
+
+    if (password !== passCheck.rows[0].password_val) {
+      return res.json({ success: false, error: "Invalid password" });
+    }
 
     let table = "";
-
     if (type === "PACKAGE") table = "bookings";
     else if (type === "HOTEL") table = "hotels";
     else if (type === "TICKETING") table = "ticketing";
@@ -126,34 +141,41 @@ router.post("/restore", async (req, res) => {
     );
 
     if (!q.rows.length) {
-      return res.json({
-        success: false,
-        error: "No deleted record found to restore"
-      });
+      return res.json({ success: false, error: "Record not found or already active" });
     }
 
-    res.json({ success: true });
-
+    res.json({ success: true, message: "Record restored successfully" });
   } catch (err) {
     console.error("RESTORE ERROR:", err);
-    res.json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
 /* =====================================================
-   PERMANENT DELETE (🔥 SAFE)
-   👉 sirf is_deleted=true wali rows delete hongi
+   🗑 PERMANENT DELETE ROUTE (DYNAMIC DB PASSWORD)
 ===================================================== */
 router.post("/permanent-delete", async (req, res) => {
   try {
     const { type, ref_no, password } = req.body;
 
-    if (password !== "7865") {
+    if (!password) {
+      return res.json({ success: false, error: "Password required" });
+    }
+
+    // 🔍 DB Lookup for Permanent Delete Password
+    const passCheck = await db.query(
+      "SELECT password_val FROM public.system_passwords WHERE key_name = 'perm_delete_report_pass'"
+    );
+    
+    if (passCheck.rows.length === 0) {
+      return res.json({ success: false, error: "Permanent delete password configuration missing in DB!" });
+    }
+
+    if (password !== passCheck.rows[0].password_val) {
       return res.json({ success: false, error: "Invalid password" });
     }
 
     let table = "";
-
     if (type === "PACKAGE") table = "bookings";
     else if (type === "HOTEL") table = "hotels";
     else if (type === "TICKETING") table = "ticketing";
@@ -177,17 +199,13 @@ router.post("/permanent-delete", async (req, res) => {
     );
 
     if (!q.rows.length) {
-      return res.json({
-        success: false,
-        error: "No deleted record found to permanently delete"
-      });
+      return res.json({ success: false, error: "Record not found" });
     }
 
-    res.json({ success: true });
-
+    res.json({ success: true, message: "Record permanently deleted from database" });
   } catch (err) {
     console.error("PERMANENT DELETE ERROR:", err);
-    res.json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

@@ -774,118 +774,49 @@ client.release();
 /* =====================================================
    DELETE CUSTOMER PAYMENT
 ===================================================== */
+router.delete("/delete/:id", async (req, res) => {
+  try {
+    const { password } = req.body;
 
+    // Database se direct check bina kisi hardcoded default ke
+    const passCheck = await db.query("SELECT password_val FROM system_passwords WHERE key_name = $1", ['delete_customer_payment']);
+    
+    if (passCheck.rows.length === 0) {
+      return res.json({ success: false, error: "System password not configured in database!" });
+    }
 
-router.delete("/delete/:id", async(req,res)=>{
+    const dbPassword = passCheck.rows[0].password_val;
 
+    if (password !== dbPassword) {
+      return res.json({ success: false, error: "Wrong password" });
+    }
 
-try{
+    // Aapka baki delete ka transaction logic yahan aayega...
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+      const payRes = await client.query("SELECT ref_no FROM customer_payments WHERE id=$1", [req.params.id]);
+      if (payRes.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.json({ success: false, error: "Payment not found" });
+      }
+      const ref_no = payRes.rows[0].ref_no;
 
+      await client.query("DELETE FROM customer_payments WHERE id=$1", [req.params.id]);
+      await client.query("COMMIT");
 
-const {
-password
-}=req.body;
-
-
-
-if(password!=="786"){
-
-return res.json({
-
-success:false,
-
-error:"Wrong password"
-
+      await updatePaymentStatus(ref_no);
+      res.json({ success: true, message: "Payment deleted" });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
 });
-
-}
-
-
-
-
-const payment = await db.query(
-`
-SELECT ref_no
-FROM customer_payments
-WHERE id=$1
-`,
-[
-req.params.id
-]
-);
-
-
-
-if(!payment.rows.length){
-
-
-return res.json({
-
-success:false,
-
-error:"Payment not found"
-
-});
-
-
-}
-
-
-
-const ref_no =
-payment.rows[0].ref_no;
-
-
-
-
-await db.query(
-`
-DELETE FROM customer_payments
-WHERE id=$1
-`,
-[
-req.params.id
-]
-);
-
-
-
-
-await updatePaymentStatus(ref_no);
-
-
-
-
-res.json({
-
-success:true,
-
-message:"Payment deleted"
-
-});
-
-
-
-}
-catch(err){
-
-
-res.json({
-
-success:false,
-
-error:err.message
-
-});
-
-
-}
-
-
-});
-
-
-
 
 
 module.exports = router;

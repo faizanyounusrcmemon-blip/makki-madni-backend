@@ -154,23 +154,43 @@ router.post("/update", async (req, res) => {
   }
 });
 
-/* ================= DELETE USER ================= */
+/* ================= DELETE USER (DYNAMIC DB PASSWORD) ================= */
 router.delete("/delete/:id", async (req, res) => {
   try {
+    const { id } = req.params;
     const { password } = req.body;
 
-    if (password !== "786")
-      return res.json({ success: false, error: "Wrong password" });
+    if (!password) {
+      return res.json({ success: false, error: "Password required" });
+    }
 
-    await db.query(
-      "DELETE FROM users WHERE id=$1",
-      [req.params.id]
+    // 🔍 DB Lookup for Delete User Password
+    const passCheck = await db.query(
+      "SELECT password_val FROM public.system_passwords WHERE key_name = 'delete_user_pass'"
+    );
+    
+    if (passCheck.rows.length === 0) {
+      return res.json({ success: false, error: "Delete user password configuration missing in DB!" });
+    }
+
+    // 🔒 Password Match Check
+    if (password !== passCheck.rows[0].password_val) {
+      return res.json({ success: false, error: "Invalid security password" });
+    }
+
+    const q = await db.query(
+      "DELETE FROM users WHERE id=$1 RETURNING id",
+      [id]
     );
 
-    res.json({ success: true });
+    if (q.rows.length === 0) {
+      return res.json({ success: false, error: "User not found" });
+    }
 
+    res.json({ success: true, message: "User deleted successfully" });
   } catch (err) {
-    res.json({ success: false, error: err.message });
+    console.error("DELETE USER ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -186,10 +206,28 @@ router.get("/permissions/list", async (req, res) => {
   });
 });
 
-/* ================= PERMISSIONS UPDATE ================= */
+/* ================= PERMISSIONS UPDATE (DYNAMIC DB PASSWORD) ================= */
 router.post("/permissions/update", async (req, res) => {
   try {
-    const { users } = req.body;
+    const { users, password } = req.body; // Frontend se password bhi accept karein
+
+    if (!password) {
+      return res.json({ success: false, error: "Password required" });
+    }
+
+    // 🔍 DB Lookup for Save Permissions Password
+    const passCheck = await db.query(
+      "SELECT password_val FROM public.system_passwords WHERE key_name = 'save_permissions_pass'"
+    );
+    
+    if (passCheck.rows.length === 0) {
+      return res.json({ success: false, error: "Save permissions password configuration missing in DB!" });
+    }
+
+    // 🔒 Password Validation Match Check
+    if (password !== passCheck.rows[0].password_val) {
+      return res.json({ success: false, error: "Invalid security password" });
+    }
 
     const perms = [
       "packages","ticketing","transport","ziyarat","visa","hotels","card","groups",
@@ -202,25 +240,39 @@ router.post("/permissions/update", async (req, res) => {
     ];
 
     for (const u of users) {
-
-      const values = perms.map(
-        p => u[p] === true
-      );
-
-      const setSQL = perms
-        .map((p, i) => `${p}=$${i + 1}`)
-        .join(", ");
-
+      const values = perms.map(p => u[p] === true);
+      const setSQL = perms.map((p, i) => `${p}=$${i + 1}`).join(", ");
+      
       await db.query(
         `UPDATE users SET ${setSQL} WHERE id=$${perms.length + 1}`,
         [...values, u.id]
       );
     }
 
-    res.json({ success: true });
-
+    res.json({ success: true, message: "Permissions updated successfully" });
   } catch (err) {
-    res.json({ success: false, error: err.message });
+    console.error("PERMISSIONS UPDATE ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/* ================= VERIFY EDIT PASSWORD ROUTE ================= */
+router.post("/verify-edit-password", async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) return res.json({ success: false, error: "Password required" });
+
+    const passCheck = await db.query(
+      "SELECT password_val FROM public.system_passwords WHERE key_name = 'edit_user_pass'"
+    );
+
+    if (passCheck.rows.length === 0 || password !== passCheck.rows[0].password_val) {
+      return res.json({ success: false, error: "Invalid security password" });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

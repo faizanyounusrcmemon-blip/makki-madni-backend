@@ -97,11 +97,35 @@ router.get("/get/:ref", async (req, res) => {
 });
 
 // ===================================
-// SOFT DELETE WITH PURCHASE / PAYMENT CHECK (CARD)
+// SOFT DELETE WITH PURCHASE / PAYMENT CHECK & PASSWORD LOOKUP
 // ===================================
 router.delete("/delete/:ref_no", async (req, res) => {
   try {
     const { ref_no } = req.params;
+    // 1. Frontend se password receive karna (req.body se)
+    const { password } = req.body; 
+
+    if (!password) {
+      return res.json({ success: false, message: "❌ Delete password is required!" });
+    }
+
+    // ===============================================
+    // 🔍 LIVE PASSWORD LOOKUP FROM system_passwords TABLE
+    // ===============================================
+    const passCheck = await db.query(
+      "SELECT password_val FROM public.system_passwords WHERE key_name = 'delete_pass'"
+    );
+    
+    if (passCheck.rows.length === 0) {
+      return res.json({ success: false, message: "❌ Delete password config not found in DB!" });
+    }
+
+    const currentDeletePass = passCheck.rows[0].password_val;
+
+    // Validate if password matches
+    if (password !== currentDeletePass) {
+      return res.json({ success: false, message: "❌ Incorrect Destruction Override Password!" });
+    }
 
     // ===============================
     // CHECK IF PURCHASE ENTRIES EXIST
@@ -157,22 +181,6 @@ router.delete("/delete/:ref_no", async (req, res) => {
   } catch (err) {
     console.error("DELETE ERROR:", err);
     res.json({ success: false, error: err.message });
-  }
-});
-
-// DELETED VIEW
-router.get("/get-deleted/:ref", async (req, res) => {
-  try {
-    const q = await db.query(
-      "SELECT * FROM card WHERE ref_no=$1 AND is_deleted=true",
-      [req.params.ref]
-    );
-
-    if (!q.rows.length) return res.json({ success: false });
-
-    res.json({ success: true, row: q.rows[0] });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
   }
 });
 

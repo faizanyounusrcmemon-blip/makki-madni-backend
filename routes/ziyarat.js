@@ -91,17 +91,41 @@ router.get("/get/:ref", async (req, res) => {
 });
 
 // ===================================
-// SOFT DELETE WITH PURCHASE / PAYMENT CHECK (ZIYARAT)
+// SOFT DELETE WITH PURCHASE / PAYMENT CHECK & SYSTEM PASSWORD LOOKUP (ZIYARAT)
 // ===================================
 router.delete("/delete/:ref_no", async (req, res) => {
   try {
     const { ref_no } = req.params;
+    // 🌟 Frontend se bheja gaya password req.body se nikala
+    const { password } = req.body;
+
+    if (!password) {
+      return res.json({ success: false, message: "❌ Delete password is required!" });
+    }
+
+    // ===============================================
+    // 🔍 LIVE PASSWORD LOOKUP FROM system_passwords TABLE
+    // ===============================================
+    const passCheck = await db.query(
+      "SELECT password_val FROM public.system_passwords WHERE key_name = 'delete_pass'"
+    );
+    
+    if (passCheck.rows.length === 0) {
+      return res.json({ success: false, message: "❌ Delete password configuration not found in database!" });
+    }
+
+    const currentDeletePass = passCheck.rows[0].password_val;
+
+    // Validate if entered password matches the database value
+    if (password !== currentDeletePass) {
+      return res.json({ success: false, message: "❌ Incorrect Delete Password! Access Denied 😎" });
+    }
 
     // ===============================
     // CHECK IF PURCHASE ENTRIES EXIST
     // ===============================
     const purchaseCheck = await db.query(
-      `SELECT COALESCE(SUM(purchase_pkr),0) AS total
+      `SELECT SUM(purchase_pkr) AS total
        FROM purchase_entries
        WHERE ref_no = $1 AND is_deleted = false`,
       [ref_no]
@@ -110,8 +134,7 @@ router.delete("/delete/:ref_no", async (req, res) => {
     if (purchaseCheck.rows[0].total > 0) {
       return res.json({
         success: false,
-        message:
-          "❌ Cannot delete. Purchase entries exist for this ref. Delete purchases first.",
+        message: "❌ Cannot delete. Purchase entries exist for this ref. Delete purchases first."
       });
     }
 
@@ -119,22 +142,21 @@ router.delete("/delete/:ref_no", async (req, res) => {
     // CHECK IF PAYMENT RECEIVED
     // ===============================
     const paymentCheck = await db.query(
-      `SELECT COALESCE(SUM(amount),0) AS total
+      `SELECT SUM(amount) AS total
        FROM customer_payments
-       WHERE ref_no = $1 AND type='payment'`,
+       WHERE ref_no = $1 AND type = 'payment'`,
       [ref_no]
     );
 
     if (paymentCheck.rows[0].total > 0) {
       return res.json({
         success: false,
-        message:
-          "❌ Cannot delete. Payment has been received for this ref. Adjust/delete payments first.",
+        message: "❌ Cannot delete. Payment has been received for this ref. Adjust/delete payments first."
       });
     }
 
     // ===============================
-    // SOFT DELETE ZIYARAT
+    // SOFT DELETE
     // ===============================
     const q = await db.query(
       `UPDATE ziyarat
@@ -149,9 +171,10 @@ router.delete("/delete/:ref_no", async (req, res) => {
     }
 
     res.json({ success: true, message: "✅ Soft deleted successfully" });
+
   } catch (err) {
-    console.error("ZIYARAT DELETE ERROR:", err);
-    res.status(500).json({ success: false, error: err.message });
+    console.error("DELETE ERROR:", err);
+    res.json({ success: false, error: err.message });
   }
 });
 
@@ -159,7 +182,7 @@ router.delete("/delete/:ref_no", async (req, res) => {
 router.get("/get-deleted/:ref", async (req, res) => {
   try {
     const q = await db.query(
-      "SELECT * FROM ziarat WHERE ref_no=$1 AND is_deleted=true",
+      "SELECT * FROM ziyarat WHERE ref_no=$1 AND is_deleted=true",
       [req.params.ref]
     );
 

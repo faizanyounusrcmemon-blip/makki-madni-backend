@@ -158,10 +158,9 @@ AND balance_type='SUPPLIER'
   }
 });
 
-/* ================================
-   DELETE LEDGER ENTRY  (FIXED)
-   PASSWORD: 786
-================================ */
+/* ====================================================
+   DELETE LEDGER ENTRY (DYNAMIC SYSTEM PASSWORD LOOKUP)
+==================================================== */
 router.delete("/delete/:entryId", async (req, res) => {
   try {
     const { entryId } = req.params;
@@ -170,8 +169,20 @@ router.delete("/delete/:entryId", async (req, res) => {
     if (!entryId || isNaN(entryId))
       return res.json({ success: false, error: "Invalid entry ID" });
 
-    if (password !== "786")
-      return res.json({ success: false, error: "Invalid password" });
+    // 🔑 Dynamic Database Lookup
+    const passCheck = await db.query(
+      "SELECT password_val FROM system_passwords WHERE key_name = $1", 
+      ['delete_supplier_payment']
+    );
+    
+    if (passCheck.rows.length === 0) {
+      return res.json({ success: false, error: "System password not configured in database!" });
+    }
+
+    const dbPassword = passCheck.rows[0].password_val;
+
+    if (password !== dbPassword)
+      return res.json({ success: false, error: "Wrong password" });
 
     if (type === "purchase") {
       const check = await db.query(
@@ -182,10 +193,7 @@ router.delete("/delete/:entryId", async (req, res) => {
       if (!check.rows.length)
         return res.json({ success: false, error: "Purchase not found" });
 
-      if(
- check.rows[0].status &&
- check.rows[0].status === "Live Purchase"
-)
+      if (check.rows[0].status && check.rows[0].status === "Live Purchase")
         return res.json({
           success: false,
           error: "Cannot delete Live Purchase",

@@ -292,11 +292,35 @@ router.get("/voucher/:ref", async (req, res) => {
 });
 
 // ============================================
-// SOFT DELETE WITH PURCHASE / PAYMENT CHECK (BOOKINGS)
+// SOFT DELETE WITH PURCHASE / PAYMENT CHECK & SYSTEM PASSWORD LOOKUP (BOOKINGS)
 // ============================================
 router.delete("/delete/:ref", async (req, res) => {
   try {
     const { ref } = req.params;
+    // 🌟 Frontend se bheja gaya password req.body se nikala
+    const { password } = req.body;
+
+    if (!password) {
+      return res.json({ success: false, message: "❌ Delete password is required!" });
+    }
+
+    // ===============================================
+    // 🔍 LIVE PASSWORD LOOKUP FROM system_passwords TABLE
+    // ===============================================
+    const passCheck = await db.query(
+      "SELECT password_val FROM public.system_passwords WHERE key_name = 'delete_pass'"
+    );
+    
+    if (passCheck.rows.length === 0) {
+      return res.json({ success: false, message: "❌ Delete password configuration not found in database!" });
+    }
+
+    const currentDeletePass = passCheck.rows[0].password_val;
+
+    // Validate if entered password matches the database value
+    if (password !== currentDeletePass) {
+      return res.json({ success: false, message: "❌ Incorrect Delete Password! Access Denied 😎" });
+    }
 
     // ===============================
     // CHECK IF PURCHASE ENTRIES EXIST
@@ -370,5 +394,6 @@ router.get("/get-deleted/:ref", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 module.exports = router;

@@ -39,11 +39,26 @@ router.post("/add", async (req, res) => {
   }
 });
 
-/* ================= DELETE EXPENSE (786) ================= */
+/* =========================================================
+   DELETE EXPENSE (DYNAMIC DATABASE PASSWORD LOOKUP)
+========================================================= */
 router.delete("/delete/:id", async (req, res) => {
   try {
     const { password } = req.body;
-    if (password !== "786")
+
+    // 🔑 Key name ko 'delete_expense_record' kar diya gaya hai
+    const passCheck = await db.query(
+      "SELECT password_val FROM system_passwords WHERE key_name = $1", 
+      ['delete_expense_record'] 
+    );
+    
+    if (passCheck.rows.length === 0) {
+      return res.json({ success: false, error: "System password not configured in database!" });
+    }
+
+    const dbPassword = passCheck.rows[0].password_val;
+
+    if (password !== dbPassword)
       return res.json({ success: false, error: "Wrong password" });
 
     await db.query(

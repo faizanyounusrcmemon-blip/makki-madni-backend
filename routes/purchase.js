@@ -830,15 +830,33 @@ router.get("/list", async (req, res) => {
 
 
 /* =====================================================
-   PURCHASE SOFT DELETE WITH STATUS RESET
+   ✅ PURCHASE SOFT DELETE WITH DYNAMIC PASSWORD LOOKUP
 ===================================================== */
 router.delete("/delete/:ref_no", async (req, res) => {
   try {
     const { ref_no } = req.params;
     const { password } = req.body;
 
-    // 🔒 PASSWORD CHECK
-    if (password !== "786") {
+    if (!password) {
+      return res.json({ success: false, error: "Password required" });
+    }
+
+    // 🔍 DATABASE LOOKUP: Aapki system_passwords table se column 'password_val' ko lookup karega
+    const passCheck = await db.query(
+      "SELECT password_val FROM public.system_passwords WHERE key_name = 'delete_purchase_pass'"
+    );
+    
+    if (passCheck.rows.length === 0) {
+      return res.json({ 
+        success: false, 
+        error: "Delete purchase password configuration not found in DB!" 
+      });
+    }
+
+    const currentDeletePass = passCheck.rows[0].password_val;
+
+    // 🔒 PASSWORD COMPARISON VALIDATION
+    if (password !== currentDeletePass) {
       return res.json({
         success: false,
         error: "Invalid password",
@@ -869,75 +887,28 @@ router.delete("/delete/:ref_no", async (req, res) => {
     // RESET PURCHASE STATUS
     // ===============================
     if (ref_no.startsWith("PKG-")) {
-      await db.query(
-        `UPDATE bookings
-         SET purchase_status='PENDING'
-         WHERE ref_no=$1`,
-        [ref_no]
-      );
+      await db.query(`UPDATE bookings SET purchase_status='PENDING' WHERE ref_no=$1`, [ref_no]);
     }
-
     else if (ref_no.startsWith("HOT-")) {
-      await db.query(
-        `UPDATE hotels
-         SET purchase_status='PENDING'
-         WHERE ref_no=$1`,
-        [ref_no]
-      );
+      await db.query(`UPDATE hotels SET purchase_status='PENDING' WHERE ref_no=$1`, [ref_no]);
     }
-
     else if (ref_no.startsWith("VISA-")) {
-      await db.query(
-        `UPDATE visa
-         SET purchase_status='PENDING'
-         WHERE ref_no=$1`,
-        [ref_no]
-      );
+      await db.query(`UPDATE visa SET purchase_status='PENDING' WHERE ref_no=$1`, [ref_no]);
     }
-
     else if (ref_no.startsWith("CARD-")) {
-      await db.query(
-        `UPDATE card
-         SET purchase_status='PENDING'
-         WHERE ref_no=$1`,
-        [ref_no]
-      );
+      await db.query(`UPDATE card SET purchase_status='PENDING' WHERE ref_no=$1`, [ref_no]);
     }
-
     else if (ref_no.startsWith("GRP-")) {
-      await db.query(
-        `UPDATE groups
-         SET purchase_status='PENDING'
-         WHERE ref_no=$1`,
-        [ref_no]
-      );
+      await db.query(`UPDATE groups SET purchase_status='PENDING' WHERE ref_no=$1`, [ref_no]);
     }
-
     else if (ref_no.startsWith("TIC-")) {
-      await db.query(
-        `UPDATE ticketing
-         SET purchase_status='PENDING'
-         WHERE ref_no=$1`,
-        [ref_no]
-      );
+      await db.query(`UPDATE ticketing SET purchase_status='PENDING' WHERE ref_no=$1`, [ref_no]);
     }
-
     else if (ref_no.startsWith("TRN-")) {
-      await db.query(
-        `UPDATE transport
-         SET purchase_status='PENDING'
-         WHERE ref_no=$1`,
-        [ref_no]
-      );
+      await db.query(`UPDATE transport SET purchase_status='PENDING' WHERE ref_no=$1`, [ref_no]);
     }
-
     else if (ref_no.startsWith("ZIY-")) {
-      await db.query(
-        `UPDATE ziyarat
-         SET purchase_status='PENDING'
-         WHERE ref_no=$1`,
-        [ref_no]
-      );
+      await db.query(`UPDATE ziyarat SET purchase_status='PENDING' WHERE ref_no=$1`, [ref_no]);
     }
 
     res.json({
@@ -947,7 +918,6 @@ router.delete("/delete/:ref_no", async (req, res) => {
 
   } catch (err) {
     console.error("PURCHASE DELETE ERROR:", err);
-
     res.json({
       success: false,
       error: err.message

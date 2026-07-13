@@ -214,13 +214,25 @@ router.post("/transaction", async (req, res) => {
 });
 
 /* ======================================================
-   DELETE MANUAL BANK ENTRY
+   DELETE MANUAL BANK ENTRY (DYNAMIC DATABASE CHECK)
 ====================================================== */
 router.delete("/transaction/:id", async (req, res) => {
   try {
     const { password } = req.body;
 
-    if (password !== "786") {
+    // 🔑 Database se dynamic look up (Bina kisi hardcoded fallback ke)
+    const passCheck = await pool.query(
+      "SELECT password_val FROM system_passwords WHERE key_name = $1", 
+      ['delete_bank_transaction']
+    );
+    
+    if (passCheck.rows.length === 0) {
+      return res.json({ success: false, error: "System password not configured in database!" });
+    }
+
+    const dbPassword = passCheck.rows[0].password_val;
+
+    if (password !== dbPassword) {
       return res.json({
         success: false,
         error: "Wrong password"
