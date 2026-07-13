@@ -50,6 +50,8 @@ const TABLES = [
   "archive_balances", 
   "archive_profit_monthly",
   "archive_logs",
+  "authority_settings",
+  "system_passwords",
 ];
 
 /* ================= JSON COLUMNS ================= */
@@ -596,6 +598,8 @@ router.post("/fix-sequences", async (req, res) => {
       "archive_balances", 
       "archive_profit_monthly",
       "archive_logs",
+      "authority_settings",
+      "system_passwords",
     ];
 
     for (const table of tables) {

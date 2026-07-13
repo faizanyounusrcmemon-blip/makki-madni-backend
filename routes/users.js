@@ -28,7 +28,7 @@ router.post("/create", async (req, res) => {
         customer_ledger, supplier_ledger, bank_ledger, expense_ledger, balance_sheet, cash_ledger,
         hotel_voucher, hotel_voucher3in1, transport_voucher,
         all_reports, all_reports_today, profit_report, monthly_profit_dashboard, sale_adjustment_report, supplier_purchase_detail_report, supplier_adjustment_only, item_loss_zero_report, sale_change_check_report,
-        create_user, manage_users, supplier, deleted_reports, restore, system_storage,
+        create_user, manage_users, supplier, deleted_reports, restore, system_storage, password_settings,
         archive_manager, archive_list
       )
       VALUES (
@@ -39,7 +39,7 @@ router.post("/create", async (req, res) => {
         false, false, false, false, false, false,
         false, false, false,
         false, false, false, false, false, false, false, false, false,
-        false, false, false, false, false, false,
+        false, false, false, false, false, false, false,
         false, false
 
       )
@@ -235,7 +235,7 @@ router.post("/permissions/update", async (req, res) => {
       "customer_ledger","supplier_ledger","bank_ledger","expense_ledger","balance_sheet","cash_ledger",
       "hotel_voucher","hotel_voucher3in1","transport_voucher",
       "all_reports","all_reports_today","profit_report","monthly_profit_dashboard","sale_adjustment_report","supplier_purchase_detail_report","supplier_adjustment_only","item_loss_zero_report","sale_change_check_report",
-      "create_user","manage_users","supplier","deleted_reports","restore","system_storage",
+      "create_user","manage_users","supplier","deleted_reports","restore","system_storage","password_settings",
       "archive_manager","archive_list"
     ];
 
