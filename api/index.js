@@ -42,7 +42,7 @@ app.get("/favicon.png", (req, res) => res.status(204).end());
 // ROOT
 // ==========================
 app.get("/", (req, res) => {
-  res.json({ ok: true, message: "Makki Madni Backend Live" });
+  res.json({ ok: true, message: "Be Travel Backend Live" });
 });
 
 // ==========================
