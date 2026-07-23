@@ -33,17 +33,16 @@ router.get("/pending", async (req, res) => {
         GROUP BY supplier_code
       ),
 
-      -- ✨ NEW: Live table se opening balance alag sum karenge aur actual payments alag
+      -- Live supplier_payments se Opening Balance aur Actual Payments dono calculate karein
       payment_totals AS (
         SELECT
           s.supplier_code,
           COALESCE(SUM(CASE WHEN sp.type = 'opening_balance' THEN sp.amount ELSE 0 END), 0) AS live_opening_balance,
           COALESCE(SUM(CASE WHEN sp.type != 'opening_balance' THEN sp.amount ELSE 0 END), 0) AS total_paid
         FROM suppliers s
-        LEFT JOIN supplier_payments sp
-          ON sp.supplier_id = s.id
-          AND ($2::date IS NULL OR sp.payment_date > $2)
+        INNER JOIN supplier_payments sp ON sp.supplier_id = s.id
         WHERE s.is_deleted = false
+        AND ($2::date IS NULL OR sp.payment_date > $2)
         GROUP BY s.supplier_code
       ),
 
@@ -66,7 +65,7 @@ router.get("/pending", async (req, res) => {
 
         COALESCE(ptot.total_paid, 0) AS total_paid,
 
-        -- ✨ PENDING AMOUNT FORMULA: Snapshot + Purchase + Live Opening Balance - Total Paid
+        -- PENDING AMOUNT: (Snapshot + Purchase + Opening Balance) - Total Paid
         (
           COALESCE(sb.balance, 0) +
           COALESCE(pt.total_purchase, 0) +
@@ -98,6 +97,13 @@ router.get("/pending", async (req, res) => {
       LEFT JOIN payment_totals ptot ON ptot.supplier_code = s.supplier_code
       LEFT JOIN snapshot_balances sb ON sb.code = s.supplier_code
       WHERE s.is_deleted = false
+        -- ✨ Core Change: Aggregation query missing suppliers filter ko pull karegi
+        AND (
+          COALESCE(sb.balance, 0) != 0 OR
+          COALESCE(pt.total_purchase, 0) != 0 OR
+          COALESCE(ptot.live_opening_balance, 0) != 0 OR
+          COALESCE(ptot.total_paid, 0) != 0
+        )
       ORDER BY pending_amount DESC, s.supplier_name
     `, [snapshotId, snapshotDate]);
 
