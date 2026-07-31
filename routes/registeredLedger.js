@@ -3,17 +3,19 @@ const router = express.Router();
 const db = require("../db");
 
 /* =====================================================
-   1. REGISTERED LEDGER DETAIL (FETCH NAME FROM CUSTOMERS TABLE)
+   1. REGISTERED LEDGER DETAIL (WITH ARCHIVE SNAPSHOT + LIVE DATA)
 ===================================================== */
 router.get("/detail/:customer_code", async (req, res) => {
   try {
     const { customer_code } = req.params;
     const { startDate, endDate } = req.query;
 
-    let balance = 0;
     let customerName = "Registered Customer";
+    let snapshotId = null;
+    let snapshotDate = null;
+    let openingBalance = 0;
 
-    // Directly fetch customer name from customers table using customer_code
+    // Fetch customer name
     const custRes = await db.query(
       `SELECT name FROM customers WHERE customer_code = $1 AND (is_deleted = false OR is_deleted IS NULL)`,
       [customer_code]
@@ -23,39 +25,71 @@ router.get("/detail/:customer_code", async (req, res) => {
       customerName = custRes.rows[0].name;
     }
 
-    // Load Sales using customer_code
+    // 📸 Fetch Latest Archive Snapshot
+    const snapshot = await db.query(`
+      SELECT id, date_to 
+      FROM archive_snapshots 
+      ORDER BY id DESC LIMIT 1
+    `);
+
+    if (snapshot.rows.length > 0) {
+      snapshotId = snapshot.rows[0].id;
+      snapshotDate = snapshot.rows[0].date_to;
+
+      // Snapshot Customer Balance
+      const balRes = await db.query(
+        `SELECT balance FROM archive_balances 
+         WHERE snapshot_id = $1 AND balance_type = 'CUSTOMER' AND code = $2`,
+        [snapshotId, customer_code]
+      );
+      openingBalance = Number(balRes.rows[0]?.balance || 0);
+    }
+
+    // Load Live Sales AFTER Snapshot Date
     const salesRes = await db.query(
       `
-      SELECT ref_no, booking_date, total_pkr, 'Booking' AS src FROM bookings WHERE customer_code=$1 AND is_deleted=false
+      SELECT ref_no, booking_date, total_pkr, 'Booking' AS src FROM bookings WHERE customer_code=$1 AND is_deleted=false AND ($2::date IS NULL OR booking_date > $2)
       UNION ALL
-      SELECT ref_no, booking_date, total_pkr, 'Hotel' AS src FROM hotels WHERE customer_code=$1 AND is_deleted=false
+      SELECT ref_no, booking_date, total_pkr, 'Hotel' AS src FROM hotels WHERE customer_code=$1 AND is_deleted=false AND ($2::date IS NULL OR booking_date > $2)
       UNION ALL
-      SELECT ref_no, booking_date, total_pkr, 'Visa' AS src FROM visa WHERE customer_code=$1 AND is_deleted=false
+      SELECT ref_no, booking_date, total_pkr, 'Visa' AS src FROM visa WHERE customer_code=$1 AND is_deleted=false AND ($2::date IS NULL OR booking_date > $2)
       UNION ALL
-      SELECT ref_no, booking_date, total_pkr, 'Card' AS src FROM card WHERE customer_code=$1 AND is_deleted=false
+      SELECT ref_no, booking_date, total_pkr, 'Card' AS src FROM card WHERE customer_code=$1 AND is_deleted=false AND ($2::date IS NULL OR booking_date > $2)
       UNION ALL
-      SELECT ref_no, booking_date, total_pkr, 'Group' AS src FROM groups WHERE customer_code=$1 AND is_deleted=false
+      SELECT ref_no, booking_date, total_pkr, 'Group' AS src FROM groups WHERE customer_code=$1 AND is_deleted=false AND ($2::date IS NULL OR booking_date > $2)
       UNION ALL
-      SELECT ref_no, booking_date, total_pkr, 'Ticketing' AS src FROM ticketing WHERE customer_code=$1 AND is_deleted=false
+      SELECT ref_no, booking_date, total_pkr, 'Ticketing' AS src FROM ticketing WHERE customer_code=$1 AND is_deleted=false AND ($2::date IS NULL OR booking_date > $2)
       UNION ALL
-      SELECT ref_no, booking_date, total_pkr, 'Transport' AS src FROM transport WHERE customer_code=$1 AND is_deleted=false
+      SELECT ref_no, booking_date, total_pkr, 'Transport' AS src FROM transport WHERE customer_code=$1 AND is_deleted=false AND ($2::date IS NULL OR booking_date > $2)
       UNION ALL
-      SELECT ref_no, booking_date, total_pkr, 'Ziyarat' AS src FROM ziyarat WHERE customer_code=$1 AND is_deleted=false
+      SELECT ref_no, booking_date, total_pkr, 'Ziyarat' AS src FROM ziyarat WHERE customer_code=$1 AND is_deleted=false AND ($2::date IS NULL OR booking_date > $2)
       `,
-      [customer_code]
+      [customer_code, snapshotDate]
     );
 
-    // Load Payments & Opening Balances
+    // Load Live Payments & Opening Balances AFTER Snapshot Date
     const paymentsRes = await db.query(
       `
       SELECT id, payment_date, amount, type, payment_method 
       FROM customer_payments 
-      WHERE ref_no=$1
+      WHERE ref_no = $1 AND ($2::date IS NULL OR payment_date > $2)
       `,
-      [customer_code]
+      [customer_code, snapshotDate]
     );
 
     let allEntries = [];
+
+    // Push Snapshot Balance Row (if exists)
+    if (openingBalance !== 0 || snapshotDate) {
+      allEntries.push({
+        id: "SNAPSHOT",
+        date: snapshotDate,
+        description: `Snapshot Opening Balance`,
+        debit: openingBalance < 0 ? Math.abs(openingBalance) : 0,
+        credit: openingBalance > 0 ? openingBalance : 0,
+        type: "snapshot"
+      });
+    }
 
     // Map Sales: CREDIT (+)
     salesRes.rows.forEach(s => {
@@ -70,7 +104,7 @@ router.get("/detail/:customer_code", async (req, res) => {
       });
     });
 
-    // Map Payments & Opening Balances: DEBIT (-)
+    // Map Payments: DEBIT (-) & Opening Balances: CREDIT (+)
     paymentsRes.rows.forEach(p => {
       const amt = Math.round(Number(p.amount || 0));
       if (p.type === "opening_balance") {
@@ -94,10 +128,12 @@ router.get("/detail/:customer_code", async (req, res) => {
       }
     });
 
-    // Sort entries chronologically by date
+    // Sort entries chronologically
     allEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
+    let balance = 0;
     let filteredRows = [];
+
     allEntries.forEach(entry => {
       balance = balance + entry.credit - entry.debit;
       
@@ -116,6 +152,7 @@ router.get("/detail/:customer_code", async (req, res) => {
     res.json({
       success: true,
       customerName,
+      snapshotDate,
       rows: filteredRows,
       totalRemainingBalance: balance
     });
@@ -127,62 +164,74 @@ router.get("/detail/:customer_code", async (req, res) => {
 });
 
 /* =====================================================
-   2. GET ALL PENDING CUSTOMERS (STRICT CUSTOMER_CODE ONLY FROM CUSTOMERS TABLE)
+   2. PENDING CUSTOMERS LIST (WITH SNAPSHOT CALCULATIONS)
 ===================================================== */
 router.get("/pending/list", async (req, res) => {
   try {
-    // Only fetch valid customer codes strictly from customers master table
+    let snapshotId = null;
+    let snapshotDate = null;
+
+    const snapshot = await db.query(`
+      SELECT id, date_to FROM archive_snapshots ORDER BY id DESC LIMIT 1
+    `);
+
+    if (snapshot.rows.length) {
+      snapshotId = snapshot.rows[0].id;
+      snapshotDate = snapshot.rows[0].date_to;
+    }
+
     const result = await db.query(
       `
       WITH all_credits AS (
-        SELECT customer_code, total_pkr AS amount FROM bookings WHERE customer_code IS NOT NULL AND is_deleted=false
+        SELECT customer_code, total_pkr AS amount FROM bookings WHERE customer_code IS NOT NULL AND is_deleted=false AND ($1::date IS NULL OR booking_date > $1)
         UNION ALL
-        SELECT customer_code, total_pkr FROM hotels WHERE customer_code IS NOT NULL AND is_deleted=false
+        SELECT customer_code, total_pkr FROM hotels WHERE customer_code IS NOT NULL AND is_deleted=false AND ($1::date IS NULL OR booking_date > $1)
         UNION ALL
-        SELECT customer_code, total_pkr FROM visa WHERE customer_code IS NOT NULL AND is_deleted=false
+        SELECT customer_code, total_pkr FROM visa WHERE customer_code IS NOT NULL AND is_deleted=false AND ($1::date IS NULL OR booking_date > $1)
         UNION ALL
-        SELECT customer_code, total_pkr FROM card WHERE customer_code IS NOT NULL AND is_deleted=false
+        SELECT customer_code, total_pkr FROM card WHERE customer_code IS NOT NULL AND is_deleted=false AND ($1::date IS NULL OR booking_date > $1)
         UNION ALL
-        SELECT customer_code, total_pkr FROM groups WHERE customer_code IS NOT NULL AND is_deleted=false
+        SELECT customer_code, total_pkr FROM groups WHERE customer_code IS NOT NULL AND is_deleted=false AND ($1::date IS NULL OR booking_date > $1)
         UNION ALL
-        SELECT customer_code, total_pkr FROM ticketing WHERE customer_code IS NOT NULL AND is_deleted=false
+        SELECT customer_code, total_pkr FROM ticketing WHERE customer_code IS NOT NULL AND is_deleted=false AND ($1::date IS NULL OR booking_date > $1)
         UNION ALL
-        SELECT customer_code, total_pkr FROM transport WHERE customer_code IS NOT NULL AND is_deleted=false
+        SELECT customer_code, total_pkr FROM transport WHERE customer_code IS NOT NULL AND is_deleted=false AND ($1::date IS NULL OR booking_date > $1)
         UNION ALL
-        SELECT customer_code, total_pkr FROM ziyarat WHERE customer_code IS NOT NULL AND is_deleted=false
+        SELECT customer_code, total_pkr FROM ziyarat WHERE customer_code IS NOT NULL AND is_deleted=false AND ($1::date IS NULL OR booking_date > $1)
         UNION ALL
-        SELECT ref_no AS customer_code, amount FROM customer_payments WHERE ref_no IS NOT NULL AND type='opening_balance'
+        SELECT ref_no AS customer_code, amount FROM customer_payments WHERE ref_no IS NOT NULL AND type='opening_balance' AND ($1::date IS NULL OR payment_date > $1)
       ),
       
       all_debits AS (
-        SELECT ref_no AS customer_code, amount FROM customer_payments WHERE ref_no IS NOT NULL AND type != 'opening_balance'
+        SELECT ref_no AS customer_code, amount FROM customer_payments WHERE ref_no IS NOT NULL AND type != 'opening_balance' AND ($1::date IS NULL OR payment_date > $1)
       ),
 
-      aggregated AS (
-        SELECT 
-          c.customer_code,
-          COALESCE(cr.total_credit, 0) AS total_sale_or_op,
-          COALESCE(db.total_debit, 0) AS total_paid
-        FROM (
-          SELECT customer_code FROM all_credits
-          UNION
-          SELECT customer_code FROM all_debits
-        ) c
-        LEFT JOIN (SELECT customer_code, SUM(amount) AS total_credit FROM all_credits GROUP BY customer_code) cr ON c.customer_code = cr.customer_code
-        LEFT JOIN (SELECT customer_code, SUM(amount) AS total_debit FROM all_debits GROUP BY customer_code) db ON c.customer_code = db.customer_code
+      snapshot_balances AS (
+        SELECT code, balance FROM archive_balances WHERE snapshot_id = $2 AND balance_type = 'CUSTOMER'
       )
 
       SELECT 
         cust.customer_code,
         cust.name AS customer_name,
-        (COALESCE(a.total_sale_or_op, 0) - COALESCE(a.total_paid, 0)) AS remaining_balance,
-        COALESCE(a.total_paid, 0) AS total_paid
+        (
+          COALESCE(sb.balance, 0) + 
+          COALESCE(cr.total_credit, 0) - 
+          COALESCE(db.total_debit, 0)
+        ) AS remaining_balance,
+        COALESCE(db.total_debit, 0) AS total_paid
       FROM customers cust
-      JOIN aggregated a ON cust.customer_code = a.customer_code
+      LEFT JOIN snapshot_balances sb ON sb.code = cust.customer_code
+      LEFT JOIN (SELECT customer_code, SUM(amount) AS total_credit FROM all_credits GROUP BY customer_code) cr ON cust.customer_code = cr.customer_code
+      LEFT JOIN (SELECT customer_code, SUM(amount) AS total_debit FROM all_debits GROUP BY customer_code) db ON cust.customer_code = db.customer_code
       WHERE (cust.is_deleted = false OR cust.is_deleted IS NULL)
-        AND (a.total_sale_or_op - a.total_paid) != 0
+        AND (
+          COALESCE(sb.balance, 0) != 0 OR
+          COALESCE(cr.total_credit, 0) != 0 OR
+          COALESCE(db.total_debit, 0) != 0
+        )
       ORDER BY cust.customer_code ASC
-      `
+      `,
+      [snapshotDate, snapshotId]
     );
 
     let pending = result.rows.map(row => {
