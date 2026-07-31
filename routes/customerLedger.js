@@ -10,32 +10,31 @@ async function getSaleAmount(ref_no) {
   const tables = ["bookings", "hotels", "visa", "card", "groups", "ticketing", "transport", "ziyarat"];
   let totalSale = 0;
 
-  // 1. Live booking / sales tables (Filter out entries where customer_code is linked if searching by ref_no)
+  // 1. Live booking / sales tables (Filter out is_deleted = true)
   for (const tbl of tables) {
     try {
       const res = await db.query(
         `SELECT total_pkr AS amount, customer_code FROM ${tbl} 
-         WHERE TRIM(LOWER(ref_no)) = LOWER($1) OR TRIM(LOWER(customer_code)) = LOWER($1)`,
+         WHERE (TRIM(LOWER(ref_no)) = LOWER($1) OR TRIM(LOWER(customer_code)) = LOWER($1))
+         AND (is_deleted IS NOT TRUE)`,
         [cleanRef]
       );
 
       if (res.rows.length > 0) {
         res.rows.forEach(r => {
-          // Agar hum customer_code se search kar rahe hain, to sab add karo
-          // Agar ref_no se search kar rahe hain aur customer_code pehle se set hai, to ignore karo
           totalSale += Number(r.amount || 0);
         });
       }
-    } catch (e) {
-      // Column missing ignore
-    }
+    } catch (e) {}
   }
 
-  // 2. Registered Customers table (Opening balance)
+  // 2. Registered Customers table
   if (totalSale === 0) {
     try {
       const custRes = await db.query(
-        `SELECT opening_balance AS balance FROM customers WHERE TRIM(LOWER(customer_code)) = LOWER($1) OR TRIM(LOWER(code)) = LOWER($1) LIMIT 1`,
+        `SELECT opening_balance AS balance FROM customers 
+         WHERE (TRIM(LOWER(customer_code)) = LOWER($1) OR TRIM(LOWER(code)) = LOWER($1))
+         AND (is_deleted IS NOT TRUE) LIMIT 1`,
         [cleanRef]
       );
       if (custRes.rows.length > 0) {
@@ -48,7 +47,9 @@ async function getSaleAmount(ref_no) {
   if (totalSale === 0) {
     try {
       const arch = await db.query(
-        `SELECT balance FROM archive_balances WHERE TRIM(LOWER(code)) = LOWER($1) LIMIT 1`,
+        `SELECT balance FROM archive_balances 
+         WHERE TRIM(LOWER(code)) = LOWER($1) 
+         AND (is_deleted IS NOT TRUE) LIMIT 1`,
         [cleanRef]
       );
       if (arch.rows.length > 0) {
@@ -68,7 +69,8 @@ async function updatePaymentStatus(ref_no) {
     const totalSale = await getSaleAmount(ref_no);
 
     const paid = await db.query(
-      `SELECT COALESCE(SUM(amount), 0) AS paid FROM customer_payments WHERE TRIM(LOWER(ref_no)) = LOWER($1)`,
+      `SELECT COALESCE(SUM(amount), 0) AS paid FROM customer_payments 
+       WHERE TRIM(LOWER(ref_no)) = LOWER($1) AND (is_deleted IS NOT TRUE)`,
       [(ref_no || "").trim()]
     );
 
@@ -112,36 +114,39 @@ router.get("/pending/list", async (req, res) => {
     const tables = ["bookings", "hotels", "visa", "card", "groups", "ticketing", "transport", "ziyarat"];
     let allPending = [];
 
-    // 1. Live Sales Pending (SIRF WOH JINME customer_code KHALI / NULL HO)
+    // 1. Live Sales Pending (Excluding is_deleted = true)
     for (const tbl of tables) {
       try {
         const result = await db.query(
           `SELECT ref_no, customer_name, payment_status 
            FROM ${tbl} 
            WHERE payment_status IN ('PENDING','PARTIAL') 
-           AND (customer_code IS NULL OR TRIM(customer_code) = '')`
+           AND (customer_code IS NULL OR TRIM(customer_code) = '')
+           AND (is_deleted IS NOT TRUE)`
         );
         allPending.push(...result.rows);
       } catch (e) {}
     }
 
-    // 2. Registered Customers Pending (Inka customer_code se ledger banta hai)
+    // 2. Registered Customers Pending (Excluding is_deleted = true)
     try {
       const custRes = await db.query(
         `SELECT customer_code AS ref_no, name AS customer_name, 'PENDING' AS payment_status 
          FROM customers 
-         WHERE opening_balance > 0`
+         WHERE opening_balance > 0 
+         AND (is_deleted IS NOT TRUE)`
       );
       allPending.push(...custRes.rows);
     } catch (e) {}
 
-    // 3. Archive Balances List Pending (FIXED: Filter out CUST- registered codes)
+    // 3. Archive Balances List Pending (Excluding CUST- and is_deleted = true)
     try {
       const archRes = await db.query(
         `SELECT code AS ref_no, name AS customer_name, 'PENDING' AS payment_status 
          FROM archive_balances 
          WHERE balance_type = 'CUSTOMER' 
-         AND UPPER(code) NOT LIKE 'CUST-%'`
+         AND UPPER(code) NOT LIKE 'CUST-%'
+         AND (is_deleted IS NOT TRUE)`
       );
       allPending.push(...archRes.rows);
     } catch (e) {}
@@ -170,11 +175,13 @@ router.get("/:ref_no", async (req, res) => {
 
     const tables = ["bookings", "hotels", "visa", "card", "groups", "ticketing", "transport", "ziyarat"];
 
-    // 1. Pehle check karein kya yeh ref_no kisi Registered Customer Code ka hissa to nahi
+    // 1. Check if mapped to Registered Customer
     for (const tbl of tables) {
       try {
         const checkRef = await db.query(
-          `SELECT ref_no, customer_code FROM ${tbl} WHERE TRIM(LOWER(ref_no)) = LOWER($1) LIMIT 1`,
+          `SELECT ref_no, customer_code FROM ${tbl} 
+           WHERE TRIM(LOWER(ref_no)) = LOWER($1) 
+           AND (is_deleted IS NOT TRUE) LIMIT 1`,
           [ref_no]
         );
         if (checkRef.rows.length > 0 && checkRef.rows[0].customer_code && checkRef.rows[0].customer_code.trim() !== "") {
@@ -187,11 +194,13 @@ router.get("/:ref_no", async (req, res) => {
       } catch (e) {}
     }
 
-    // 2. Check live sales tables (Walk-in sales jinka customer_code NULL ho ya directly Customer Code search kiya ho)
+    // 2. Check live sales tables
     for (const tbl of tables) {
       try {
         const customer = await db.query(
-          `SELECT customer_name, booking_date FROM ${tbl} WHERE TRIM(LOWER(ref_no)) = LOWER($1) OR TRIM(LOWER(customer_code)) = LOWER($1) LIMIT 1`,
+          `SELECT customer_name, booking_date FROM ${tbl} 
+           WHERE (TRIM(LOWER(ref_no)) = LOWER($1) OR TRIM(LOWER(customer_code)) = LOWER($1)) 
+           AND (is_deleted IS NOT TRUE) LIMIT 1`,
           [ref_no]
         );
         if (customer.rows.length > 0) {
@@ -206,7 +215,9 @@ router.get("/:ref_no", async (req, res) => {
     if (!customerName) {
       try {
         const cust = await db.query(
-          `SELECT name AS customer_name, created_at FROM customers WHERE TRIM(LOWER(customer_code)) = LOWER($1) OR TRIM(LOWER(code)) = LOWER($1) LIMIT 1`,
+          `SELECT name AS customer_name, created_at FROM customers 
+           WHERE (TRIM(LOWER(customer_code)) = LOWER($1) OR TRIM(LOWER(code)) = LOWER($1)) 
+           AND (is_deleted IS NOT TRUE) LIMIT 1`,
           [ref_no]
         );
         if (cust.rows.length > 0) {
@@ -220,7 +231,9 @@ router.get("/:ref_no", async (req, res) => {
     if (!customerName) {
       try {
         const arch = await db.query(
-          `SELECT name AS customer_name FROM archive_balances WHERE TRIM(LOWER(code)) = LOWER($1) LIMIT 1`,
+          `SELECT name AS customer_name FROM archive_balances 
+           WHERE TRIM(LOWER(code)) = LOWER($1) 
+           AND (is_deleted IS NOT TRUE) LIMIT 1`,
           [ref_no]
         );
         if (arch.rows.length > 0) {
@@ -232,7 +245,7 @@ router.get("/:ref_no", async (req, res) => {
     if (!customerName) {
       return res.json({
         success: false,
-        error: `No record found for Customer / Reference No: ${ref_no}`
+        error: `No active record found for Customer / Reference No: ${ref_no}`
       });
     }
 
@@ -263,7 +276,10 @@ router.get("/:ref_no", async (req, res) => {
 
     /* PAYMENTS */
     const payments = await db.query(
-      `SELECT id, payment_date, amount, type, payment_method FROM customer_payments WHERE TRIM(LOWER(ref_no)) = LOWER($1) ORDER BY payment_date, id`,
+      `SELECT id, payment_date, amount, type, payment_method FROM customer_payments 
+       WHERE TRIM(LOWER(ref_no)) = LOWER($1) 
+       AND (is_deleted IS NOT TRUE) 
+       ORDER BY payment_date, id`,
       [ref_no]
     );
 
