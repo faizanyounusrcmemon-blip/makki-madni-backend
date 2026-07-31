@@ -1454,4 +1454,35 @@ router.get("/live-data-start", async (req, res) => {
   }
 });
 
+// POST: Verify Dynamic System Password
+router.post("/verify-password", async (req, res) => {
+  try {
+    const { key_name, password } = req.body;
+
+    if (!key_name || !password) {
+      return res.status(400).json({ success: false, error: "Key and password required" });
+    }
+
+    const result = await db.query(
+      `SELECT password_val FROM public.system_passwords WHERE key_name = $1 LIMIT 1`,
+      [key_name]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: "Password key not configured" });
+    }
+
+    const dbPassword = result.rows[0].password_val;
+
+    if (dbPassword === password) {
+      return res.json({ success: true, message: "Verified successfully" });
+    } else {
+      return res.status(401).json({ success: false, error: "Wrong Password" });
+    }
+  } catch (err) {
+    console.error("Password verification error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
