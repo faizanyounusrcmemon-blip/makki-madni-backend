@@ -320,7 +320,7 @@ router.post("/delete/:id", async (req, res) => {
 });
 
 /* =====================================================
-   5. EDIT PAYMENT
+   EDIT REGISTERED CUSTOMER PAYMENT
 ===================================================== */
 router.put("/edit/:id", async (req, res) => {
   try {
@@ -335,6 +335,11 @@ router.put("/edit/:id", async (req, res) => {
       return res.json({ success: false, error: "Amount must be greater than zero" });
     }
 
+    if (!payment_date) {
+      return res.json({ success: false, error: "Payment date is required" });
+    }
+
+    // Password check
     const passCheck = await db.query(
       "SELECT password_val FROM system_passwords WHERE key_name = $1",
       ["delete_registered_payment"]
@@ -348,10 +353,21 @@ router.put("/edit/:id", async (req, res) => {
       return res.json({ success: false, error: "Invalid Authorization Password!" });
     }
 
-    const check = await db.query("SELECT id FROM customer_payments WHERE id = $1", [id]);
+    // Existing payment details fetch karo taake type/method lost na ho
+    const check = await db.query(
+      "SELECT id, type, payment_method FROM customer_payments WHERE id = $1", 
+      [id]
+    );
+
     if (check.rows.length === 0) {
       return res.json({ success: false, error: "Payment entry not found!" });
     }
+
+    const existingRecord = check.rows[0];
+
+    // Fallbacks set karein agar payload me undefined/empty field ho
+    const updatedType = type || existingRecord.type || "payment";
+    const updatedMethod = payment_method || existingRecord.payment_method || "cash";
 
     await db.query(
       `
@@ -359,12 +375,12 @@ router.put("/edit/:id", async (req, res) => {
       SET amount = $1, payment_date = $2, payment_method = $3, type = $4
       WHERE id = $5
       `,
-      [amount, payment_date, payment_method, type, id]
+      [amount, payment_date, updatedMethod, updatedType, id]
     );
 
     res.json({ success: true, message: "Entry updated successfully" });
   } catch (err) {
-    console.error("Edit error:", err);
+    console.error("Registered Edit error:", err);
     res.json({ success: false, error: err.message });
   }
 });

@@ -196,7 +196,7 @@ router.delete("/delete/:entryId", async (req, res) => {
 });
 
 /* ====================================================
-   EDIT LEDGER ENTRY (SAME SYSTEM PASSWORD LOOKUP)
+   EDIT LEDGER ENTRY (FIXED & SAFE UPDATES)
 ==================================================== */
 router.put("/edit/:entryId", async (req, res) => {
   try {
@@ -207,11 +207,15 @@ router.put("/edit/:entryId", async (req, res) => {
       return res.json({ success: false, error: "Invalid entry ID" });
     }
 
-    if (!amount || amount <= 0) {
-      return res.json({ success: false, error: "Invalid amount" });
+    if (!amount || Number(amount) <= 0) {
+      return res.json({ success: false, error: "Amount must be greater than zero" });
     }
 
-    // 🔑 Same Dynamic Database Password Lookup
+    if (!payment_date) {
+      return res.json({ success: false, error: "Payment date is required" });
+    }
+
+    // Dynamic Database Password Lookup
     const passCheck = await db.query(
       "SELECT password_val FROM system_passwords WHERE key_name = $1", 
       ['delete_supplier_payment']
@@ -227,9 +231,9 @@ router.put("/edit/:entryId", async (req, res) => {
       return res.json({ success: false, error: "Wrong password" });
     }
 
-    // Check entry exists
+    // Check entry exists and fetch current state
     const check = await db.query(
-      "SELECT id FROM supplier_payments WHERE id = $1",
+      "SELECT id, type, payment_method FROM supplier_payments WHERE id = $1",
       [entryId]
     );
 
@@ -237,12 +241,18 @@ router.put("/edit/:entryId", async (req, res) => {
       return res.json({ success: false, error: "Payment entry not found" });
     }
 
-    // Update entry details
+    const existingRecord = check.rows[0];
+
+    // Preserve existing type/method if not provided in payload
+    const updatedType = type || existingRecord.type || "payment";
+    const updatedMethod = payment_method || existingRecord.payment_method || "cash";
+
+    // Update entry details safely
     await db.query(`
       UPDATE supplier_payments 
       SET amount = $1, payment_date = $2, payment_method = $3, type = $4
       WHERE id = $5
-    `, [amount, payment_date, payment_method, type, entryId]);
+    `, [amount, payment_date, updatedMethod, updatedType, entryId]);
 
     res.json({ success: true, message: "Entry updated successfully" });
 
