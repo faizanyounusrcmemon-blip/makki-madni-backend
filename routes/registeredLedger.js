@@ -128,34 +128,41 @@ router.get("/detail/:customer_code", async (req, res) => {
       }
     });
 
-    // Sort entries chronologically
-    allEntries.sort((a, b) => new Date(b.date) - new Date(a.date));
+/* =====================================================
+   1. REGISTERED LEDGER DETAIL (FIXED RUNNING BALANCE)
+===================================================== */
 
-    let balance = 0;
-    let filteredRows = [];
+// 1. Pehle Oldest to Newest (Ascending) sort karein taake Balance sahi calculate ho
+allEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    allEntries.forEach(entry => {
-      balance = balance + entry.credit - entry.debit;
-      
-      let matchDate = true;
-      if (startDate && new Date(entry.date) < new Date(startDate)) matchDate = false;
-      if (endDate && new Date(entry.date) > new Date(endDate)) matchDate = false;
+let runningBalance = 0;
+let calculatedRows = [];
 
-      if (matchDate) {
-        filteredRows.push({
-          ...entry,
-          balance: balance
-        });
-      }
+// 2. Chronological order mein running balance calculate karein
+allEntries.forEach((entry) => {
+  runningBalance = runningBalance + entry.credit - entry.debit;
+
+  let matchDate = true;
+  if (startDate && new Date(entry.date) < new Date(startDate)) matchDate = false;
+  if (endDate && new Date(entry.date) > new Date(endDate)) matchDate = false;
+
+  if (matchDate) {
+    calculatedRows.push({
+      ...entry,
+      balance: runningBalance
     });
+  }
+});
 
-    res.json({
-      success: true,
-      customerName,
-      snapshotDate,
-      rows: filteredRows,
-      totalRemainingBalance: balance
-    });
+// 3. UI par dikhane ke liye Newest First (Descending) sort kar lein
+calculatedRows.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+res.json({
+  success: true,
+  customerName,
+  rows: calculatedRows,
+  totalRemainingBalance: runningBalance
+});
 
   } catch (err) {
     console.error(err);
