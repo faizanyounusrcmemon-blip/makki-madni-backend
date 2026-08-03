@@ -129,7 +129,7 @@ router.get("/detail/:customer_code", async (req, res) => {
     });
 
     // Sort entries chronologically
-    allEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
+    allEntries.sort((a, b) => new Date(b.date) - new Date(a.date));
 
     let balance = 0;
     let filteredRows = [];
