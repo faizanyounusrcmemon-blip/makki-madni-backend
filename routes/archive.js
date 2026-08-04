@@ -873,7 +873,7 @@ router.get("/download-stream", async (req, res) => {
 });
 
 /* =========================================================================
-   VERCEL COMPATIBLE RESTORE ROUTE (WITH SPECIFIC LOG CLEARING)
+   VERCEL COMPATIBLE RESTORE ROUTE (FIXED DUP PROFIT & LOGS)
 ========================================================================= */
 router.post("/restore", upload.single("backup_file"), async (req, res) => {
   const client = await db.connect();
@@ -884,11 +884,30 @@ router.post("/restore", upload.single("backup_file"), async (req, res) => {
 
     await client.query("BEGIN");
 
-    // ZIP archive ko memory buffer se read karna
     const directory = await unzipper.Open.buffer(req.file.buffer);
-    
-    let restoredSnapshotIds = []; // Restored snapshots ki IDs track karne ke liye
+    let restoredSnapshotIds = [];
 
+    // 1. First Pass: Get Snapshot IDs to clean existing child archives before re-inserting
+    const snapshotFile = directory.files.find(f => f.path.endsWith("archive_snapshots.csv"));
+    if (snapshotFile) {
+      const snapContent = (await snapshotFile.buffer()).toString("utf-8");
+      const snapRows = parse(snapContent, { columns: true, skip_empty_lines: true });
+      restoredSnapshotIds = snapRows.map(r => r.id).filter(Boolean);
+    }
+
+    // ⭐ FIX FOR DUPLICATE MONTHLY PROFIT: Delete existing archive profits for restoring snapshots
+    if (restoredSnapshotIds.length > 0) {
+      await client.query(
+        `DELETE FROM archive_profit_monthly WHERE snapshot_id = ANY($1::int[])`,
+        [restoredSnapshotIds]
+      );
+      await client.query(
+        `DELETE FROM archive_balances WHERE snapshot_id = ANY($1::int[])`,
+        [restoredSnapshotIds]
+      );
+    }
+
+    // 2. Second Pass: Actual Restoration Loop
     for (const file of directory.files) {
       if (!file.path.endsWith(".csv")) continue;
 
@@ -896,43 +915,32 @@ router.post("/restore", upload.single("backup_file"), async (req, res) => {
       const contentBuffer = await file.buffer();
       const contentString = contentBuffer.toString("utf-8");
 
-      // CSV data ko parse karke rows nikalna
       const rows = parse(contentString, { columns: true, skip_empty_lines: true });
       if (rows.length === 0) continue;
 
       console.log(`Restoring ${rows.length} rows into table: ${tableName}`);
 
-      // Agar archive_snapshots restore ho rahi hai toh uski snapshot ID save kar lo
-      if (tableName === "archive_snapshots") {
-        restoredSnapshotIds = rows.map(r => r.id).filter(Boolean);
-      }
-
-      let hasIdColumn = false; 
+      let hasIdColumn = false;
 
       for (const row of rows) {
         const columns = Object.keys(row);
         if (columns.includes("id")) {
           hasIdColumn = true;
         }
-        
-        // ⭐ VALUE FIXING ENGINE (For Millisecond Dates, Booleans & Nulls)
+
         const sanitizedValues = columns.map(col => {
           let val = row[col];
-          
           if (val === "" || val === undefined || val === null) return null;
-
           if (typeof val === "string") {
             if (val.toLowerCase() === "true") return true;
             if (val.toLowerCase() === "false") return false;
           }
-
           if (typeof val === "string" && /^\d{12,13}$/.test(val.trim())) {
             const ms = Number(val.trim());
-            if (!isNaN(ms) && ms > 946684800000) { 
-              return new Date(ms).toISOString(); 
+            if (!isNaN(ms) && ms > 946684800000) {
+              return new Date(ms).toISOString();
             }
           }
-          
           return val;
         });
 
@@ -940,7 +948,8 @@ router.post("/restore", upload.single("backup_file"), async (req, res) => {
         const placeholders = columns.map((_, i) => `$${i + 1}`).join(", ");
 
         let insertQuery = `INSERT INTO ${tableName} (${colNames}) VALUES (${placeholders})`;
-        
+
+        // ⭐ Conflict handling per table structure
         if (columns.includes("id")) {
           insertQuery += ` ON CONFLICT (id) DO NOTHING`;
         } else if (columns.includes("ref_no") && tableName !== "customer_payments") {
@@ -950,16 +959,14 @@ router.post("/restore", upload.single("backup_file"), async (req, res) => {
         await client.query(insertQuery, sanitizedValues);
       }
 
-      // ⭐ SCOPE FIX: Postgres id sequence fix
       if (hasIdColumn) {
         await client.query(`
           SELECT setval(pg_get_serial_sequence('${tableName}', 'id'), COALESCE(MAX(id), 1)) FROM ${tableName}
-        `).catch(() => {/* sequence nahi hai ya non-serial id hai toh ignore */});
+        `).catch(() => {});
       }
     }
 
-    // ⭐ SPECIFIC LOG DELETE FIX:
-    // Poori table delete karne ki bajaye, sirf restored ZIP me jo snapshot_id hai uska log delete hoga!
+    // Specific log clean up
     if (restoredSnapshotIds.length > 0) {
       await client.query(
         `DELETE FROM archive_logs WHERE snapshot_id = ANY($1::int[])`,
@@ -968,7 +975,7 @@ router.post("/restore", upload.single("backup_file"), async (req, res) => {
     }
 
     await client.query("COMMIT");
-    res.json({ success: true, message: "Database restored successfully with complete data-type auto-correction!" });
+    res.json({ success: true, message: "Database restored successfully with duplicate profit prevention!" });
 
   } catch (err) {
     await client.query("ROLLBACK");
