@@ -97,32 +97,22 @@ async function updatePaymentStatus(ref_no) {
 }
 
 /* =====================================================
-   PAYMENT PENDING / PARTIAL LIST (INSTANT & EXCLUDES REG CUSTOMERS)
+   PAYMENT PENDING / PARTIAL LIST (SUPER FAST & OPTIMIZED)
 ===================================================== */
 router.get("/pending/list", async (req, res) => {
   try {
     const pendingMap = new Map();
-
-    // 1. Fetch Payments Summary in One Single Query
-    const payRes = await db.query(
-      `SELECT LOWER(TRIM(ref_no)) as ref_key, COALESCE(SUM(amount), 0) as paid 
-       FROM customer_payments 
-       WHERE (is_deleted IS NOT TRUE OR is_deleted IS NULL)
-       GROUP BY LOWER(TRIM(ref_no))`
-    );
-
-    const paymentsMap = new Map();
-    payRes.rows.forEach(r => paymentsMap.set(r.ref_key, Number(r.paid || 0)));
-
-    // 2. Check Live Sales Tables (Excludes mapped customer_code)
     const tables = ["bookings", "hotels", "visa", "card", "groups", "ticketing", "transport", "ziyarat"];
+
+    // 1. Direct Lookup: Fetch records directly using saved payment_status column (INSTANT)
     for (const tbl of tables) {
       try {
         const liveRes = await db.query(
-          `SELECT ref_no, customer_name, COALESCE(total_pkr, 0) as total_pkr 
+          `SELECT ref_no, customer_name, payment_status 
            FROM ${tbl} 
            WHERE (customer_code IS NULL OR TRIM(customer_code) = '')
-           AND (is_deleted IS NOT TRUE OR is_deleted IS NULL)`
+           AND (is_deleted IS NOT TRUE OR is_deleted IS NULL)
+           AND UPPER(payment_status) IN ('PENDING', 'PARTIAL')`
         );
 
         for (const row of liveRes.rows) {
@@ -130,22 +120,27 @@ router.get("/pending/list", async (req, res) => {
           const cleanRef = row.ref_no.trim();
           const refKey = cleanRef.toLowerCase();
 
-          const totalSale = Number(row.total_pkr || 0);
-          const totalPaid = paymentsMap.get(refKey) || 0;
-
-          if (totalPaid < totalSale || totalSale === 0) {
-            pendingMap.set(refKey, {
-              ref_no: cleanRef,
-              customer_name: row.customer_name || "Walk-in Customer",
-              payment_status: totalPaid > 0 ? "PARTIAL" : "PENDING"
-            });
-          }
+          pendingMap.set(refKey, {
+            ref_no: cleanRef,
+            customer_name: row.customer_name || "Walk-in Customer",
+            payment_status: (row.payment_status || "PENDING").toUpperCase()
+          });
         }
       } catch (e) {}
     }
 
-    // 3. Check Archive Balances (EXCLUDING Registered Customer Codes like CUST-%)
+    // 2. Archive Balances Lookup (Calculates PENDING/PARTIAL against payments)
     try {
+      const payRes = await db.query(
+        `SELECT LOWER(TRIM(ref_no)) as ref_key, COALESCE(SUM(amount), 0) as paid 
+         FROM customer_payments 
+         WHERE (is_deleted IS NOT TRUE OR is_deleted IS NULL)
+         GROUP BY LOWER(TRIM(ref_no))`
+      );
+
+      const paymentsMap = new Map();
+      payRes.rows.forEach(r => paymentsMap.set(r.ref_key, Number(r.paid || 0)));
+
       const archRes = await db.query(
         `SELECT code AS ref_no, name AS customer_name, COALESCE(balance, 0) as balance 
          FROM archive_balances 
@@ -163,7 +158,7 @@ router.get("/pending/list", async (req, res) => {
         const totalSale = Number(arch.balance || 0);
         const totalPaid = paymentsMap.get(refKey) || 0;
 
-        if (totalPaid < totalSale || totalSale === 0) {
+        if (totalPaid < totalSale) {
           pendingMap.set(refKey, {
             ref_no: cleanRef,
             customer_name: arch.customer_name || "Walk-in Customer",
