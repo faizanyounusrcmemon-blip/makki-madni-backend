@@ -15,7 +15,7 @@ router.post("/save", async (req, res) => {
   try {
     const {
       ref_no,
-      customer_code, // ⚡ Naya customer_code field accept kiya
+      customer_code,
       customer_name,
       booking_date,
       rows,
@@ -27,6 +27,15 @@ router.post("/save", async (req, res) => {
     let finalRef = ref_no;
 
     if (!finalRef) {
+      // ⚡ Auto-fix transport id sequence before inserting new record
+      await db.query(`
+        SELECT setval(
+          pg_get_serial_sequence('transport', 'id'), 
+          COALESCE((SELECT MAX(id) FROM transport), 0) + 1, 
+          false
+        );
+      `).catch(() => {}); // catch silently if sequence name is standard
+
       finalRef = await generateRef();
 
       await db.query(
@@ -37,7 +46,7 @@ router.post("/save", async (req, res) => {
         `,
         [
           finalRef,
-          customer_code || null, // ⚡ Walk-in ke liye null save hoga
+          customer_code || null,
           customer_name,
           booking_date,
           JSON.stringify(rows || []),
@@ -60,7 +69,7 @@ router.post("/save", async (req, res) => {
         WHERE ref_no=$8
         `,
         [
-          customer_code || null, // ⚡ Update me bhi handle kiya
+          customer_code || null,
           customer_name,
           booking_date,
           JSON.stringify(rows || []),
