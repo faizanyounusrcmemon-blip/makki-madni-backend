@@ -567,7 +567,7 @@ router.post("/restore/csv", upload.single("csv"), async (req, res) => {
   }
 });
 
-/* ================= FIX ALL SEQUENCES (UPDATED & BULLETPROOF) ================= */
+/* ================= FIX ALL SEQUENCES ================= */
 router.post("/fix-sequences", async (req, res) => {
   try {
     const { password } = req.body;
@@ -605,51 +605,31 @@ router.post("/fix-sequences", async (req, res) => {
     ];
 
     for (const table of tables) {
-      // Robust PL/pgSQL block to auto-detect Primary Key & Sequence
+      const seq = await db.query(`
+        SELECT pg_get_serial_sequence(
+          '${table}',
+          'id'
+        ) AS seq
+      `);
+
+      const sequenceName = seq.rows[0]?.seq;
+      if (!sequenceName) continue;
+
       await db.query(`
-        DO $$
-        DECLARE
-          pk_col text;
-          seq_name text;
-          max_id bigint;
-        BEGIN
-          -- 1. Find Primary Key Column Name automatically
-          SELECT a.attname INTO pk_col
-          FROM pg_index i
-          JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-          WHERE i.indrelid = '${table}'::regclass AND i.indisprimary
-          LIMIT 1;
-
-          IF pk_col IS NULL THEN
-            pk_col := 'id';
-          END IF;
-
-          -- 2. Find Sequence Name
-          seq_name := pg_get_serial_sequence('${table}', pk_col);
-
-          -- 3. Fallback to default naming convention if pg_get_serial_sequence returned null
-          IF seq_name IS NULL THEN
-            SELECT relname INTO seq_name 
-            FROM pg_class 
-            WHERE relkind = 'S' AND relname LIKE '${table}_%' 
-            LIMIT 1;
-          END IF;
-
-          -- 4. Sync Sequence with Max ID
-          IF seq_name IS NOT NULL THEN
-            EXECUTE format('SELECT COALESCE(MAX(%I), 0) FROM %I', pk_col, '${table}') INTO max_id;
-            
-            IF max_id = 0 THEN
-              PERFORM setval(seq_name, 1, false);
-            ELSE
-              PERFORM setval(seq_name, max_id, true);
-            END IF;
-          END IF;
-        END $$;
+        SELECT setval(
+          '${sequenceName}',
+          COALESCE(
+            (
+              SELECT MAX(id)
+              FROM ${table}
+            ),
+            1
+          )
+        );
       `);
     }
 
-    // VISA REF SEQUENCE
+    // VISA SEQUENCE
     await db.query(`
       DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname='visa_ref_seq') THEN
@@ -667,7 +647,7 @@ router.post("/fix-sequences", async (req, res) => {
       );
     `);
 
-    // CARD REF SEQUENCE
+    // CARD SEQUENCE
     await db.query(`
       DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname='card_ref_seq') THEN
@@ -685,7 +665,7 @@ router.post("/fix-sequences", async (req, res) => {
       );
     `);
 
-    // GROUP REF SEQUENCE
+    // GROUP SEQUENCE
     await db.query(`
       DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname='groups_ref_seq') THEN
@@ -703,7 +683,7 @@ router.post("/fix-sequences", async (req, res) => {
       );
     `);
 
-    // BOOKING REF SEQUENCE
+    // BOOKING SEQUENCE
     await db.query(`
       DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname='booking_ref_seq') THEN
@@ -757,6 +737,7 @@ router.post("/fix-sequences", async (req, res) => {
       );
     `);
 
+
     return res.json({
       success: true,
       message: "All sequences fixed successfully"
@@ -767,6 +748,7 @@ router.post("/fix-sequences", async (req, res) => {
     return res.json({ success: false, error: err.message });
   }
 });
+
 /* ================= DIRECT DIRECT ZIP DOWNLOAD TO PC ================= */
 router.post("/download-direct", async (req, res) => {
   const { password } = req.body;
