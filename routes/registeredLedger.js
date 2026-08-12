@@ -3,7 +3,7 @@ const router = express.Router();
 const db = require("../db");
 
 /* =====================================================
-   1. REGISTERED LEDGER DETAIL (WITH ARCHIVE SNAPSHOT + LIVE DATA)
+   1. REGISTERED LEDGER DETAIL (FIXED RUNNING BALANCE)
 ===================================================== */
 router.get("/detail/:customer_code", async (req, res) => {
   try {
@@ -128,47 +128,44 @@ router.get("/detail/:customer_code", async (req, res) => {
       }
     });
 
-/* =====================================================
-   1. REGISTERED LEDGER DETAIL (FIXED RUNNING BALANCE)
-===================================================== */
+    // 1. Pehle Oldest to Newest (Ascending) sort karein taake Balance sahi sequence me calculate ho
+    allEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-// 1. Pehle Oldest to Newest (Ascending) sort karein taake Balance sahi calculate ho
-allEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
+    let runningBalance = 0;
+    let calculatedRows = [];
 
-let runningBalance = 0;
-let calculatedRows = [];
+    // 2. Chronological order mein running balance calculate karein
+    allEntries.forEach((entry) => {
+      runningBalance = runningBalance + entry.credit - entry.debit;
 
-// 2. Chronological order mein running balance calculate karein
-allEntries.forEach((entry) => {
-  runningBalance = runningBalance + entry.credit - entry.debit;
+      let matchDate = true;
+      if (startDate && new Date(entry.date) < new Date(startDate)) matchDate = false;
+      if (endDate && new Date(entry.date) > new Date(endDate)) matchDate = false;
 
-  let matchDate = true;
-  if (startDate && new Date(entry.date) < new Date(startDate)) matchDate = false;
-  if (endDate && new Date(entry.date) > new Date(endDate)) matchDate = false;
-
-  if (matchDate) {
-    calculatedRows.push({
-      ...entry,
-      balance: runningBalance
+      if (matchDate) {
+        calculatedRows.push({
+          ...entry,
+          balance: runningBalance
+        });
+      }
     });
-  }
-});
 
-// 3. UI par dikhane ke liye Newest First (Descending) sort kar lein
-calculatedRows.sort((a, b) => new Date(b.date) - new Date(a.date));
+    // 3. UI par Newest First dikhane ke liye array ko direct reverse karein
+    calculatedRows.reverse();
 
-res.json({
-  success: true,
-  customerName,
-  rows: calculatedRows,
-  totalRemainingBalance: runningBalance
-});
+    res.json({
+      success: true,
+      customerName,
+      rows: calculatedRows,
+      totalRemainingBalance: runningBalance
+    });
 
   } catch (err) {
     console.error(err);
     res.json({ success: false, error: err.message });
   }
 });
+
 
 /* =====================================================
    2. PENDING CUSTOMERS LIST (WITH SNAPSHOT CALCULATIONS)
@@ -232,10 +229,10 @@ router.get("/pending/list", async (req, res) => {
       LEFT JOIN (SELECT customer_code, SUM(amount) AS total_debit FROM all_debits GROUP BY customer_code) db ON cust.customer_code = db.customer_code
       WHERE (cust.is_deleted = false OR cust.is_deleted IS NULL)
         AND (
-          COALESCE(sb.balance, 0) != 0 OR
-          COALESCE(cr.total_credit, 0) != 0 OR
-          COALESCE(db.total_debit, 0) != 0
-        )
+          COALESCE(sb.balance, 0) + 
+          COALESCE(cr.total_credit, 0) - 
+          COALESCE(db.total_debit, 0)
+        ) != 0
       ORDER BY cust.customer_code ASC
       `,
       [snapshotDate, snapshotId]
