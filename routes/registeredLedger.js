@@ -217,45 +217,51 @@ router.get("/pending/list", async (req, res) => {
       SELECT 
         cust.customer_code,
         cust.name AS customer_name,
-        (
+        ROUND(
           COALESCE(sb.balance, 0) + 
           COALESCE(cr.total_credit, 0) - 
           COALESCE(db.total_debit, 0)
         ) AS remaining_balance,
-        COALESCE(db.total_debit, 0) AS total_paid
+        ROUND(COALESCE(db.total_debit, 0)) AS total_paid
       FROM customers cust
       LEFT JOIN snapshot_balances sb ON sb.code = cust.customer_code
       LEFT JOIN (SELECT customer_code, SUM(amount) AS total_credit FROM all_credits GROUP BY customer_code) cr ON cust.customer_code = cr.customer_code
       LEFT JOIN (SELECT customer_code, SUM(amount) AS total_debit FROM all_debits GROUP BY customer_code) db ON cust.customer_code = db.customer_code
       WHERE (cust.is_deleted = false OR cust.is_deleted IS NULL)
-        AND (
+        AND ABS(
           COALESCE(sb.balance, 0) + 
           COALESCE(cr.total_credit, 0) - 
           COALESCE(db.total_debit, 0)
-        ) != 0
+        ) >= 1
       ORDER BY cust.customer_code ASC
       `,
       [snapshotDate, snapshotId]
     );
 
-    let pending = result.rows.map(row => {
-      const balance = Number(row.remaining_balance);
-      const totalPaid = Number(row.total_paid);
-      let status = "PARTIAL";
+    let pending = result.rows
+      .map(row => {
+        const balance = Math.round(Number(row.remaining_balance || 0));
+        const totalPaid = Math.round(Number(row.total_paid || 0));
 
-      if (balance > 0) {
-        status = totalPaid === 0 ? "PENDING" : "PARTIAL";
-      } else if (balance < 0) {
-        status = "EXTRA PAID";
-      }
+        // Agar round hone ke baad balance 0 ban jaye to skip kar dein
+        if (Math.abs(balance) < 1) return null;
 
-      return {
-        customer_code: row.customer_code,
-        customer_name: row.customer_name,
-        remaining_balance: balance,
-        payment_status: status
-      };
-    });
+        let status = "PARTIAL";
+
+        if (balance > 0) {
+          status = totalPaid === 0 ? "PENDING" : "PARTIAL";
+        } else if (balance < 0) {
+          status = "EXTRA PAID";
+        }
+
+        return {
+          customer_code: row.customer_code,
+          customer_name: row.customer_name,
+          remaining_balance: balance,
+          payment_status: status
+        };
+      })
+      .filter(Boolean); // null rows remove karne ke liye
 
     res.json({ success: true, rows: pending });
   } catch (err) {
