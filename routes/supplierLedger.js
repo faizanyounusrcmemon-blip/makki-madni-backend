@@ -195,6 +195,35 @@ router.delete("/delete/:entryId", async (req, res) => {
   }
 });
 
+/* =====================================================
+   VERIFY PASSWORD FOR EDIT / DELETE
+===================================================== */
+router.post("/verify-password", async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) {
+      return res.json({ success: false, error: "Password is required" });
+    }
+
+    const passCheck = await db.query(
+      "SELECT password_val FROM system_passwords WHERE key_name = $1", 
+      ['delete_supplier_payment']
+    );
+
+    if (passCheck.rows.length === 0) {
+      return res.json({ success: false, error: "System password not configured in database!" });
+    }
+
+    if (password !== passCheck.rows[0].password_val) {
+      return res.json({ success: false, error: "Wrong Password!" });
+    }
+
+    res.json({ success: true, message: "Password verified" });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
 /* ====================================================
    EDIT LEDGER ENTRY (FIXED & SAFE UPDATES)
 ==================================================== */

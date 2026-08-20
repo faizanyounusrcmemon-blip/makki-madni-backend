@@ -203,7 +203,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-// Baaki routes (POST, DELETE, PUT) bilkul same rahenge...
+
 
 
 /* ======================================================
@@ -277,6 +277,35 @@ router.delete("/transaction/:id", async (req, res) => {
       success: false,
       error: err.message
     });
+  }
+});
+
+/* ======================================================
+   VERIFY PASSWORD FOR EDIT / DELETE
+====================================================== */
+router.post("/verify-password", async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) {
+      return res.json({ success: false, error: "Password is required" });
+    }
+
+    const passCheck = await pool.query(
+      "SELECT password_val FROM system_passwords WHERE key_name = $1", 
+      ['delete_cash_transaction'] 
+    );
+    
+    if (passCheck.rows.length === 0) {
+      return res.json({ success: false, error: "System password not configured in database!" });
+    }
+
+    if (password !== passCheck.rows[0].password_val) {
+      return res.json({ success: false, error: "Wrong Password!" });
+    }
+
+    res.json({ success: true, message: "Password verified" });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
   }
 });
 

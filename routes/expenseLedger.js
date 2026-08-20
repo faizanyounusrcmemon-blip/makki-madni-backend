@@ -72,4 +72,74 @@ router.delete("/delete/:id", async (req, res) => {
   }
 });
 
+/* =========================================================
+   VERIFY PASSWORD FOR EDIT / DELETE
+========================================================= */
+router.post("/verify-password", async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) {
+      return res.json({ success: false, error: "Password is required" });
+    }
+
+    const passCheck = await db.query(
+      "SELECT password_val FROM system_passwords WHERE key_name = $1", 
+      ['delete_expense_record'] 
+    );
+    
+    if (passCheck.rows.length === 0) {
+      return res.json({ success: false, error: "System password not configured in database!" });
+    }
+
+    if (password !== passCheck.rows[0].password_val) {
+      return res.json({ success: false, error: "Wrong Password!" });
+    }
+
+    res.json({ success: true, message: "Password verified" });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+/* =========================================================
+   EDIT EXPENSE RECORD
+========================================================= */
+router.put("/edit/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { password, expense_date, title, amount, payment_method, remarks } = req.body;
+
+    if (!expense_date || !title || !amount || !payment_method) {
+      return res.json({ success: false, error: "Missing required fields" });
+    }
+
+    // Password verification on edit save
+    const passCheck = await db.query(
+      "SELECT password_val FROM system_passwords WHERE key_name = $1", 
+      ['delete_expense_record']
+    );
+
+    if (passCheck.rows.length === 0) {
+      return res.json({ success: false, error: "System password not configured in database!" });
+    }
+
+    if (password !== passCheck.rows[0].password_val) {
+      return res.json({ success: false, error: "Wrong Password!" });
+    }
+
+    await db.query(
+      `
+      UPDATE expense_ledger
+      SET expense_date = $1, title = $2, amount = $3, payment_method = $4, remarks = $5
+      WHERE id = $6
+      `,
+      [expense_date, title, amount, payment_method, remarks || "", id]
+    );
+
+    res.json({ success: true, message: "Expense updated successfully" });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;

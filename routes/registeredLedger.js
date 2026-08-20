@@ -330,6 +330,35 @@ router.post("/delete/:id", async (req, res) => {
 });
 
 /* =====================================================
+   VERIFY PASSWORD FOR EDIT / DELETE
+===================================================== */
+router.post("/verify-password", async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) {
+      return res.json({ success: false, error: "Password is required" });
+    }
+
+    const passCheck = await db.query(
+      "SELECT password_val FROM system_passwords WHERE key_name = $1",
+      ["delete_registered_payment"]
+    );
+
+    if (passCheck.rows.length === 0) {
+      return res.json({ success: false, error: "System password not configured!" });
+    }
+
+    if (password !== passCheck.rows[0].password_val) {
+      return res.json({ success: false, error: "Wrong Password!" });
+    }
+
+    res.json({ success: true, message: "Password verified" });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+/* =====================================================
    EDIT REGISTERED CUSTOMER PAYMENT
 ===================================================== */
 router.put("/edit/:id", async (req, res) => {
@@ -349,46 +378,58 @@ router.put("/edit/:id", async (req, res) => {
       return res.json({ success: false, error: "Payment date is required" });
     }
 
-    // Password check
+    // Password verification from DB
     const passCheck = await db.query(
       "SELECT password_val FROM system_passwords WHERE key_name = $1",
       ["delete_registered_payment"]
     );
 
     if (passCheck.rows.length === 0) {
-      return res.json({ success: false, error: "Delete/Edit Password is not configured in DB." });
+      return res.json({ success: false, error: "Authorization password is not configured in DB." });
     }
 
     if (password !== passCheck.rows[0].password_val) {
       return res.json({ success: false, error: "Invalid Authorization Password!" });
     }
 
-    // Existing payment details fetch karo taake type/method lost na ho
-    const check = await db.query(
-      "SELECT id, type, payment_method FROM customer_payments WHERE id = $1", 
-      [id]
-    );
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
 
-    if (check.rows.length === 0) {
-      return res.json({ success: false, error: "Payment entry not found!" });
+      // Verify payment existence
+      const check = await client.query(
+        "SELECT id, ref_no, type, payment_method FROM customer_payments WHERE id = $1",
+        [id]
+      );
+
+      if (check.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.json({ success: false, error: "Payment entry not found!" });
+      }
+
+      const existingRecord = check.rows[0];
+      const updatedType = type || existingRecord.type || "payment";
+      const updatedMethod = payment_method || existingRecord.payment_method || "Bank";
+
+      // Execute UPDATE
+      await client.query(
+        `
+        UPDATE customer_payments
+        SET amount = $1, payment_date = $2, payment_method = $3, type = $4
+        WHERE id = $5
+        `,
+        [amount, payment_date, updatedMethod, updatedType, id]
+      );
+
+      await client.query("COMMIT");
+
+      res.json({ success: true, message: "Registered payment entry updated successfully" });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
     }
-
-    const existingRecord = check.rows[0];
-
-    // Fallbacks set karein agar payload me undefined/empty field ho
-    const updatedType = type || existingRecord.type || "payment";
-    const updatedMethod = payment_method || existingRecord.payment_method || "cash";
-
-    await db.query(
-      `
-      UPDATE customer_payments
-      SET amount = $1, payment_date = $2, payment_method = $3, type = $4
-      WHERE id = $5
-      `,
-      [amount, payment_date, updatedMethod, updatedType, id]
-    );
-
-    res.json({ success: true, message: "Entry updated successfully" });
   } catch (err) {
     console.error("Registered Edit error:", err);
     res.json({ success: false, error: err.message });
