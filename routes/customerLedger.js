@@ -298,27 +298,29 @@ if (totalSale > 0) {
 }
 
     /* PAYMENTS */
-    const payments = await db.query(
-      `SELECT id, payment_date, amount, type, payment_method FROM customer_payments 
-       WHERE TRIM(LOWER(ref_no)) = LOWER($1) 
-       AND (is_deleted IS NOT TRUE OR is_deleted IS NULL) 
-       ORDER BY payment_date, id`,
-      [ref_no]
-    );
+/* PAYMENTS */
+const payments = await db.query(
+  `SELECT id, payment_date, amount, type, payment_method FROM customer_payments 
+   WHERE TRIM(LOWER(ref_no)) = LOWER($1) 
+   AND (is_deleted IS NOT TRUE OR is_deleted IS NULL) 
+   ORDER BY payment_date, id`,
+  [ref_no]
+);
 
-    payments.rows.forEach(p => {
-      const amount = Math.round(Number(p.amount || 0));
-      balance -= amount;
+payments.rows.forEach(p => {
+  const amount = Math.round(Number(p.amount || 0));
+  balance -= amount;
 
-      rows.push({
-        id: p.id,
-        date: p.payment_date,
-        description: p.type === "adjustment" ? "Adjustment" : `Payment Received (${p.payment_method || ""})`,
-        debit: amount,
-        credit: 0,
-        balance
-      });
-    });
+  rows.push({
+    id: p.id,
+    date: p.payment_date,
+    description: p.type === "adjustment" ? "Adjustment" : `Payment Received (${p.payment_method || ""})`,
+    payment_method: p.payment_method || "-", // 👈 Yeh line add karein
+    debit: amount,
+    credit: 0,
+    balance
+  });
+});
 
     res.json({
       success: true,

@@ -105,28 +105,30 @@ router.get("/detail/:customer_code", async (req, res) => {
     });
 
     // Map Payments: DEBIT (-) & Opening Balances: CREDIT (+)
-    paymentsRes.rows.forEach(p => {
-      const amt = Math.round(Number(p.amount || 0));
-      if (p.type === "opening_balance") {
-        allEntries.push({
-          id: p.id,
-          date: p.payment_date,
-          description: `🔑 Opening Balance (Credit Setup)`,
-          debit: 0,
-          credit: amt,
-          type: "opening_balance"
-        });
-      } else {
-        allEntries.push({
-          id: p.id,
-          date: p.payment_date,
-          description: p.type === "adjustment" ? `Adjustment Receipt (${p.payment_method || ""})` : `Payment Received (${p.payment_method || ""})`,
-          debit: amt,
-          credit: 0,
-          type: "payment"
-        });
-      }
+paymentsRes.rows.forEach(p => {
+  const amt = Math.round(Number(p.amount || 0));
+  if (p.type === "opening_balance") {
+    allEntries.push({
+      id: p.id,
+      date: p.payment_date,
+      description: `🔑 Opening Balance (Credit Setup)`,
+      payment_method: p.payment_method || "-", // 👈 Added
+      debit: 0,
+      credit: amt,
+      type: "opening_balance"
     });
+  } else {
+    allEntries.push({
+      id: p.id,
+      date: p.payment_date,
+      description: p.type === "adjustment" ? `Adjustment Receipt (${p.payment_method || ""})` : `Payment Received (${p.payment_method || ""})`,
+      payment_method: p.payment_method || "-", // 👈 Added
+      debit: amt,
+      credit: 0,
+      type: "payment"
+    });
+  }
+});
 
     // 1. Pehle Oldest to Newest (Ascending) sort karein taake Balance sahi sequence me calculate ho
     allEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
