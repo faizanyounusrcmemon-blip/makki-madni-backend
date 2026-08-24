@@ -61,7 +61,7 @@ module.exports = async function activityLogger(req, res, next) {
               actionName = "DELETE";
             }
 
-            // 3. LOGGED IN USER (FIXED: Hardcoded "faizan" Removed)
+            // 3. LOGGED IN USER
             let loggedUsername = 
               req.headers["x-user-name"] || 
               req.headers["username"] || 
@@ -70,13 +70,15 @@ module.exports = async function activityLogger(req, res, next) {
               b.username || 
               req.user?.username || 
               req.user?.name || 
-              "System User";
+              "faizan";
 
             // 4. FETCH PARTY NAME (CUSTOMER / SUPPLIER / REGISTERED)
             let partyName = b.customer_name || b.supplier_name || b.name || "";
 
+            // Agar Name request body me na mile to DB se Query karke nikalen
             if (!partyName && refNo && refNo !== "-") {
               try {
+                // A) Check Registered Customer Name
                 if (refNo.toUpperCase().startsWith("CUST-")) {
                   const cRes = await db.query(
                     `SELECT name FROM customers WHERE customer_code = $1 LIMIT 1`,
@@ -85,6 +87,7 @@ module.exports = async function activityLogger(req, res, next) {
                   if (cRes.rows.length > 0) partyName = cRes.rows[0].name;
                 }
                 
+                // B) Check Supplier Name
                 if (!partyName && (refNo.toUpperCase().startsWith("SUP-") || routeName.includes("supplier"))) {
                   const sRes = await db.query(
                     `SELECT supplier_name FROM suppliers WHERE supplier_code = $1 LIMIT 1`,
@@ -93,6 +96,7 @@ module.exports = async function activityLogger(req, res, next) {
                   if (sRes.rows.length > 0) partyName = sRes.rows[0].supplier_name;
                 }
 
+                // C) Check Live Sales / Bookings Name
                 if (!partyName) {
                   const q = `
                     SELECT customer_name AS party FROM bookings WHERE ref_no = $1
@@ -106,6 +110,7 @@ module.exports = async function activityLogger(req, res, next) {
                   if (r.rows.length > 0) partyName = r.rows[0].party;
                 }
 
+                // D) Check Archive Balances Name
                 if (!partyName) {
                   const arch = await db.query(
                     `SELECT name FROM archive_balances WHERE code = $1 LIMIT 1`,
@@ -118,7 +123,7 @@ module.exports = async function activityLogger(req, res, next) {
               }
             }
 
-            // 5. EDIT/DELETE ID CASE LOOKUP
+            // 5. EDIT/DELETE ID CASE LOOKUP (Jab Ref No URL ya body me na mile)
             if ((!refNo || refNo === "-") && req.params?.id) {
               try {
                 const payId = req.params.id;
@@ -137,8 +142,9 @@ module.exports = async function activityLogger(req, res, next) {
               } catch (e) {}
             }
 
-            // 6. BUILD FINAL DESCRIPTION
+            // 6. BUILD FINAL CLEAN DESCRIPTION
             let description = `${actionName} action performed on ${moduleName}`;
+            
             if (partyName && refNo && refNo !== "-") {
               description += ` for ${partyName} (${refNo})`;
             } else if (partyName) {
