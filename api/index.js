@@ -33,7 +33,8 @@ app.use(
 app.use(express.json());
 
 // ✅ AUTOMATED ACTIVITY LOGGER MIDDLEWARE
-const activityLogger = require("./middleware/activityLogger");
+// ✅ BILKUL SAHI (Root folder me jaa kar middleware dhoonde ga)
+const activityLogger = require("../middleware/activityLogger");
 app.use(activityLogger);
 
 
