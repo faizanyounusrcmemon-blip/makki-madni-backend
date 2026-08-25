@@ -25,7 +25,7 @@ router.get("/detail/:customer_code", async (req, res) => {
       customerName = custRes.rows[0].name;
     }
 
-    // 📸 Fetch Latest Archive Snapshot
+    // Fetch Latest Archive Snapshot
     const snapshot = await db.query(`
       SELECT id, date_to 
       FROM archive_snapshots 
@@ -85,9 +85,10 @@ router.get("/detail/:customer_code", async (req, res) => {
         id: "SNAPSHOT",
         date: snapshotDate,
         description: `Snapshot Opening Balance`,
-        debit: openingBalance < 0 ? Math.abs(openingBalance) : 0,
-        credit: openingBalance > 0 ? openingBalance : 0,
-        type: "snapshot"
+        debit: 0,
+        credit: openingBalance,
+        type: "snapshot",
+        seq: 0 // Priority index for tie-breaker
       });
     }
 
@@ -100,45 +101,56 @@ router.get("/detail/:customer_code", async (req, res) => {
         description: `Sale Invoice (${s.src}) - Ref: ${s.ref_no}`,
         debit: 0,
         credit: amt,
-        type: "sale"
+        type: "sale",
+        seq: 1
       });
     });
 
     // Map Payments: DEBIT (-) & Opening Balances: CREDIT (+)
-paymentsRes.rows.forEach(p => {
-  const amt = Math.round(Number(p.amount || 0));
-  if (p.type === "opening_balance") {
-    allEntries.push({
-      id: p.id,
-      date: p.payment_date,
-      description: `🔑 Opening Balance (Credit Setup)`,
-      payment_method: p.payment_method || "-", // 👈 Added
-      debit: 0,
-      credit: amt,
-      type: "opening_balance"
+    paymentsRes.rows.forEach(p => {
+      const amt = Math.round(Number(p.amount || 0));
+      if (p.type === "opening_balance") {
+        allEntries.push({
+          id: p.id,
+          date: p.payment_date,
+          description: `Opening Balance (Credit Setup)`,
+          payment_method: p.payment_method || "-",
+          debit: 0,
+          credit: amt,
+          type: "opening_balance",
+          seq: 1
+        });
+      } else {
+        allEntries.push({
+          id: p.id,
+          date: p.payment_date,
+          description: p.type === "adjustment" ? `Adjustment Receipt (${p.payment_method || ""})` : `Payment Received (${p.payment_method || ""})`,
+          payment_method: p.payment_method || "-",
+          debit: amt,
+          credit: 0,
+          type: "payment",
+          seq: 2
+        });
+      }
     });
-  } else {
-    allEntries.push({
-      id: p.id,
-      date: p.payment_date,
-      description: p.type === "adjustment" ? `Adjustment Receipt (${p.payment_method || ""})` : `Payment Received (${p.payment_method || ""})`,
-      payment_method: p.payment_method || "-", // 👈 Added
-      debit: amt,
-      credit: 0,
-      type: "payment"
-    });
-  }
-});
 
-    // 1. Pehle Oldest to Newest (Ascending) sort karein taake Balance sahi sequence me calculate ho
-    allEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
+    // 🔴 STRICT SORTING: Date + Priority Sequence (Snapshot -> Sales -> Payments)
+    allEntries.sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+
+      if (dateA !== dateB) {
+        return dateA - dateB;
+      }
+      return (a.seq || 0) - (b.seq || 0);
+    });
 
     let runningBalance = 0;
     let calculatedRows = [];
 
-    // 2. Chronological order mein running balance calculate karein
+    // 🔴 CHRONOLOGICAL RUNNING BALANCE
     allEntries.forEach((entry) => {
-      runningBalance = runningBalance + entry.credit - entry.debit;
+      runningBalance = runningBalance + Number(entry.credit || 0) - Number(entry.debit || 0);
 
       let matchDate = true;
       if (startDate && new Date(entry.date) < new Date(startDate)) matchDate = false;
@@ -152,7 +164,7 @@ paymentsRes.rows.forEach(p => {
       }
     });
 
-    // 3. UI par Newest First dikhane ke liye array ko direct reverse karein
+    // UI display array reversed (Newest top par)
     calculatedRows.reverse();
 
     res.json({
@@ -245,7 +257,6 @@ router.get("/pending/list", async (req, res) => {
         const balance = Math.round(Number(row.remaining_balance || 0));
         const totalPaid = Math.round(Number(row.total_paid || 0));
 
-        // Agar round hone ke baad balance 0 ban jaye to skip kar dein
         if (Math.abs(balance) < 1) return null;
 
         let status = "PARTIAL";
@@ -263,7 +274,7 @@ router.get("/pending/list", async (req, res) => {
           payment_status: status
         };
       })
-      .filter(Boolean); // null rows remove karne ke liye
+      .filter(Boolean);
 
     res.json({ success: true, rows: pending });
   } catch (err) {
@@ -380,7 +391,6 @@ router.put("/edit/:id", async (req, res) => {
       return res.json({ success: false, error: "Payment date is required" });
     }
 
-    // Password verification from DB
     const passCheck = await db.query(
       "SELECT password_val FROM system_passwords WHERE key_name = $1",
       ["delete_registered_payment"]
@@ -398,7 +408,6 @@ router.put("/edit/:id", async (req, res) => {
     try {
       await client.query("BEGIN");
 
-      // Verify payment existence
       const check = await client.query(
         "SELECT id, ref_no, type, payment_method FROM customer_payments WHERE id = $1",
         [id]
@@ -413,7 +422,6 @@ router.put("/edit/:id", async (req, res) => {
       const updatedType = type || existingRecord.type || "payment";
       const updatedMethod = payment_method || existingRecord.payment_method || "Bank";
 
-      // Execute UPDATE
       await client.query(
         `
         UPDATE customer_payments
