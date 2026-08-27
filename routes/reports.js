@@ -767,44 +767,100 @@ router.get("/customer-sale", async (req, res) => {
 
 /* =====================================================
    USER ACTIVITY / AUDIT REPORT
+   - Date-to-date filtering
+   - User / module / action filters
+   - Auto-deletion of logs older than 15 days
 ===================================================== */
-const activityModuleFromPath = (path = "") => {
-  const p = String(path).toLowerCase();
-  const map = [["booking","Packages"],["package","Packages"],["hotel","Hotels"],["ticket","Ticketing"],["transport","Transport"],["ziyarat","Ziyarat"],["visa","Visa"],["card","Card"],["group","Groups"],["purchase","Purchase"],["supplier","Supplier"],["customer","Customers"],["payment","Payments"],["expense","Expenses"],["user","Users"],["archive","Archive"],["system-settings","System Settings"]];
-  return map.find(([k]) => p.includes(k))?.[1] || "System";
-};
-router.post("/activity/log", async (req,res)=>{
-  try{
-    const b=req.body||{},u=b.user||{};
-    await db.query(`INSERT INTO public.activity_logs (user_id,username,action,module,description,reference_no,method,path) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,[
-      u.id!=null?String(u.id):null,String(u.username||u.name||u.display_name||"Unknown").slice(0,150),String(b.action||"OTHER").toUpperCase(),String(b.module||activityModuleFromPath(b.path)).slice(0,100),b.description?String(b.description).slice(0,500):null,b.reference_no?String(b.reference_no).slice(0,120):null,b.method?String(b.method).toUpperCase().slice(0,20):null,b.path?String(b.path).slice(0,500):null
-    ]); res.json({success:true});
-  }catch(err){console.error("ACTIVITY LOG ERROR:",err);res.status(200).json({success:false,error:err.message});}
-});
-router.get("/activity", async (req,res)=>{
-  try{
-    const date=String(req.query.date||"").trim(); if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({success:false,error:"Valid date is required (YYYY-MM-DD)."});
-    const params=[date],where=[`created_at >= $1::date`,`created_at < ($1::date + INTERVAL '1 day')`];
-    for(const [key,col] of [["user","username"],["module","module"],["action","action"]]) if(req.query[key]&&req.query[key]!=="ALL"){params.push(key==="action"?String(req.query[key]).toUpperCase():String(req.query[key]));where.push(`${col} = $${params.length}`)}
-    const q=await db.query(`SELECT id,user_id,username,action,module,description,reference_no,method,path,created_at FROM public.activity_logs WHERE ${where.join(" AND ")} ORDER BY created_at DESC`,params);
-    const meta=await db.query(`SELECT ARRAY_REMOVE(ARRAY_AGG(DISTINCT username ORDER BY username),NULL) users, ARRAY_REMOVE(ARRAY_AGG(DISTINCT module ORDER BY module),NULL) modules FROM public.activity_logs WHERE created_at >= $1::date AND created_at < ($1::date + INTERVAL '1 day')`,[date]);
-    res.json({success:true,rows:q.rows,users:meta.rows[0]?.users||[],modules:meta.rows[0]?.modules||[]});
-  }catch(err){console.error("ACTIVITY REPORT ERROR:",err);res.status(500).json({success:false,error:err.message});}
+router.post("/activity/log", async (req, res) => {
+  try {
+    const b = req.body || {};
+    const u = b.user || {};
+    await db.query(
+      `INSERT INTO public.activity_logs
+       (user_id, username, action, module, description, reference_no, method, path)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [
+        u.id != null ? String(u.id) : null,
+        String(u.username || u.name || u.display_name || "Unknown User").slice(0, 150),
+        String(b.action || "OTHER").toUpperCase(),
+        String(b.module || "System").slice(0, 100),
+        b.description ? String(b.description).slice(0, 500) : null,
+        b.reference_no ? String(b.reference_no).slice(0, 120) : null,
+        b.method ? String(b.method).toUpperCase().slice(0, 20) : null,
+        b.path ? String(b.path).slice(0, 500) : null,
+      ]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error("ACTIVITY LOG ERROR:", err);
+    res.status(200).json({ success: false, error: err.message });
+  }
 });
 
 router.get("/activity", async (req, res) => {
   try {
     // 🧹 15 din purana data auto delete
     await db.query(
-      `DELETE FROM activity_logs WHERE created_at < NOW() - INTERVAL '15 days'`
+      `DELETE FROM public.activity_logs WHERE created_at < NOW() - INTERVAL '15 days'`
     );
 
-    const { date, user, module, action } = req.query;
-    // Aapka baqi ka existing code yahan niche waise hi rahega...
-    
-  } catch (e) {
-    console.error("Activity Report Error:", e);
-    res.json({ success: false, error: e.message });
+    // Date-to-date filtering support
+    const fromDate = String(req.query.from_date || req.query.date || "").trim();
+    const toDate = String(req.query.to_date || req.query.date || fromDate).trim();
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
+      return res.status(400).json({ success: false, error: "Valid from_date and to_date are required (YYYY-MM-DD)." });
+    }
+    if (fromDate > toDate) {
+      return res.status(400).json({ success: false, error: "to_date cannot be earlier than from_date." });
+    }
+
+    const params = [fromDate, toDate];
+    const where = [
+      `created_at >= $1::date`,
+      `created_at < ($2::date + INTERVAL '1 day')`,
+    ];
+
+    if (req.query.user && req.query.user !== "ALL") {
+      params.push(String(req.query.user));
+      where.push(`username = $${params.length}`);
+    }
+    if (req.query.module && req.query.module !== "ALL") {
+      params.push(String(req.query.module));
+      where.push(`module = $${params.length}`);
+    }
+    if (req.query.action && req.query.action !== "ALL") {
+      params.push(String(req.query.action).toUpperCase());
+      where.push(`action = $${params.length}`);
+    }
+
+    const q = await db.query(
+      `SELECT id,user_id,username,action,module,description,reference_no,method,path,created_at
+       FROM public.activity_logs
+       WHERE ${where.join(" AND ")}
+       ORDER BY created_at DESC`,
+      params
+    );
+
+    const meta = await db.query(
+      `SELECT
+         ARRAY_REMOVE(ARRAY_AGG(DISTINCT username ORDER BY username), NULL) AS users,
+         ARRAY_REMOVE(ARRAY_AGG(DISTINCT module ORDER BY module), NULL) AS modules
+       FROM public.activity_logs
+       WHERE created_at >= $1::date
+         AND created_at < ($2::date + INTERVAL '1 day')`,
+      [fromDate, toDate]
+    );
+
+    res.json({
+      success: true,
+      rows: q.rows,
+      users: meta.rows[0]?.users || [],
+      modules: meta.rows[0]?.modules || [],
+    });
+  } catch (err) {
+    console.error("ACTIVITY REPORT ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
