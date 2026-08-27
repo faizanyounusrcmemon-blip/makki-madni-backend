@@ -12,6 +12,7 @@
     "adm-zip": "^0.5.16",
     "archiver": "^7.0.1",
     "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "csv-parse": "^6.1.0",
     "csv-stringify": "^6.6.0",
