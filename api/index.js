@@ -1,12 +1,13 @@
 const express = require("express");
 const cors = require("cors");
+const cookieParser = require("cookie-parser"); // 👈 Cookie Parser Added
 require("dotenv").config();
 require("../db"); // ✅ ROOT db.js (Vercel FIX)
 
 const app = express();
 
 // ==========================
-// ✅ CORS FIX FOR VERCEL CREDENTIALS
+// ✅ CORS FIX FOR VERCEL CREDENTIALS & HEADERS
 // ==========================
 const allowedOrigins = [
   "https://makki-madni-travel-software.vercel.app",
@@ -24,16 +25,27 @@ app.use(
         callback(new Error("Blocked by CORS policy - Makki Madni Security"));
       }
     },
-    credentials: true, // ✅ Dynamic origins ke sath ye allow karega cookes/credentials headers
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"]
+    credentials: true, // ✅ Dynamic origins ke sath ye allow karega cookies/credentials headers
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allowedHeaders: [
+      "Content-Type", 
+      "Authorization", 
+      "X-Requested-With", 
+      "Accept", 
+      "x-user-name", 
+      "x-username", 
+      "x-user-id",
+      "x-userid"
+    ]
   })
 );
 
-app.use(express.json());
+// ✅ BODY & COOKIE PARSERS (Activity Logger se pehle)
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use(cookieParser());
 
 // ✅ AUTOMATED ACTIVITY LOGGER MIDDLEWARE
-// ✅ BILKUL SAHI (Root folder me jaa kar middleware dhoonde ga)
 const activityLogger = require("../middleware/activityLogger");
 app.use(activityLogger);
 
