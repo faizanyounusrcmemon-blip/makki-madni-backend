@@ -53,6 +53,7 @@ const TABLES = [
   "archive_logs",
   "authority_settings",
   "system_passwords",
+  "activity_logs",
 ];
 
 /* ================= JSON COLUMNS ================= */
@@ -579,7 +580,7 @@ router.post("/fix-sequences", async (req, res) => {
       "bank_transactions", "cash_transactions", "customer_payments", "suppliers",
       "purchase_payments", "supplier_payments", "ziyarat", "archive_snapshots",
       "archive_balances", "archive_profit_monthly", "archive_logs",
-      "authority_settings", "system_passwords",
+      "authority_settings", "system_passwords", "activity_logs",
     ];
 
     // Primary Key (id) Sequences Fix
