@@ -2,12 +2,10 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-// AUTO REF GENERATOR (SAFE VERSION)
+// ===================================
+// AUTO REF GENERATOR
+// ===================================
 async function generateRef() {
-  await db.query(`
-    CREATE SEQUENCE IF NOT EXISTS hotels_ref_seq START WITH 1 INCREMENT BY 1;
-  `);
-
   const q = await db.query("SELECT nextval('hotels_ref_seq') AS no");
   return "HOT-" + String(q.rows[0].no).padStart(5, "0");
 }

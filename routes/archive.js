@@ -7,29 +7,26 @@ const archiver = require("archiver");
 const { stringify } = require("csv-stringify/sync");
 const multer = require("multer");
 const unzipper = require("unzipper");
-const { parse } = require("csv-parse/sync"); // CSV parse karne ke liye
+const { parse } = require("csv-parse/sync");
 
-// Multer in-memory storage configuration
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Note: Ab is function ko zipPath ya zipName return karne ki zaroorat nahi, yeh direct response me write karega.
 async function createArchiveBackup(fromDate, toDate, res) {
   const archive = archiver("zip", { zlib: { level: 9 } });
 
-  // Browser ko batane ke liye k yeh ek downloadable ZIP file hai
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const zipName = `archive-${fromDate}-${toDate}-${stamp}.zip`;
   
   res.setHeader("Content-Type", "application/zip");
   res.setHeader("Content-Disposition", `attachment; filename=${zipName}`);
 
-  // Direct archive ko response (res) ke sath jod dein
   archive.pipe(res);
 
+  // Added 'banks' table so bank profiles are preserved in backup
   const tables = [
     "bookings", "hotels", "visa", "card", "ticketing", "transport", "ziyarat", "groups",
     "purchase_entries", "customer_payments", "supplier_payments", "expense_ledger",
-    "bank_transactions", "cash_transactions",
+    "bank_transactions", "cash_transactions", "banks",
     "archive_snapshots", "archive_balances", "archive_profit_monthly", "archive_logs"
   ];
 
@@ -37,7 +34,7 @@ async function createArchiveBackup(fromDate, toDate, res) {
     let query = `SELECT * FROM ${table}`;
     let params = [];
 
-    if (!table.startsWith("archive_")) {
+    if (!table.startsWith("archive_") && table !== "banks") {
       if (["bookings", "hotels", "visa", "card", "ticketing", "transport", "ziyarat", "groups"].includes(table)) {
         query += ` WHERE booking_date BETWEEN $1 AND $2`;
         params = [fromDate, toDate];
@@ -58,34 +55,24 @@ async function createArchiveBackup(fromDate, toDate, res) {
 
     const result = await db.query(query, params);
     
-    // ⭐ BACKUP ENGINE FIX: Data ko sanitize karein taake null values track ho sakein
     const sanitizedRows = result.rows.map(row => {
       const newRow = { ...row };
-
       Object.keys(newRow).forEach(col => {
         const colName = col.toLowerCase();
-        
-        // Agar column delete flag hai aur database mein empty ya null hai toh 'false' string set karein
         if (colName.includes("delete") || colName === "is_delete" || colName === "is_deleted") {
           if (newRow[col] === null || newRow[col] === undefined || newRow[col] === "") {
             newRow[col] = false;
           }
         }
       });
-
       return newRow;
     });
 
-    // ⭐ CSV-STRINGIFY CASTING FIX: Yeh settings ensure karengi ke 0 aur false gayab na hon CSV se
     const csv = stringify(sanitizedRows, { 
       header: true,
       cast: {
-        boolean: function(value) {
-          return value ? "true" : "false"; // Boolean values explicit text banengi
-        },
-        number: function(value) {
-          return String(value); // '0' ya negative values hamesha visible rahengi
-        }
+        boolean: function(value) { return value ? "true" : "false"; },
+        number: function(value) { return String(value); }
       }
     });
 
@@ -96,7 +83,7 @@ async function createArchiveBackup(fromDate, toDate, res) {
 }
 
 /* =========================================================================
-   PREVIEW ROUTE
+   PREVIEW ROUTE (MULTI-BANK SUPPORT)
 ========================================================================= */
 router.post("/preview", async (req, res) => {
   try {
@@ -108,27 +95,24 @@ router.post("/preview", async (req, res) => {
     const fromDate = new Date(date_from).toISOString().split("T")[0];
     const toDate = new Date(date_to).toISOString().split("T")[0];
 
-    // 1. Get Last Snapshot Reference
     const lastSnapshot = await db.query(`
-      SELECT id, opening_cash, opening_bank, date_to 
+      SELECT id, opening_cash, date_to 
       FROM archive_snapshots 
       WHERE date_to < $1::date 
       ORDER BY date_to DESC, id DESC LIMIT 1
     `, [toDate]);
 
     let baseCash = 0;
-    let baseBank = 0;
     let calculationStartDate = '1970-01-01';
     let lastSnapshotId = 0;
 
     if (lastSnapshot.rows.length > 0) {
       baseCash = Number(lastSnapshot.rows[0].opening_cash || 0);
-      baseBank = Number(lastSnapshot.rows[0].opening_bank || 0);
       calculationStartDate = new Date(lastSnapshot.rows[0].date_to).toISOString().split("T")[0];
       lastSnapshotId = lastSnapshot.rows[0].id;
     }
 
-    // 2. Calculate Cash Balance (From last snapshot date to current target date)
+    // 1. Calculate Cash Balance
     const openingCashLive = await db.query(`
       SELECT COALESCE(SUM(balance),0) AS total FROM (
         SELECT SUM(cp.amount) AS balance FROM customer_payments cp
@@ -150,7 +134,7 @@ router.post("/preview", async (req, res) => {
       ) x
     `, [calculationStartDate, toDate]);
 
-    // 3. Calculate Bank Balance
+    // 2. Calculate Overall Bank Balance Across All Active Profiles
     const openingBankLive = await db.query(`
       SELECT COALESCE(SUM(balance),0) AS total FROM (
         SELECT SUM(cp.amount) AS balance FROM customer_payments cp
@@ -172,31 +156,80 @@ router.post("/preview", async (req, res) => {
       ) x
     `, [calculationStartDate, toDate]);
 
-    // 4. Calculate Accumulated Profit
+    // 3. Get Previous Bank Balances from Archive Balances
+    const prevBankBalances = await db.query(`
+      SELECT code AS bank_profile_id, balance FROM archive_balances 
+      WHERE balance_type='BANK' AND snapshot_id = $1
+    `, [lastSnapshotId]);
+
+    const bankPrevMap = {};
+    prevBankBalances.rows.forEach(r => {
+      bankPrevMap[r.bank_profile_id] = Number(r.balance || 0);
+    });
+
+    let cumulativeSnapBank = Object.values(bankPrevMap).reduce((a, b) => a + b, 0);
+
+    // 4. Calculate Individual Bank Profiles Balances
+    const bankProfilesRes = await db.query(`SELECT id, bank_name, account_title, account_number FROM public.banks WHERE LOWER(status) = 'active'`);
+    const bankBalances = [];
+
+/* Inside router.post("/preview") loop */
+for (const b of bankProfilesRes.rows) {
+  const profileId = Number(b.id);
+  const prevBal = bankPrevMap[profileId] || bankPrevMap[b.id] || 0;
+
+  const liveBal = await db.query(`
+    SELECT COALESCE(SUM(balance),0) AS total FROM (
+      SELECT SUM(cp.amount) AS balance FROM customer_payments cp
+      WHERE LOWER(COALESCE(cp.payment_method,''))='bank' 
+        AND cp.bank_profile_id::text = $3::text
+        AND cp.payment_date > $1::date AND cp.payment_date <= $2::date 
+        AND LOWER(COALESCE(cp.type,'')) NOT IN ('adjustment', 'opening_balance') 
+        AND cp.is_deleted=false
+      UNION ALL
+      SELECT -SUM(sp.amount) AS balance FROM supplier_payments sp
+      WHERE LOWER(COALESCE(sp.payment_method,''))='bank' 
+        AND sp.bank_profile_id::text = $3::text
+        AND sp.payment_date > $1::date AND sp.payment_date <= $2::date 
+        AND LOWER(COALESCE(sp.type,'')) NOT IN ('adjustment', 'opening_balance')
+      UNION ALL
+      SELECT -SUM(e.amount) AS balance FROM expense_ledger e
+      WHERE LOWER(COALESCE(e.payment_method,''))='bank' 
+        AND e.bank_profile_id::text = $3::text
+        AND e.expense_date > $1::date AND e.expense_date <= $2::date
+      UNION ALL
+      SELECT SUM(CASE WHEN type='deposit' THEN amount WHEN type='withdraw' THEN -amount ELSE 0 END) AS balance FROM bank_transactions
+      WHERE bank_profile_id::text = $3::text AND created_at::date > $1::date AND created_at::date <= $2::date
+    ) x
+  `, [calculationStartDate, toDate, profileId]);
+
+  const netBalance = prevBal + Number(liveBal.rows[0].total || 0);
+  bankBalances.push({
+    id: profileId,
+    bank_name: b.bank_name,
+    account_title: b.account_title,
+    account_number: b.account_number,
+    balance: netBalance
+  });
+}
+
     const openingProfit = await db.query(`
       SELECT COALESCE(SUM(net_profit),0) AS total FROM archive_profit_monthly WHERE archive_to <= $1::date
     `, [toDate]);
 
-    // 5. Calculate Customer Balances (Past Snap Balance + Activity between last snapshot & toDate)
+    // 5. Customer Balances Calculation
     const customers = await db.query(`
 WITH 
 reg_sales AS (
   SELECT customer_code, SUM(total_pkr) AS amount FROM (
     SELECT customer_code, total_pkr FROM bookings WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT customer_code, total_pkr FROM hotels WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT customer_code, total_pkr FROM visa WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT customer_code, total_pkr FROM card WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT customer_code, total_pkr FROM ticketing WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT customer_code, total_pkr FROM transport WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT customer_code, total_pkr FROM groups WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT customer_code, total_pkr FROM ziyarat WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT customer_code, total_pkr FROM hotels WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT customer_code, total_pkr FROM visa WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT customer_code, total_pkr FROM card WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT customer_code, total_pkr FROM ticketing WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT customer_code, total_pkr FROM transport WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT customer_code, total_pkr FROM groups WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT customer_code, total_pkr FROM ziyarat WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
   ) s GROUP BY customer_code
 ),
 reg_op_bal AS (
@@ -228,24 +261,16 @@ registered_balances AS (
   LEFT JOIN reg_payments rp ON rp.customer_code = c.customer_code
   WHERE c.is_deleted = false OR c.is_deleted IS NULL
 ),
-
 walkin_sales AS (
   SELECT ref_no, MAX(customer_name) AS customer_name, SUM(total_pkr) AS amount FROM (
     SELECT ref_no, customer_name, total_pkr FROM bookings WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT ref_no, customer_name, total_pkr FROM hotels WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT ref_no, customer_name, total_pkr FROM visa WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT ref_no, customer_name, total_pkr FROM card WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT ref_no, customer_name, total_pkr FROM ticketing WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT ref_no, customer_name, total_pkr FROM transport WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT ref_no, customer_name, total_pkr FROM groups WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT ref_no, customer_name, total_pkr FROM ziyarat WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT ref_no, customer_name, total_pkr FROM hotels WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT ref_no, customer_name, total_pkr FROM visa WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT ref_no, customer_name, total_pkr FROM card WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT ref_no, customer_name, total_pkr FROM ticketing WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT ref_no, customer_name, total_pkr FROM transport WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT ref_no, customer_name, total_pkr FROM groups WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT ref_no, customer_name, total_pkr FROM ziyarat WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
   ) ws_all GROUP BY ref_no
 ),
 walkin_payments AS (
@@ -272,14 +297,13 @@ all_combined AS (
   UNION ALL
   SELECT customer_code, COALESCE(customer_name, 'Walk-in Customer') AS customer_name, customer_type, balance FROM walkin_balances
 )
-
 SELECT customer_code, customer_name, customer_type, balance 
 FROM all_combined 
 WHERE ABS(balance) >= 1.00
 ORDER BY balance DESC
     `, [calculationStartDate, toDate, lastSnapshotId]);
 
-    // 6. Calculate Supplier Balances (Past Snap Balance + Activity between last snapshot & toDate)
+    // 6. Supplier Balances Calculation
     const suppliers = await db.query(`
       WITH sup_op_bal AS (
         SELECT supplier_id, SUM(amount) AS op_amount 
@@ -328,7 +352,8 @@ ORDER BY balance DESC
     res.json({
       success: true,
       opening_cash: baseCash + Number(openingCashLive.rows[0].total || 0),
-      opening_bank: baseBank + Number(openingBankLive.rows[0].total || 0),
+      opening_bank: cumulativeSnapBank + Number(openingBankLive.rows[0].total || 0),
+      bank_balances: bankBalances, // Detailed Bank Profile Array
       opening_profit: Number(openingProfit.rows[0].total || 0),
       total_customer_receivable: totalCustomerReceivable,
       total_supplier_payable: totalSupplierPayable,
@@ -345,7 +370,7 @@ ORDER BY balance DESC
 });
 
 /* =========================================================================
-   CREATE SNAPSHOT ROUTE
+   CREATE SNAPSHOT ROUTE (SAVING BANK PROFILE BALANCES)
 ========================================================================= */
 router.post("/snapshot", async (req, res) => {
   const client = await db.connect();
@@ -361,9 +386,9 @@ router.post("/snapshot", async (req, res) => {
 
     await client.query("BEGIN");
 
-    // 1. Get Previous Snapshot Data
+    // 1. Get Previous Snapshot
     const lastSnapshot = await client.query(`
-      SELECT id, opening_cash, opening_bank, date_to 
+      SELECT id, opening_cash, date_to 
       FROM archive_snapshots 
       WHERE date_to < $1::date 
       ORDER BY date_to DESC, id DESC LIMIT 1
@@ -371,14 +396,13 @@ router.post("/snapshot", async (req, res) => {
 
     const lastSnapshotId = lastSnapshot.rows[0]?.id || 0;
     const snapCash = Number(lastSnapshot.rows[0]?.opening_cash || 0);
-    const snapBank = Number(lastSnapshot.rows[0]?.opening_bank || 0);
     let calculationStartDate = '1970-01-01';
 
     if (lastSnapshot.rows.length > 0) {
       calculationStartDate = new Date(lastSnapshot.rows[0].date_to).toISOString().split("T")[0];
     }
 
-    // 2. Calculate Cash Balance
+    // 2. Cash Calculation
     const openingCash = await client.query(`
       SELECT COALESCE(SUM(balance),0) AS total FROM (
         SELECT SUM(cp.amount) AS balance FROM customer_payments cp
@@ -400,7 +424,7 @@ router.post("/snapshot", async (req, res) => {
       ) x
     `, [calculationStartDate, toDate]);
 
-    // 3. Calculate Bank Balance
+    // 3. Bank Overall Calculation
     const openingBank = await client.query(`
       SELECT COALESCE(SUM(balance),0) AS total FROM (
         SELECT SUM(cp.amount) AS balance FROM customer_payments cp
@@ -422,15 +446,28 @@ router.post("/snapshot", async (req, res) => {
       ) x
     `, [calculationStartDate, toDate]);
 
-    // 4. Calculate Net Profit Accumulated
+    // Prev Banks Map
+    const prevBankBalances = await client.query(`
+      SELECT code AS bank_profile_id, balance FROM archive_balances 
+      WHERE balance_type='BANK' AND snapshot_id = $1
+    `, [lastSnapshotId]);
+
+    const bankPrevMap = {};
+    prevBankBalances.rows.forEach(r => {
+      bankPrevMap[r.bank_profile_id] = Number(r.balance || 0);
+    });
+
+    let cumulativeSnapBank = Object.values(bankPrevMap).reduce((a, b) => a + b, 0);
+
+    const finalCash = snapCash + Number(openingCash.rows[0].total || 0);
+    const finalBank = cumulativeSnapBank + Number(openingBank.rows[0].total || 0);
+
+    // 4. Net Profit
     const openingProfit = await client.query(`
       SELECT COALESCE(SUM(net_profit),0) AS total FROM archive_profit_monthly WHERE archive_to <= $1::date
     `, [toDate]);
 
-    const finalCash = snapCash + Number(openingCash.rows[0].total || 0);
-    const finalBank = snapBank + Number(openingBank.rows[0].total || 0);
-
-    // 5. Insert Snapshot Header
+    // 5. Header Entry
     const snapshotRes = await client.query(`
       INSERT INTO archive_snapshots
       (date_from, date_to, opening_cash, opening_bank, opening_profit, total_customer_receivable, total_supplier_payable)
@@ -444,26 +481,55 @@ router.post("/snapshot", async (req, res) => {
 
     const snapshotId = snapshotRes.rows[0].id;
 
-    // 6. Calculate ALL Customer Balances
+    // 6. Save Bank Balances in `archive_balances`
+    const bankProfiles = await client.query(`SELECT id, bank_name, account_title FROM public.banks WHERE LOWER(status) = 'active'`);
+    for (const b of bankProfiles.rows) {
+      const profileId = b.id;
+      const prevBal = bankPrevMap[profileId] || 0;
+
+      const liveBankBal = await client.query(`
+        SELECT COALESCE(SUM(balance),0) AS total FROM (
+          SELECT SUM(cp.amount) AS balance FROM customer_payments cp
+          WHERE LOWER(COALESCE(cp.payment_method,''))='bank' AND cp.bank_profile_id = $3
+            AND cp.payment_date > $1::date AND cp.payment_date <= $2::date 
+            AND LOWER(COALESCE(cp.type,'')) NOT IN ('adjustment', 'opening_balance') 
+            AND cp.is_deleted=false
+          UNION ALL
+          SELECT -SUM(sp.amount) AS balance FROM supplier_payments sp
+          WHERE LOWER(COALESCE(sp.payment_method,''))='bank' AND sp.bank_profile_id = $3
+            AND sp.payment_date > $1::date AND sp.payment_date <= $2::date 
+            AND LOWER(COALESCE(sp.type,'')) NOT IN ('adjustment', 'opening_balance')
+          UNION ALL
+          SELECT -SUM(e.amount) AS balance FROM expense_ledger e
+          WHERE LOWER(COALESCE(e.payment_method,''))='bank' AND e.bank_profile_id = $3
+            AND e.expense_date > $1::date AND e.expense_date <= $2::date
+          UNION ALL
+          SELECT SUM(CASE WHEN type='deposit' THEN amount WHEN type='withdraw' THEN -amount ELSE 0 END) AS balance FROM bank_transactions
+          WHERE bank_profile_id = $3 AND created_at::date > $1::date AND created_at::date <= $2::date
+        ) x
+      `, [calculationStartDate, toDate, profileId]);
+
+      const netBankBal = prevBal + Number(liveBankBal.rows[0].total || 0);
+
+      await client.query(`
+        INSERT INTO archive_balances (snapshot_id, balance_type, code, name, balance, status)
+        VALUES ($1, 'BANK', $2, $3, $4, 'ACTIVE')
+      `, [snapshotId, profileId, `${b.bank_name} - ${b.account_title}`, netBankBal]);
+    }
+
+    // 7. Customers Balances
     const customers = await client.query(`
 WITH 
 reg_sales AS (
   SELECT customer_code, SUM(total_pkr) AS amount FROM (
     SELECT customer_code, total_pkr FROM bookings WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT customer_code, total_pkr FROM hotels WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT customer_code, total_pkr FROM visa WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT customer_code, total_pkr FROM card WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT customer_code, total_pkr FROM ticketing WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT customer_code, total_pkr FROM transport WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT customer_code, total_pkr FROM groups WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT customer_code, total_pkr FROM ziyarat WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT customer_code, total_pkr FROM hotels WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT customer_code, total_pkr FROM visa WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT customer_code, total_pkr FROM card WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT customer_code, total_pkr FROM ticketing WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT customer_code, total_pkr FROM transport WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT customer_code, total_pkr FROM groups WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT customer_code, total_pkr FROM ziyarat WHERE is_deleted=false AND customer_code IS NOT NULL AND customer_code != '' AND booking_date > $1::date AND booking_date <= $2::date
   ) s GROUP BY customer_code
 ),
 reg_op_bal AS (
@@ -495,24 +561,16 @@ registered_balances AS (
   LEFT JOIN reg_payments rp ON rp.customer_code = c.customer_code
   WHERE c.is_deleted = false OR c.is_deleted IS NULL
 ),
-
 walkin_sales AS (
   SELECT ref_no, MAX(customer_name) AS customer_name, SUM(total_pkr) AS amount FROM (
     SELECT ref_no, customer_name, total_pkr FROM bookings WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT ref_no, customer_name, total_pkr FROM hotels WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT ref_no, customer_name, total_pkr FROM visa WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT ref_no, customer_name, total_pkr FROM card WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT ref_no, customer_name, total_pkr FROM ticketing WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT ref_no, customer_name, total_pkr FROM transport WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT ref_no, customer_name, total_pkr FROM groups WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
-    UNION ALL
-    SELECT ref_no, customer_name, total_pkr FROM ziyarat WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT ref_no, customer_name, total_pkr FROM hotels WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT ref_no, customer_name, total_pkr FROM visa WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT ref_no, customer_name, total_pkr FROM card WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT ref_no, customer_name, total_pkr FROM ticketing WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT ref_no, customer_name, total_pkr FROM transport WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT ref_no, customer_name, total_pkr FROM groups WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
+    UNION ALL SELECT ref_no, customer_name, total_pkr FROM ziyarat WHERE is_deleted=false AND (customer_code IS NULL OR customer_code = '') AND booking_date > $1::date AND booking_date <= $2::date
   ) ws_all GROUP BY ref_no
 ),
 walkin_payments AS (
@@ -539,7 +597,6 @@ all_combined AS (
   UNION ALL
   SELECT customer_code, COALESCE(customer_name, 'Walk-in Customer') AS customer_name, customer_type, balance FROM walkin_balances
 )
-
 SELECT customer_code, customer_name, customer_type, balance 
 FROM all_combined 
 WHERE ABS(balance) >= 1.00
@@ -562,7 +619,7 @@ ORDER BY balance DESC
       customerCount++;
     }
 
-    // 7. Calculate Suppliers Balances
+    // 8. Suppliers Balances
     const suppliers = await client.query(`
       WITH sup_op_bal AS (
         SELECT supplier_id, SUM(amount) AS op_amount 
@@ -621,12 +678,12 @@ ORDER BY balance DESC
       supplierCount++;
     }
 
-    // 8. Update Snapshot Totals
+    // 9. Update Totals
     await client.query(`
       UPDATE archive_snapshots SET total_customer_receivable=$1, total_supplier_payable=$2 WHERE id=$3
     `, [customerTotal, supplierTotal, snapshotId]);
 
-    // 9. Process Monthly Profits inside Range
+    // 10. Process Monthly Profits
     const startDate = new Date(fromDate);
     const endDate = new Date(toDate);
     let current = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
@@ -638,20 +695,13 @@ ORDER BY balance DESC
       const salesQ = await client.query(`
         SELECT COALESCE(SUM(total),0) AS total FROM (
           SELECT COALESCE(SUM(total_pkr),0) total FROM bookings WHERE is_deleted=false AND EXTRACT(YEAR FROM created_at)=$1 AND EXTRACT(MONTH FROM created_at)=$2
-          UNION ALL
-          SELECT COALESCE(SUM(total_pkr),0) FROM hotels WHERE is_deleted=false AND EXTRACT(YEAR FROM created_at)=$1 AND EXTRACT(MONTH FROM created_at)=$2
-          UNION ALL
-          SELECT COALESCE(SUM(total_pkr),0) FROM visa WHERE is_deleted=false AND EXTRACT(YEAR FROM created_at)=$1 AND EXTRACT(MONTH FROM created_at)=$2
-          UNION ALL
-          SELECT COALESCE(SUM(total_pkr),0) FROM card WHERE is_deleted=false AND EXTRACT(YEAR FROM created_at)=$1 AND EXTRACT(MONTH FROM created_at)=$2
-          UNION ALL
-          SELECT COALESCE(SUM(total_pkr),0) FROM groups WHERE is_deleted=false AND EXTRACT(YEAR FROM created_at)=$1 AND EXTRACT(MONTH FROM created_at)=$2
-          UNION ALL
-          SELECT COALESCE(SUM(total_pkr),0) FROM ticketing WHERE is_deleted=false AND EXTRACT(YEAR FROM created_at)=$1 AND EXTRACT(MONTH FROM created_at)=$2
-          UNION ALL
-          SELECT COALESCE(SUM(total_pkr),0) FROM transport WHERE is_deleted=false AND EXTRACT(YEAR FROM created_at)=$1 AND EXTRACT(MONTH FROM created_at)=$2
-          UNION ALL
-          SELECT COALESCE(SUM(total_pkr),0) FROM ziyarat WHERE is_deleted=false AND EXTRACT(YEAR FROM created_at)=$1 AND EXTRACT(MONTH FROM created_at)=$2
+          UNION ALL SELECT COALESCE(SUM(total_pkr),0) FROM hotels WHERE is_deleted=false AND EXTRACT(YEAR FROM created_at)=$1 AND EXTRACT(MONTH FROM created_at)=$2
+          UNION ALL SELECT COALESCE(SUM(total_pkr),0) FROM visa WHERE is_deleted=false AND EXTRACT(YEAR FROM created_at)=$1 AND EXTRACT(MONTH FROM created_at)=$2
+          UNION ALL SELECT COALESCE(SUM(total_pkr),0) FROM card WHERE is_deleted=false AND EXTRACT(YEAR FROM created_at)=$1 AND EXTRACT(MONTH FROM created_at)=$2
+          UNION ALL SELECT COALESCE(SUM(total_pkr),0) FROM groups WHERE is_deleted=false AND EXTRACT(YEAR FROM created_at)=$1 AND EXTRACT(MONTH FROM created_at)=$2
+          UNION ALL SELECT COALESCE(SUM(total_pkr),0) FROM ticketing WHERE is_deleted=false AND EXTRACT(YEAR FROM created_at)=$1 AND EXTRACT(MONTH FROM created_at)=$2
+          UNION ALL SELECT COALESCE(SUM(total_pkr),0) FROM transport WHERE is_deleted=false AND EXTRACT(YEAR FROM created_at)=$1 AND EXTRACT(MONTH FROM created_at)=$2
+          UNION ALL SELECT COALESCE(SUM(total_pkr),0) FROM ziyarat WHERE is_deleted=false AND EXTRACT(YEAR FROM created_at)=$1 AND EXTRACT(MONTH FROM created_at)=$2
         ) x
       `, [year, month]);
 
@@ -717,6 +767,9 @@ ORDER BY balance DESC
   }
 });
 
+
+
+
 /* =========================================================================
    LIST ROUTE
 ========================================================================= */
@@ -745,7 +798,7 @@ router.get("/list", async (req, res) => {
 });
 
 /* =========================================================================
-   VIEW DETAIL ROUTE (EXACT TABLE COLUMN ALIAS)
+   VIEW DETAIL ROUTE (FETCHING BANK BREAKDOWN AS WELL)
 ========================================================================= */
 router.get("/view/:id", async (req, res) => {
   const { id } = req.params;
@@ -761,29 +814,28 @@ router.get("/view/:id", async (req, res) => {
       return res.status(404).json({ success: false, error: "Snapshot not found." });
     }
 
-    // Customer Balances
     const customersRes = await db.query(`
-      SELECT 
-        id, 
-        name, 
-        code,
-        COALESCE(NULLIF(code, ''), 'REG-CUST') as customer_code,
-        COALESCE(balance, 0) as balance 
+      SELECT id, name, code,
+             COALESCE(NULLIF(code, ''), 'REG-CUST') as customer_code,
+             COALESCE(balance, 0) as balance 
       FROM archive_balances 
       WHERE snapshot_id = $1 AND UPPER(balance_type) = 'CUSTOMER'
       ORDER BY name ASC
     `, [id]);
 
-    // Supplier Balances
     const suppliersRes = await db.query(`
-      SELECT 
-        id, 
-        name, 
-        code,
-        COALESCE(NULLIF(code, ''), 'SUP-CODE') as supplier_code,
-        COALESCE(balance, 0) as balance 
+      SELECT id, name, code,
+             COALESCE(NULLIF(code, ''), 'SUP-CODE') as supplier_code,
+             COALESCE(balance, 0) as balance 
       FROM archive_balances 
       WHERE snapshot_id = $1 AND UPPER(balance_type) = 'SUPPLIER'
+      ORDER BY name ASC
+    `, [id]);
+
+    const banksRes = await db.query(`
+      SELECT id, name, code as bank_profile_id, balance 
+      FROM archive_balances 
+      WHERE snapshot_id = $1 AND UPPER(balance_type) = 'BANK'
       ORDER BY name ASC
     `, [id]);
 
@@ -802,6 +854,7 @@ router.get("/view/:id", async (req, res) => {
       snapshot: snapshotRes.rows[0],
       suppliers: suppliersRes.rows || [],
       customers: customersRes.rows || [],
+      banks: banksRes.rows || [],
       profit: profitRes.rows || []
     });
 
@@ -810,6 +863,7 @@ router.get("/view/:id", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 /* =========================================================================
    LOGS ROUTE

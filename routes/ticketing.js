@@ -2,12 +2,10 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-// AUTO REF NO (SAFE VERSION)
+// ========================
+// AUTO REF NO
+// ========================
 async function generateRefNo() {
-  await db.query(`
-    CREATE SEQUENCE IF NOT EXISTS ticketing_ref_seq START WITH 1 INCREMENT BY 1;
-  `);
-
   const q = await db.query("SELECT nextval('ticketing_ref_seq') AS no");
   return "TIC-" + String(q.rows[0].no).padStart(5, "0");
 }

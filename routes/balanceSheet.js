@@ -52,38 +52,71 @@ router.get("/", async (req, res) => {
 
     const currentCashBalance = Math.round(openingCash + Number(cashIn.rows[0].total) - Number(cashOutSupplier.rows[0].total) - Number(cashOutExpense.rows[0].total) + Number(cashManual.rows[0].net));
 
-    /* ========== 2. BANK BALANCE CALCULATION ========== */
-    const bankSnap = await db.query(`SELECT opening_bank, date_to FROM archive_snapshots WHERE opening_bank IS NOT NULL ORDER BY date_to DESC, id DESC LIMIT 1`);
-    const snapBankDate = bankSnap.rows[0]?.date_to || null;
-    const openingBank = Number(bankSnap.rows[0]?.opening_bank || 0);
+    /* ========== 2. MULTIPLE BANK BALANCES CALCULATION ========== */
+    const bankProfiles = await db.query(`
+      SELECT id, bank_name, account_title, account_number 
+      FROM public.banks 
+      WHERE LOWER(status) = 'active' 
+      ORDER BY id ASC
+    `);
 
-    const bankIn = await db.query(`
-      SELECT COALESCE(SUM(amount), 0) as total FROM customer_payments 
-      WHERE LOWER(payment_method) = 'bank' AND is_deleted = false 
-      AND LOWER(COALESCE(type, '')) NOT IN ('adjustment', 'opening_balance')
-      AND ($1::date IS NULL OR payment_date::date > $1)
-    `, [snapBankDate]);
+    let bankBreakdown = [];
+    let currentBankBalance = 0;
 
-    const bankOutSupplier = await db.query(`
-      SELECT COALESCE(SUM(amount), 0) as total FROM supplier_payments 
-      WHERE LOWER(payment_method) = 'bank' 
-      AND LOWER(COALESCE(type, '')) NOT IN ('adjustment', 'opening_balance')
-      AND ($1::date IS NULL OR payment_date::date > $1)
-    `, [snapBankDate]);
+    for (const bank of bankProfiles.rows) {
+      const bankId = bank.id;
 
-    const bankOutExpense = await db.query(`
-      SELECT COALESCE(SUM(amount), 0) as total FROM expense_ledger 
-      WHERE LOWER(payment_method) = 'bank' AND ($1::date IS NULL OR expense_date::date > $1)
-    `, [snapBankDate]);
+      const bankSnap = await db.query(`
+        SELECT b.balance, s.date_to 
+        FROM archive_balances b 
+        JOIN archive_snapshots s ON s.id = b.snapshot_id 
+        WHERE UPPER(b.balance_type) = 'BANK' AND b.code = $1 
+        ORDER BY s.date_to DESC, s.id DESC LIMIT 1
+      `, [String(bankId)]);
 
-    const bankManual = await db.query(`
-      SELECT 
-        COALESCE(SUM(CASE WHEN type='deposit' THEN amount ELSE 0 END), 0) -
-        COALESCE(SUM(CASE WHEN type='withdraw' THEN amount ELSE 0 END), 0) as net
-      FROM bank_transactions WHERE ($1::date IS NULL OR txn_date::date > $1)
-    `, [snapBankDate]);
+      const snapBankDate = bankSnap.rows[0]?.date_to || null;
+      const openingBank = Number(bankSnap.rows[0]?.balance || 0);
 
-    const currentBankBalance = Math.round(openingBank + Number(bankIn.rows[0].total) - Number(bankOutSupplier.rows[0].total) - Number(bankOutExpense.rows[0].total) + Number(bankManual.rows[0].net));
+      const bankIn = await db.query(`
+        SELECT COALESCE(SUM(amount), 0) as total FROM customer_payments 
+        WHERE LOWER(payment_method) = 'bank' AND bank_profile_id = $1 AND is_deleted = false 
+        AND LOWER(COALESCE(type, '')) NOT IN ('adjustment', 'opening_balance')
+        AND ($2::date IS NULL OR payment_date::date > $2)
+      `, [bankId, snapBankDate]);
+
+      const bankOutSupplier = await db.query(`
+        SELECT COALESCE(SUM(amount), 0) as total FROM supplier_payments 
+        WHERE LOWER(payment_method) = 'bank' AND bank_profile_id = $1 
+        AND LOWER(COALESCE(type, '')) NOT IN ('adjustment', 'opening_balance')
+        AND ($2::date IS NULL OR payment_date::date > $2)
+      `, [bankId, snapBankDate]);
+
+      const bankOutExpense = await db.query(`
+        SELECT COALESCE(SUM(amount), 0) as total FROM expense_ledger 
+        WHERE LOWER(payment_method) = 'bank' AND bank_profile_id = $1 AND ($2::date IS NULL OR expense_date::date > $2)
+      `, [bankId, snapBankDate]);
+
+      const bankManual = await db.query(`
+        SELECT 
+          COALESCE(SUM(CASE WHEN LOWER(type)='deposit' THEN amount ELSE 0 END), 0) AS deposits,
+          COALESCE(SUM(CASE WHEN LOWER(type)='withdraw' THEN amount ELSE 0 END), 0) AS withdrawals
+        FROM bank_transactions WHERE bank_profile_id = $1 AND ($2::date IS NULL OR txn_date::date > $2)
+      `, [bankId, snapBankDate]);
+
+      const totalReceived = Number(bankIn.rows[0].total) + Number(bankManual.rows[0].deposits) + openingBank;
+      const totalPaid = Number(bankOutSupplier.rows[0].total) + Number(bankOutExpense.rows[0].total) + Number(bankManual.rows[0].withdrawals);
+      const singleBankBalance = Math.round(totalReceived - totalPaid);
+
+      bankBreakdown.push({
+        id: bank.id,
+        bank_name: bank.bank_name,
+        account_title: bank.account_title,
+        account_number: bank.account_number,
+        balance: singleBankBalance
+      });
+
+      currentBankBalance += singleBankBalance;
+    }
 
     /* ========== 3. REGISTERED CUSTOMER CODES ========== */
     const regCustomerCodesRes = await db.query(`
@@ -262,15 +295,14 @@ router.get("/", async (req, res) => {
     const summary = {
       cash_in_hand: currentCashBalance,
       bank_balance: currentBankBalance,
+      bank_breakdown: bankBreakdown,
       
-      // Separate Customer Breakdown
       walkin_receivable: walkinReceivable,
       registered_receivable: registeredReceivable,
       total_receivable: totalReceivable,
 
       total_payable: totalSupplierPayable,
       
-      // Separate Extra Received Breakdown
       walkin_extra_received: walkinExtraReceived,
       registered_extra_received: registeredExtraReceived,
       total_extra_received: totalExtraReceived,
@@ -284,6 +316,7 @@ router.get("/", async (req, res) => {
     return res.json({
       success: true,
       snapshot: { snapshotId, snapshotDate },
+      banks: bankBreakdown,
       customers: standardCustomerRows.sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance)),
       registeredCustomers: registeredRows.sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance)),
       suppliers,
