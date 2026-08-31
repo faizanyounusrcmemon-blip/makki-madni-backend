@@ -13,8 +13,10 @@ const moduleMapping = {
   transport: "Transport",
   ziyarat: "Ziyarat",
   purchase: "Purchase",
-  supplier: "Supplier",
-  customers: "Customers",
+  supplier: "Supplier Ledger",
+  suppliers: "Supplier Ledger",
+  customer: "Customer Ledger",
+  customers: "Customer Ledger",
 
   "customer-ledger": "Customer Ledger",
   "supplier-ledger": "Supplier Ledger",
@@ -23,6 +25,8 @@ const moduleMapping = {
   "bank-ledger": "Bank Ledger",
   "cash-ledger": "Cash Ledger",
   "expense-ledger": "Expense Ledger",
+  payments: "Payments & Receipts",
+  vouchers: "Vouchers",
 
   users: "User Management",
   user: "User Management",
@@ -43,6 +47,11 @@ const tableByRoute = {
   transport: "transport",
   ziyarat: "ziyarat",
   purchase: "purchase_entries",
+  suppliers: "suppliers",
+  customers: "customers",
+  "supplier-ledger": "supplier_ledger",
+  "customer-ledger": "customer_ledger",
+  "registered-ledger": "registered_ledger",
 };
 
 function getRouteParts(req) {
@@ -71,7 +80,6 @@ function getModuleName(routeName, subPath) {
    ========================================================= */
 async function getLoggedInUser(req) {
   try {
-    // 1. Headers se Har Tarah ke Case Check Karein
     const headers = req.headers || {};
     const headerName =
       headers["x-user-name"] ||
@@ -81,7 +89,6 @@ async function getLoggedInUser(req) {
       req.get("x-username") ||
       "";
 
-    // 2. Request Body se Username Check Karein
     const body = req.body || {};
     const bodyUser =
       body.username ||
@@ -91,7 +98,6 @@ async function getLoggedInUser(req) {
 
     let searchUser = String(headerName || bodyUser || "").trim();
 
-    // Agar User Mil Gaya
     if (searchUser && searchUser !== "Unknown User" && searchUser !== "undefined") {
       const result = await db.query(
         `SELECT id, username, name FROM users WHERE LOWER(username) = LOWER($1) OR LOWER(name) = LOWER($1) LIMIT 1`,
@@ -107,7 +113,6 @@ async function getLoggedInUser(req) {
       return { id: null, username: searchUser };
     }
 
-    // 3. Last Fallback: Database Se Akheri Login User Utha Lo (Jo sab se last active tha)
     const lastLoginResult = await db.query(
       `SELECT username, user_id FROM activity_logs WHERE action = 'LOGIN' ORDER BY created_at DESC LIMIT 1`
     );
@@ -125,19 +130,111 @@ async function getLoggedInUser(req) {
   }
 }
 
-function getReference(req) {
+/* =========================================================
+   EXTRACT REFERENCE CODE (FROM REQ BODY + RES BODY)
+   ========================================================= */
+function getReference(req, parsedRes) {
   const b = req.body || {};
+  const resObj = parsedRes || {};
+
+  // Check Response Body Pehle (Kyunke Nayi Sale ka Ref Backend se Ban kar aata hai)
   return (
+    resObj.ref_no ||
+    resObj.booking_no ||
+    resObj.pkg_no ||
+    resObj.customer_code ||
+    resObj.supplier_code ||
+    resObj.code ||
     b.ref_no ||
+    b.booking_no ||
     b.customer_code ||
     b.supplier_code ||
+    b.code ||
+    b.voucher_no ||
+    b.payment_id ||
     b.purchase_ref ||
     b.pkg_no ||
     req.params?.ref_no ||
+    req.params?.code ||
     req.params?.ref ||
     req.params?.id ||
     "-"
   );
+}
+
+/* =========================================================
+   FIND PARTY NAME & REAL CODE
+   ========================================================= */
+async function findPartyDetails(routeName, rawRef, body, parsedRes) {
+  let name = body.customer_name || body.supplier_name || body.party_name || body.name || parsedRes?.customer_name || parsedRes?.name || "";
+  let code = body.customer_code || body.supplier_code || body.code || parsedRes?.ref_no || rawRef || "-";
+
+  // If we already have a clean Code (e.g. PKG-00123 / CUST-00001)
+  if (name && code && isNaN(code) && code !== "-") {
+    return { name, code };
+  }
+
+  // Database lookup across all sale/ledger tables
+  try {
+    const table = tableByRoute[routeName];
+
+    // If sale creation table exists and rawRef is missing or numeric
+    if (table) {
+      const isNumeric = !isNaN(rawRef) && rawRef !== "-";
+      let queryStr = "";
+      let params = [];
+
+      if (isNumeric) {
+        queryStr = `SELECT * FROM ${table} WHERE id::text = $1 LIMIT 1`;
+        params = [String(rawRef)];
+      } else if (rawRef !== "-") {
+        queryStr = `SELECT * FROM ${table} WHERE ref_no = $1 OR customer_code = $1 OR supplier_code = $1 LIMIT 1`;
+        params = [String(rawRef)];
+      } else {
+        // Fetch last inserted entry for sale tables
+        queryStr = `SELECT * FROM ${table} ORDER BY id DESC LIMIT 1`;
+      }
+
+      const resDB = await db.query(queryStr, params);
+      if (resDB.rows.length > 0) {
+        const row = resDB.rows[0];
+        return {
+          name: name || row.customer_name || row.supplier_name || row.name || "",
+          code: row.ref_no || row.customer_code || row.supplier_code || row.code || code,
+        };
+      }
+    }
+
+    // Secondary Cross Table Query
+    const result = await db.query(
+      `
+      SELECT customer_name AS name, ref_no AS code FROM bookings WHERE ref_no = $1 OR id::text = $1
+      UNION ALL
+      SELECT customer_name AS name, ref_no AS code FROM hotels WHERE ref_no = $1 OR id::text = $1
+      UNION ALL
+      SELECT customer_name AS name, ref_no AS code FROM visa WHERE ref_no = $1 OR id::text = $1
+      UNION ALL
+      SELECT customer_name AS name, ref_no AS code FROM ticketing WHERE ref_no = $1 OR id::text = $1
+      UNION ALL
+      SELECT name AS name, customer_code AS code FROM customers WHERE id::text = $1 OR customer_code = $1
+      UNION ALL
+      SELECT supplier_name AS name, supplier_code AS code FROM suppliers WHERE id::text = $1 OR supplier_code = $1
+      LIMIT 1
+      `,
+      [String(rawRef)]
+    );
+
+    if (result.rows.length > 0) {
+      return {
+        name: name || result.rows[0].name || "",
+        code: result.rows[0].code || code,
+      };
+    }
+  } catch (e) {
+    console.error("Party Details Lookup Error:", e.message);
+  }
+
+  return { name, code };
 }
 
 async function recordAlreadyExists(routeName, refNo, body) {
@@ -148,7 +245,7 @@ async function recordAlreadyExists(routeName, refNo, body) {
 
   try {
     const result = await db.query(
-      `SELECT EXISTS (SELECT 1 FROM ${table} WHERE ref_no = $1) AS exists`,
+      `SELECT EXISTS (SELECT 1 FROM ${table} WHERE id::text = $1 OR ref_no = $1 OR supplier_code = $1 OR customer_code = $1) AS exists`,
       [refNo]
     );
     return !!result.rows[0]?.exists;
@@ -157,6 +254,9 @@ async function recordAlreadyExists(routeName, refNo, body) {
   }
 }
 
+/* =========================================================
+   ACTION DETERMINATION
+   ========================================================= */
 function getAction(req, routeName, refExistsBefore) {
   const method = String(req.method || "").toUpperCase();
   const path = String(req.originalUrl || "").toLowerCase();
@@ -166,6 +266,19 @@ function getAction(req, routeName, refExistsBefore) {
   if (path.includes("/auth/logout")) return "LOGOUT";
 
   if (body.activityAction) return String(body.activityAction).toUpperCase();
+
+  const isPaymentRoute =
+    path.includes("/payment") ||
+    path.includes("/voucher") ||
+    path.includes("/receipt") ||
+    path.includes("ledger") ||
+    body.is_payment === true ||
+    body.type === "payment";
+
+  if (isPaymentRoute) {
+    return "PAYMENT";
+  }
+
   if (method === "DELETE" || path.includes("/delete/") || path.endsWith("/delete")) return "DELETE";
   if (method === "PUT" || method === "PATCH") return "UPDATE";
   if (method === "POST" && (path.includes("/save") || path.includes("/update") || path.includes("/edit"))) {
@@ -173,41 +286,6 @@ function getAction(req, routeName, refExistsBefore) {
   }
   if (method === "POST") return "CREATE";
   return "OTHER";
-}
-
-async function findPartyName(routeName, refNo, body) {
-  if (body.customer_name || body.supplier_name || body.name) {
-    return body.customer_name || body.supplier_name || body.name;
-  }
-  if (!refNo || refNo === "-") return "";
-
-  try {
-    const result = await db.query(
-      `
-      SELECT customer_name AS party FROM bookings WHERE ref_no = $1
-      UNION ALL
-      SELECT customer_name FROM visa WHERE ref_no = $1
-      UNION ALL
-      SELECT customer_name FROM hotels WHERE ref_no = $1
-      UNION ALL
-      SELECT customer_name FROM ticketing WHERE ref_no = $1
-      UNION ALL
-      SELECT customer_name FROM card WHERE ref_no = $1
-      UNION ALL
-      SELECT customer_name FROM "groups" WHERE ref_no = $1
-      UNION ALL
-      SELECT customer_name FROM transport WHERE ref_no = $1
-      UNION ALL
-      SELECT customer_name FROM ziyarat WHERE ref_no = $1
-      LIMIT 1
-      `,
-      [refNo]
-    );
-
-    return result.rows[0]?.party || "";
-  } catch {
-    return "";
-  }
 }
 
 /* =========================================================
@@ -227,7 +305,6 @@ module.exports = async function activityLogger(req, res, next) {
 
   const { routeName, subPath } = getRouteParts(req);
   const moduleName = getModuleName(routeName, subPath);
-  const refNo = getReference(req);
 
   const originalSend = res.send;
   res.send = function (responseBody) {
@@ -236,15 +313,28 @@ module.exports = async function activityLogger(req, res, next) {
     if (res.statusCode >= 200 && res.statusCode < 300) {
       setImmediate(async () => {
         try {
-          // Send response ke waqt user extract karo taake Multer/Body parser chal chuka ho
           const body = req.body || {};
+
+          // Safely parse JSON response body to catch server-generated ref_no
+          let parsedRes = {};
+          try {
+            parsedRes = typeof responseBody === "string" ? JSON.parse(responseBody) : responseBody;
+          } catch (e) {
+            parsedRes = {};
+          }
+
+          const rawRef = getReference(req, parsedRes);
           const loggedUser = await getLoggedInUser(req);
           const userId = loggedUser.id;
           const username = loggedUser.username;
 
-          const refExistsBefore = await recordAlreadyExists(routeName, refNo, body);
+          const refExistsBefore = await recordAlreadyExists(routeName, rawRef, body);
           const actionName = getAction(req, routeName, refExistsBefore);
-          const partyName = await findPartyName(routeName, refNo, body);
+
+          // Details extract including backend response
+          const partyDetails = await findPartyDetails(routeName, rawRef, body, parsedRes);
+          const finalRef = partyDetails.code && partyDetails.code !== "-" ? partyDetails.code : rawRef;
+          const partyName = partyDetails.name;
 
           let description = "";
 
@@ -252,14 +342,19 @@ module.exports = async function activityLogger(req, res, next) {
             description = `User ${username} logged in successfully`;
           } else if (actionName === "LOGOUT") {
             description = `User ${username} logged out`;
+          } else if (actionName === "PAYMENT") {
+            const actionText = (method === "PUT" || method === "PATCH") ? "Payment entry updated" : "Payment entry processed";
+            description = partyName 
+              ? `${actionText} for ${partyName} (${finalRef})` 
+              : `${actionText} (${finalRef})`;
           } else {
             description = `${actionName} action performed on ${moduleName}`;
-            if (partyName && refNo !== "-") {
-              description += ` for ${partyName} (${refNo})`;
+            if (partyName && finalRef !== "-") {
+              description += ` for ${partyName} (${finalRef})`;
             } else if (partyName) {
               description += ` for ${partyName}`;
-            } else if (refNo !== "-") {
-              description += ` (${refNo})`;
+            } else if (finalRef !== "-") {
+              description += ` (${finalRef})`;
             }
           }
 
@@ -275,7 +370,7 @@ module.exports = async function activityLogger(req, res, next) {
               actionName,
               moduleName,
               description,
-              refNo,
+              finalRef,
               method,
               originalUrl,
             ]
