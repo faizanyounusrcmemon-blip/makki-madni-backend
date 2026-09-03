@@ -201,88 +201,181 @@ router.get("/supplier-adjustment-only", async (req, res) => {
 });
 
 /* =====================================================
-   🔹 ALL REPORTS (WITH REGISTERED / WALK-IN IDENTIFIER)
+   1. GET ALL FINALIZED REPORTS (ALL REPORTS)
 ===================================================== */
 router.get("/all", async (req, res) => {
   try {
     const q = await db.query(`
-      SELECT 
-        'Packages' AS type, id, ref_no, customer_name, customer_code, booking_date, total_pkr,
-        CASE 
-          WHEN customer_code IS NOT NULL AND TRIM(customer_code) != '' THEN 'Registered'
-          ELSE 'Walk-in'
-        END AS customer_type
-      FROM bookings WHERE is_deleted=false
+      SELECT 'Packages' AS type, id, ref_no, customer_name, customer_code, booking_date, total_pkr
+      FROM bookings WHERE is_deleted=false AND is_final=true
 
       UNION ALL
-      SELECT 
-        'Ticketing', id, ref_no, customer_name, customer_code, booking_date, total_pkr,
-        CASE 
-          WHEN customer_code IS NOT NULL AND TRIM(customer_code) != '' THEN 'Registered'
-          ELSE 'Walk-in'
-        END AS customer_type
-      FROM ticketing WHERE is_deleted=false
+      SELECT 'Ticketing', id, ref_no, customer_name, customer_code, booking_date, total_pkr
+      FROM ticketing WHERE is_deleted=false AND is_final=true
 
       UNION ALL
-      SELECT 
-        'Hotels', id, ref_no, customer_name, customer_code, booking_date, total_pkr,
-        CASE 
-          WHEN customer_code IS NOT NULL AND TRIM(customer_code) != '' THEN 'Registered'
-          ELSE 'Walk-in'
-        END AS customer_type
-      FROM hotels WHERE is_deleted=false
+      SELECT 'Hotels', id, ref_no, customer_name, customer_code, booking_date, total_pkr
+      FROM hotels WHERE is_deleted=false AND is_final=true
 
       UNION ALL
-      SELECT 
-        'Visa', id, ref_no, customer_name, customer_code, booking_date, total_pkr,
-        CASE 
-          WHEN customer_code IS NOT NULL AND TRIM(customer_code) != '' THEN 'Registered'
-          ELSE 'Walk-in'
-        END AS customer_type
-      FROM visa WHERE is_deleted=false
+      SELECT 'Visa', id, ref_no, customer_name, customer_code, booking_date, total_pkr
+      FROM visa WHERE is_deleted=false AND is_final=true
 
       UNION ALL
-      SELECT 
-        'Card', id, ref_no, customer_name, customer_code, booking_date, total_pkr,
-        CASE 
-          WHEN customer_code IS NOT NULL AND TRIM(customer_code) != '' THEN 'Registered'
-          ELSE 'Walk-in'
-        END AS customer_type
-      FROM card WHERE is_deleted=false
+      SELECT 'Transport', id, ref_no, customer_name, customer_code, booking_date, total_pkr
+      FROM transport WHERE is_deleted=false AND is_final=true
 
       UNION ALL
-      SELECT 
-        'Groups', id, ref_no, customer_name, customer_code, booking_date, total_pkr,
-        CASE 
-          WHEN customer_code IS NOT NULL AND TRIM(customer_code) != '' THEN 'Registered'
-          ELSE 'Walk-in'
-        END AS customer_type
-      FROM groups WHERE is_deleted=false
-
-      UNION ALL
-      SELECT 
-        'Transport', id, ref_no, customer_name, customer_code, booking_date, total_pkr,
-        CASE 
-          WHEN customer_code IS NOT NULL AND TRIM(customer_code) != '' THEN 'Registered'
-          ELSE 'Walk-in'
-        END AS customer_type
-      FROM transport WHERE is_deleted=false
-
-      UNION ALL
-      SELECT 
-        'Ziyarat', id, ref_no, customer_name, customer_code, booking_date, total_pkr,
-        CASE 
-          WHEN customer_code IS NOT NULL AND TRIM(customer_code) != '' THEN 'Registered'
-          ELSE 'Walk-in'
-        END AS customer_type
-      FROM ziyarat WHERE is_deleted=false
+      SELECT 'Ziyarat', id, ref_no, customer_name, customer_code, booking_date, total_pkr
+      FROM ziyarat WHERE is_deleted=false AND is_final=true
 
       ORDER BY booking_date DESC
     `);
-
     res.json(q.rows);
   } catch (err) {
-    console.error("REPORTS ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/* =====================================================
+   2. GET PENDING SALES REPORT
+===================================================== */
+router.get("/pending", async (req, res) => {
+  try {
+    const q = await db.query(`
+      SELECT 'Packages' AS type, id, ref_no, customer_name, customer_code, booking_date, total_pkr
+      FROM bookings WHERE is_deleted=false AND (is_final=false OR is_final IS NULL)
+
+      UNION ALL
+      SELECT 'Ticketing', id, ref_no, customer_name, customer_code, booking_date, total_pkr
+      FROM ticketing WHERE is_deleted=false AND (is_final=false OR is_final IS NULL)
+
+      UNION ALL
+      SELECT 'Hotels', id, ref_no, customer_name, customer_code, booking_date, total_pkr
+      FROM hotels WHERE is_deleted=false AND (is_final=false OR is_final IS NULL)
+
+      UNION ALL
+      SELECT 'Visa', id, ref_no, customer_name, customer_code, booking_date, total_pkr
+      FROM visa WHERE is_deleted=false AND (is_final=false OR is_final IS NULL)
+
+      UNION ALL
+      SELECT 'Transport', id, ref_no, customer_name, customer_code, booking_date, total_pkr
+      FROM transport WHERE is_deleted=false AND (is_final=false OR is_final IS NULL)
+
+      UNION ALL
+      SELECT 'Ziyarat', id, ref_no, customer_name, customer_code, booking_date, total_pkr
+      FROM ziyarat WHERE is_deleted=false AND (is_final=false OR is_final IS NULL)
+
+      ORDER BY booking_date DESC
+    `);
+    res.json(q.rows);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/* =====================================================
+   3. FINALIZE SALE API WITH PASSWORD VERIFICATION
+===================================================== */
+router.post("/finalize", async (req, res) => {
+  const { type, ref_no, password } = req.body;
+
+  if (!password) {
+    return res.status(400).json({ success: false, message: "Password is required" });
+  }
+
+  try {
+    // 1. Password Lookup from Database
+    const passQuery = await db.query(
+      `SELECT password_val FROM public.system_passwords WHERE key_name = 'finalize_pass' LIMIT 1`
+    );
+
+    if (passQuery.rows.length === 0) {
+      return res.status(400).json({ success: false, message: "Finalize password not configured in system." });
+    }
+
+    const correctPassword = passQuery.rows[0].password_val;
+
+    if (password !== correctPassword) {
+      return res.status(401).json({ success: false, message: "Invalid Password!" });
+    }
+
+    // 2. Table Mapping
+    const tableMap = {
+      Packages: "bookings",
+      Hotels: "hotels",
+      Ticketing: "ticketing",
+      Transport: "transport",
+      Ziyarat: "ziyarat",
+      Visa: "visa",
+      Card: "card",
+      Groups: "groups",
+    };
+
+    const table = tableMap[type];
+
+    if (!table || !ref_no) {
+      return res.status(400).json({ success: false, message: "Invalid Request Parameters" });
+    }
+
+    // 3. Update Final Status
+    await db.query(`UPDATE ${table} SET is_final = true WHERE ref_no = $1`, [ref_no]);
+
+    res.json({ success: true, message: "Sale finalized successfully!" });
+  } catch (err) {
+    console.error("FINALIZE ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/* =====================================================
+   UNFINALIZE SALE API (RETURN TO PENDING WITH PASSWORD)
+===================================================== */
+router.post("/unfinalize", async (req, res) => {
+  const { type, ref_no, password } = req.body;
+
+  if (!password) {
+    return res.status(400).json({ success: false, message: "Password is required" });
+  }
+
+  try {
+    // 1. Password Verification
+    const passQuery = await db.query(
+      `SELECT password_val FROM public.system_passwords WHERE key_name = 'unfinalize_pass' LIMIT 1`
+    );
+
+    if (passQuery.rows.length === 0) {
+      return res.status(400).json({ success: false, message: "Unfinalize password not configured in system." });
+    }
+
+    if (password !== passQuery.rows[0].password_val) {
+      return res.status(401).json({ success: false, message: "Invalid Password!" });
+    }
+
+    // 2. Table Mapping
+    const tableMap = {
+      Packages: "bookings",
+      Hotels: "hotels",
+      Ticketing: "ticketing",
+      Transport: "transport",
+      Ziyarat: "ziyarat",
+      Visa: "visa",
+      Card: "card",
+      Groups: "groups",
+    };
+
+    const table = tableMap[type];
+
+    if (!table || !ref_no) {
+      return res.status(400).json({ success: false, message: "Invalid Parameters" });
+    }
+
+    // 3. Status Change back to Pending (is_final = false)
+    await db.query(`UPDATE ${table} SET is_final = false WHERE ref_no = $1`, [ref_no]);
+
+    res.json({ success: true, message: "Sale returned to Pending status successfully!" });
+  } catch (err) {
+    console.error("UNFINALIZE ERROR:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

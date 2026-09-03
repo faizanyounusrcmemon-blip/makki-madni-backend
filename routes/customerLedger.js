@@ -97,7 +97,7 @@ async function updatePaymentStatus(ref_no) {
 }
 
 /* =====================================================
-   PAYMENT PENDING / PARTIAL LIST (SUPER FAST & OPTIMIZED)
+    PAYMENT PENDING / PARTIAL LIST (ONLY FINALIZED SALES)
 ===================================================== */
 router.get("/pending/list", async (req, res) => {
   try {
@@ -112,6 +112,7 @@ router.get("/pending/list", async (req, res) => {
            FROM ${tbl} 
            WHERE (customer_code IS NULL OR TRIM(customer_code) = '')
            AND (is_deleted IS NOT TRUE OR is_deleted IS NULL)
+           AND is_final = true
            AND UPPER(payment_status) IN ('PENDING', 'PARTIAL')`
         );
 

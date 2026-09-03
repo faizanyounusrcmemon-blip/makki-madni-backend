@@ -1001,7 +1001,7 @@ router.get("/detail/:ref_no", async (req, res) => {
 
 
 /* =====================================================
-   PENDING + PARTIAL PURCHASE
+    PENDING + PARTIAL PURCHASE (ONLY FINALIZED SALES)
 ===================================================== */
 router.get("/pending", async (req, res) => {
   try {
@@ -1017,6 +1017,7 @@ router.get("/pending", async (req, res) => {
           purchase_status
         FROM bookings
         WHERE is_deleted = false
+          AND is_final = true
           AND purchase_status IN ('PENDING','PARTIAL')
 
         UNION ALL
@@ -1028,6 +1029,7 @@ router.get("/pending", async (req, res) => {
           purchase_status
         FROM hotels
         WHERE is_deleted = false
+          AND is_final = true
           AND purchase_status IN ('PENDING','PARTIAL')
 
         UNION ALL
@@ -1039,6 +1041,7 @@ router.get("/pending", async (req, res) => {
           purchase_status
         FROM visa
         WHERE is_deleted = false
+          AND is_final = true
           AND purchase_status IN ('PENDING','PARTIAL')
 
         UNION ALL
@@ -1050,6 +1053,7 @@ router.get("/pending", async (req, res) => {
           purchase_status
         FROM card
         WHERE is_deleted = false
+          AND is_final = true
           AND purchase_status IN ('PENDING','PARTIAL')
 
         UNION ALL
@@ -1061,6 +1065,7 @@ router.get("/pending", async (req, res) => {
           purchase_status
         FROM groups
         WHERE is_deleted = false
+          AND is_final = true
           AND purchase_status IN ('PENDING','PARTIAL')
 
         UNION ALL
@@ -1072,6 +1077,7 @@ router.get("/pending", async (req, res) => {
           purchase_status
         FROM ticketing
         WHERE is_deleted = false
+          AND is_final = true
           AND purchase_status IN ('PENDING','PARTIAL')
 
         UNION ALL
@@ -1083,6 +1089,7 @@ router.get("/pending", async (req, res) => {
           purchase_status
         FROM transport
         WHERE is_deleted = false
+          AND is_final = true
           AND purchase_status IN ('PENDING','PARTIAL')
 
         UNION ALL
@@ -1094,6 +1101,7 @@ router.get("/pending", async (req, res) => {
           purchase_status
         FROM ziyarat
         WHERE is_deleted = false
+          AND is_final = true
           AND purchase_status IN ('PENDING','PARTIAL')
 
       ) x
