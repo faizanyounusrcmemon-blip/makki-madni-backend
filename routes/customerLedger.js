@@ -97,7 +97,7 @@ async function updatePaymentStatus(ref_no) {
 }
 
 /* =====================================================
-    PAYMENT PENDING / PARTIAL LIST (ONLY FINALIZED SALES)
+    PAYMENT PENDING / PARTIAL LIST
 ===================================================== */
 router.get("/pending/list", async (req, res) => {
   try {
@@ -107,12 +107,15 @@ router.get("/pending/list", async (req, res) => {
     // 1. Direct Lookup: Fetch records directly using saved payment_status column (INSTANT)
     for (const tbl of tables) {
       try {
+        // Only enforce is_final = true for the 'bookings' table
+        const finalCondition = tbl === "bookings" ? "AND is_final = true" : "";
+
         const liveRes = await db.query(
           `SELECT ref_no, customer_name, payment_status 
            FROM ${tbl} 
            WHERE (customer_code IS NULL OR TRIM(customer_code) = '')
            AND (is_deleted IS NOT TRUE OR is_deleted IS NULL)
-           AND is_final = true
+           ${finalCondition}
            AND UPPER(payment_status) IN ('PENDING', 'PARTIAL')`
         );
 

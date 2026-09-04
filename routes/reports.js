@@ -201,33 +201,33 @@ router.get("/supplier-adjustment-only", async (req, res) => {
 });
 
 /* =====================================================
-   1. GET ALL FINALIZED REPORTS (ALL REPORTS)
+   1. GET ALL REPORTS (BOOKINGS HAS IS_FINAL STATS)
 ===================================================== */
 router.get("/all", async (req, res) => {
   try {
     const q = await db.query(`
-      SELECT 'Packages' AS type, id, ref_no, customer_name, customer_code, booking_date, total_pkr
-      FROM bookings WHERE is_deleted=false AND is_final=true
+      SELECT 'Packages' AS type, id, ref_no, customer_name, customer_code, booking_date, total_pkr, is_final
+      FROM bookings WHERE is_deleted=false
 
       UNION ALL
-      SELECT 'Ticketing', id, ref_no, customer_name, customer_code, booking_date, total_pkr
-      FROM ticketing WHERE is_deleted=false AND is_final=true
+      SELECT 'Ticketing', id, ref_no, customer_name, customer_code, booking_date, total_pkr, false AS is_final
+      FROM ticketing WHERE is_deleted=false
 
       UNION ALL
-      SELECT 'Hotels', id, ref_no, customer_name, customer_code, booking_date, total_pkr
-      FROM hotels WHERE is_deleted=false AND is_final=true
+      SELECT 'Hotels', id, ref_no, customer_name, customer_code, booking_date, total_pkr, false AS is_final
+      FROM hotels WHERE is_deleted=false
 
       UNION ALL
-      SELECT 'Visa', id, ref_no, customer_name, customer_code, booking_date, total_pkr
-      FROM visa WHERE is_deleted=false AND is_final=true
+      SELECT 'Visa', id, ref_no, customer_name, customer_code, booking_date, total_pkr, false AS is_final
+      FROM visa WHERE is_deleted=false
 
       UNION ALL
-      SELECT 'Transport', id, ref_no, customer_name, customer_code, booking_date, total_pkr
-      FROM transport WHERE is_deleted=false AND is_final=true
+      SELECT 'Transport', id, ref_no, customer_name, customer_code, booking_date, total_pkr, false AS is_final
+      FROM transport WHERE is_deleted=false
 
       UNION ALL
-      SELECT 'Ziyarat', id, ref_no, customer_name, customer_code, booking_date, total_pkr
-      FROM ziyarat WHERE is_deleted=false AND is_final=true
+      SELECT 'Ziyarat', id, ref_no, customer_name, customer_code, booking_date, total_pkr, false AS is_final
+      FROM ziyarat WHERE is_deleted=false
 
       ORDER BY booking_date DESC
     `);
@@ -248,23 +248,23 @@ router.get("/pending", async (req, res) => {
 
       UNION ALL
       SELECT 'Ticketing', id, ref_no, customer_name, customer_code, booking_date, total_pkr
-      FROM ticketing WHERE is_deleted=false AND (is_final=false OR is_final IS NULL)
+      FROM ticketing WHERE is_deleted=false
 
       UNION ALL
       SELECT 'Hotels', id, ref_no, customer_name, customer_code, booking_date, total_pkr
-      FROM hotels WHERE is_deleted=false AND (is_final=false OR is_final IS NULL)
+      FROM hotels WHERE is_deleted=false
 
       UNION ALL
       SELECT 'Visa', id, ref_no, customer_name, customer_code, booking_date, total_pkr
-      FROM visa WHERE is_deleted=false AND (is_final=false OR is_final IS NULL)
+      FROM visa WHERE is_deleted=false
 
       UNION ALL
       SELECT 'Transport', id, ref_no, customer_name, customer_code, booking_date, total_pkr
-      FROM transport WHERE is_deleted=false AND (is_final=false OR is_final IS NULL)
+      FROM transport WHERE is_deleted=false
 
       UNION ALL
       SELECT 'Ziyarat', id, ref_no, customer_name, customer_code, booking_date, total_pkr
-      FROM ziyarat WHERE is_deleted=false AND (is_final=false OR is_final IS NULL)
+      FROM ziyarat WHERE is_deleted=false
 
       ORDER BY booking_date DESC
     `);
@@ -285,7 +285,6 @@ router.post("/finalize", async (req, res) => {
   }
 
   try {
-    // 1. Password Lookup from Database
     const passQuery = await db.query(
       `SELECT password_val FROM public.system_passwords WHERE key_name = 'finalize_pass' LIMIT 1`
     );
@@ -294,13 +293,10 @@ router.post("/finalize", async (req, res) => {
       return res.status(400).json({ success: false, message: "Finalize password not configured in system." });
     }
 
-    const correctPassword = passQuery.rows[0].password_val;
-
-    if (password !== correctPassword) {
+    if (password !== passQuery.rows[0].password_val) {
       return res.status(401).json({ success: false, message: "Invalid Password!" });
     }
 
-    // 2. Table Mapping
     const tableMap = {
       Packages: "bookings",
       Hotels: "hotels",
@@ -318,7 +314,6 @@ router.post("/finalize", async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid Request Parameters" });
     }
 
-    // 3. Update Final Status
     await db.query(`UPDATE ${table} SET is_final = true WHERE ref_no = $1`, [ref_no]);
 
     res.json({ success: true, message: "Sale finalized successfully!" });
@@ -329,7 +324,7 @@ router.post("/finalize", async (req, res) => {
 });
 
 /* =====================================================
-   UNFINALIZE SALE API (RETURN TO PENDING WITH PASSWORD)
+   4. UNFINALIZE SALE API (RETURN TO PENDING WITH PASSWORD)
 ===================================================== */
 router.post("/unfinalize", async (req, res) => {
   const { type, ref_no, password } = req.body;
@@ -339,7 +334,6 @@ router.post("/unfinalize", async (req, res) => {
   }
 
   try {
-    // 1. Password Verification
     const passQuery = await db.query(
       `SELECT password_val FROM public.system_passwords WHERE key_name = 'unfinalize_pass' LIMIT 1`
     );
@@ -352,7 +346,6 @@ router.post("/unfinalize", async (req, res) => {
       return res.status(401).json({ success: false, message: "Invalid Password!" });
     }
 
-    // 2. Table Mapping
     const tableMap = {
       Packages: "bookings",
       Hotels: "hotels",
@@ -370,7 +363,6 @@ router.post("/unfinalize", async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid Parameters" });
     }
 
-    // 3. Status Change back to Pending (is_final = false)
     await db.query(`UPDATE ${table} SET is_final = false WHERE ref_no = $1`, [ref_no]);
 
     res.json({ success: true, message: "Sale returned to Pending status successfully!" });
