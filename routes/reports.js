@@ -201,7 +201,7 @@ router.get("/supplier-adjustment-only", async (req, res) => {
 });
 
 /* =====================================================
-   1. GET ALL REPORTS (BOOKINGS HAS IS_FINAL STATS)
+   1. GET ALL REPORTS (INCLUDES CARD & GROUPS)
 ===================================================== */
 router.get("/all", async (req, res) => {
   try {
@@ -229,6 +229,14 @@ router.get("/all", async (req, res) => {
       SELECT 'Ziyarat', id, ref_no, customer_name, customer_code, booking_date, total_pkr, false AS is_final
       FROM ziyarat WHERE is_deleted=false
 
+      UNION ALL
+      SELECT 'Card', id, ref_no, customer_name, customer_code, booking_date, total_pkr, false AS is_final
+      FROM card WHERE is_deleted=false
+
+      UNION ALL
+      SELECT 'Groups', id, ref_no, customer_name, customer_code, booking_date, total_pkr, false AS is_final
+      FROM groups WHERE is_deleted=false
+
       ORDER BY booking_date DESC
     `);
     res.json(q.rows);
@@ -238,7 +246,7 @@ router.get("/all", async (req, res) => {
 });
 
 /* =====================================================
-   2. GET PENDING SALES REPORT
+   2. GET PENDING SALES REPORT (INCLUDES CARD & GROUPS)
 ===================================================== */
 router.get("/pending", async (req, res) => {
   try {
@@ -266,6 +274,14 @@ router.get("/pending", async (req, res) => {
       SELECT 'Ziyarat', id, ref_no, customer_name, customer_code, booking_date, total_pkr
       FROM ziyarat WHERE is_deleted=false
 
+      UNION ALL
+      SELECT 'Card', id, ref_no, customer_name, customer_code, booking_date, total_pkr
+      FROM card WHERE is_deleted=false
+
+      UNION ALL
+      SELECT 'Groups', id, ref_no, customer_name, customer_code, booking_date, total_pkr
+      FROM groups WHERE is_deleted=false
+
       ORDER BY booking_date DESC
     `);
     res.json(q.rows);
@@ -273,7 +289,6 @@ router.get("/pending", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-
 /* =====================================================
    3. FINALIZE SALE API WITH PASSWORD VERIFICATION
 ===================================================== */
