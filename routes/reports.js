@@ -206,38 +206,38 @@ router.get("/supplier-adjustment-only", async (req, res) => {
 router.get("/all", async (req, res) => {
   try {
     const q = await db.query(`
-      SELECT 'Packages' AS type, id, ref_no, customer_name, customer_code, booking_date, created_at, total_pkr, is_final
+      SELECT 'Packages' AS type, id, ref_no, customer_name, customer_code, booking_date, total_pkr, is_final
       FROM bookings WHERE is_deleted=false
 
       UNION ALL
-      SELECT 'Ticketing', id, ref_no, customer_name, customer_code, booking_date, created_at, total_pkr, false AS is_final
+      SELECT 'Ticketing', id, ref_no, customer_name, customer_code, booking_date, total_pkr, false AS is_final
       FROM ticketing WHERE is_deleted=false
 
       UNION ALL
-      SELECT 'Hotels', id, ref_no, customer_name, customer_code, booking_date, created_at, total_pkr, false AS is_final
+      SELECT 'Hotels', id, ref_no, customer_name, customer_code, booking_date, total_pkr, false AS is_final
       FROM hotels WHERE is_deleted=false
 
       UNION ALL
-      SELECT 'Visa', id, ref_no, customer_name, customer_code, booking_date, created_at, total_pkr, false AS is_final
+      SELECT 'Visa', id, ref_no, customer_name, customer_code, booking_date, total_pkr, false AS is_final
       FROM visa WHERE is_deleted=false
 
       UNION ALL
-      SELECT 'Transport', id, ref_no, customer_name, customer_code, booking_date, created_at, total_pkr, false AS is_final
+      SELECT 'Transport', id, ref_no, customer_name, customer_code, booking_date, total_pkr, false AS is_final
       FROM transport WHERE is_deleted=false
 
       UNION ALL
-      SELECT 'Ziyarat', id, ref_no, customer_name, customer_code, booking_date, created_at, total_pkr, false AS is_final
+      SELECT 'Ziyarat', id, ref_no, customer_name, customer_code, booking_date, total_pkr, false AS is_final
       FROM ziyarat WHERE is_deleted=false
 
       UNION ALL
-      SELECT 'Card', id, ref_no, customer_name, customer_code, booking_date, created_at, total_pkr, false AS is_final
+      SELECT 'Card', id, ref_no, customer_name, customer_code, booking_date, total_pkr, false AS is_final
       FROM card WHERE is_deleted=false
 
       UNION ALL
-      SELECT 'Groups', id, ref_no, customer_name, customer_code, booking_date, created_at, total_pkr, false AS is_final
+      SELECT 'Groups', id, ref_no, customer_name, customer_code, booking_date, total_pkr, false AS is_final
       FROM groups WHERE is_deleted=false
 
-      ORDER BY created_at DESC
+      ORDER BY booking_date DESC, created_at DESC
     `);
     res.json(q.rows);
   } catch (err) {
