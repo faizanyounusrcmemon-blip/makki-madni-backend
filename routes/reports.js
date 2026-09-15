@@ -237,7 +237,7 @@ router.get("/all", async (req, res) => {
       SELECT 'Groups', id, ref_no, customer_name, customer_code, booking_date, created_at, total_pkr, false AS is_final
       FROM groups WHERE is_deleted=false
 
-      ORDER BY booking_date DESC
+      ORDER BY created_at DESC
     `);
     res.json(q.rows);
   } catch (err) {
