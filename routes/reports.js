@@ -1420,7 +1420,7 @@ router.get('/upcoming-payment-due', async (req, res) => {
             const result = await db.query(query);
 
             result.rows.forEach(row => {
-                const saleAmt = parseFloat(row.total_pkr || row.total_pkr_sale || row.amount || 0) || 0;
+                const saleAmt = parseFloat(row.total_pkr || row.total_pkr_sale || row.amount || row.grand_total || 0) || 0;
                 const travelDate = extractTravelDate(mod.name, row);
                 const custId = row.customer_code || row.customer_id || row.customer || null;
 
@@ -1439,56 +1439,90 @@ router.get('/upcoming-payment-due', async (req, res) => {
 
         const reportData = [];
 
-        // 5. REGISTERED CUSTOMERS
+        // 5. REGISTERED CUSTOMERS WITH STRICT REFERENCE ALLOCATION LOGIC
         for (const custId in registeredCustMap) {
             const cust = registeredCustMap[custId];
             const custSales = allSales.filter(s => s.customer_id === custId || s.customer_id === cust.id);
 
-            let validSalesSum = 0;
-            const rowsToDisplay = [];
-
-            custSales.forEach(s => {
-                if (!s.travel_date) {
-                    // Visa, Ziyarat, Card -> Always calculate and display if pending
-                    validSalesSum += s.sale_amount;
-                    rowsToDisplay.push(s);
-                } else {
-                    const tDate = new Date(s.travel_date);
-                    tDate.setHours(0, 0, 0, 0);
-
-                    if (tDate <= endDate) {
-                        // Includes past + within criteria days (Excludes 8th day+)
-                        validSalesSum += s.sale_amount;
-                        rowsToDisplay.push(s);
-                    }
-                }
+            // Filter sales that fall into window (No-date modules or travel_date <= endDate)
+            const eligibleSales = custSales.filter(s => {
+                if (!s.travel_date) return true;
+                const tDate = new Date(s.travel_date);
+                tDate.setHours(0, 0, 0, 0);
+                return tDate <= endDate;
             });
 
-            const openingBalance = parseFloat(cust.opening_balance) || 0;
-            const grandTotalSale = validSalesSum + openingBalance;
+            if (eligibleSales.length === 0 && (cust.opening_balance || 0) <= 0) {
+                continue;
+            }
 
+            const openingBalance = parseFloat(cust.opening_balance) || 0;
             const payments = (totalPaymentsByCust[custId] || 0) + (totalPaymentsByCust[cust.id] || 0);
             const adjustments = (totalAdjustmentsByCust[custId] || 0) + (totalAdjustmentsByCust[cust.id] || 0);
-            const totalPaid = payments + adjustments; 
-            const balanceDue = grandTotalSale - totalPaid;
+            const totalPaid = payments + adjustments;
 
-            // SHOW RULE: Balance > 0 AUR row hamari allowed window (Past or 0 to N days) mein hai
-            if (balanceDue > 0 && rowsToDisplay.length > 0) {
-                const sortedRows = rowsToDisplay.sort((a, b) => {
-                    if (!a.travel_date) return 1;
-                    if (!b.travel_date) return -1;
-                    return new Date(a.travel_date) - new Date(b.travel_date);
-                });
+            // Step A: Payment absorbs Opening Balance first
+            let availablePayment = Math.max(0, totalPaid - openingBalance);
 
-                const displayDate = sortedRows[0].travel_date;
+            // Step B: Sort Sales by Priority (Visa/Card/Ziyarat FIRST, then Oldest Travel Date)
+            const sortedSales = [...eligibleSales].sort((a, b) => {
+                const noDateModules = ['visa', 'card', 'ziyarat'];
+                const aIsNoDate = noDateModules.includes(a.module.toLowerCase());
+                const bIsNoDate = noDateModules.includes(b.module.toLowerCase());
 
+                if (aIsNoDate && !bIsNoDate) return -1;
+                if (!aIsNoDate && bIsNoDate) return 1;
+
+                if (!a.travel_date && !b.travel_date) {
+                    return new Date(a.created_at || '1970-01-01') - new Date(b.created_at || '1970-01-01');
+                }
+
+                const dateA = new Date(a.travel_date || '9999-12-31');
+                const dateB = new Date(b.travel_date || '9999-12-31');
+                return dateA - dateB;
+            });
+
+            // Step C: Allocate Payment and Collect Only Pending References
+            const pendingSales = [];
+            let totalPendingBalance = Math.max(0, openingBalance - totalPaid); // Residual OB if payment < OB
+
+            for (const sale of sortedSales) {
+                const amount = sale.sale_amount;
+                if (availablePayment >= amount) {
+                    // Fully cleared -> Do NOT show this ref_no
+                    availablePayment -= amount;
+                } else {
+                    // Partial or Unpaid -> Show this ref_no
+                    const dueAmt = amount - availablePayment;
+                    availablePayment = 0;
+
+                    pendingSales.push({
+                        ...sale,
+                        pending_amount: dueAmt
+                    });
+                    totalPendingBalance += dueAmt;
+                }
+            }
+
+            // Step D: Add to report if there is balance due
+            if (totalPendingBalance > 0 && (pendingSales.length > 0 || openingBalance > 0)) {
+                // Find nearest travel date among ONLY pending sales
+                const datedPending = pendingSales.filter(s => s.travel_date);
+                datedPending.sort((a, b) => new Date(a.travel_date) - new Date(b.travel_date));
+                const displayDate = datedPending.length > 0 ? datedPending[0].travel_date : null;
+
+                // Module counts for service breakup of pending items
                 const moduleCounts = {};
-                rowsToDisplay.forEach(s => {
+                pendingSales.forEach(s => {
                     moduleCounts[s.module_label] = (moduleCounts[s.module_label] || 0) + 1;
                 });
+
                 const serviceBreakup = Object.entries(moduleCounts)
                     .map(([label, cnt]) => cnt > 1 ? `${label} (${cnt})` : label)
-                    .join(" | ") || "Account Balance";
+                    .join(" | ") || (openingBalance > 0 ? "Opening Balance" : "Account Balance");
+
+                const totalValidSalesSum = eligibleSales.reduce((acc, curr) => acc + curr.sale_amount, 0);
+                const grandTotalSale = totalValidSalesSum + openingBalance;
 
                 reportData.push({
                     type: 'Registered',
@@ -1497,18 +1531,19 @@ router.get('/upcoming-payment-due', async (req, res) => {
                     customer_code: cust.customer_id,
                     customer_name: cust.customer_name,
                     phone_number: cust.phone_number || 'N/A',
-                    ref_no: sortedRows.map(s => s.ref_no).filter(Boolean).join(', ') || 'N/A',
+                    ref_no: pendingSales.map(s => s.ref_no).filter(Boolean).join(', ') || 'N/A',
                     opening_balance: openingBalance,
-                    bookings_sale: validSalesSum,
+                    bookings_sale: totalValidSalesSum,
                     total_sale: grandTotalSale,
                     paid_amount: totalPaid,
                     total_paid: totalPaid,
-                    balance_amount: Math.round(balanceDue),
-                    balance_due: Math.round(balanceDue), 
+                    balance_amount: Math.round(totalPendingBalance),
+                    balance_due: Math.round(totalPendingBalance),
                     travel_date: displayDate,
-                    booking_count: rowsToDisplay.length,
-                    bookings_count: rowsToDisplay.length,
-                    service_breakup: serviceBreakup
+                    booking_count: pendingSales.length,
+                    bookings_count: pendingSales.length,
+                    service_breakup: serviceBreakup,
+                    pending_details: pendingSales
                 });
             }
         }
@@ -1536,7 +1571,7 @@ router.get('/upcoming-payment-due', async (req, res) => {
                 const tDate = new Date(s.travel_date);
                 tDate.setHours(0, 0, 0, 0);
 
-                if (tDate <= endDate) { // Past + Within criteria (Skip 8th day+)
+                if (tDate <= endDate) {
                     walkInGrouped[key].total_sale += s.sale_amount;
                     walkInGrouped[key].modules.push(s.module_label);
                     if (!walkInGrouped[key].travel_date) {
@@ -1551,7 +1586,6 @@ router.get('/upcoming-payment-due', async (req, res) => {
             const totalPaid = (totalPaymentsByRef[item.ref_no] || 0) + (totalAdjustmentsByRef[item.ref_no] || 0);
             const balanceDue = item.total_sale - totalPaid;
 
-            // Past or Criteria record will show if payment is STILL PENDING
             if (balanceDue > 0 && item.total_sale > 0) {
                 const uniqueModules = [...new Set(item.modules)].join(', ');
                 reportData.push({
