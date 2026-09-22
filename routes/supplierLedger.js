@@ -314,7 +314,23 @@ const purchases = await db.query(`
     pe.item, 
     pe.ref_no,
     
-    -- Subquery se Customer / Passenger Name aur Customer Type lookup:
+    -- 1. Sale Date Lookup (booking_date)
+    COALESCE(
+      (
+        SELECT booking_date FROM (
+          SELECT ref_no, booking_date FROM bookings WHERE is_deleted = false
+          UNION ALL SELECT ref_no, booking_date FROM hotels WHERE is_deleted = false
+          UNION ALL SELECT ref_no, booking_date FROM visa WHERE is_deleted = false
+          UNION ALL SELECT ref_no, booking_date FROM card WHERE is_deleted = false
+          UNION ALL SELECT ref_no, booking_date FROM groups WHERE is_deleted = false
+          UNION ALL SELECT ref_no, booking_date FROM ticketing WHERE is_deleted = false
+          UNION ALL SELECT ref_no, booking_date FROM transport WHERE is_deleted = false
+          UNION ALL SELECT ref_no, booking_date FROM ziyarat WHERE is_deleted = false
+        ) sale_dates WHERE sale_dates.ref_no = pe.ref_no AND booking_date IS NOT NULL LIMIT 1
+      )::text, pe.created_at::date::text
+    ) AS sale_date,
+
+    -- 2. Customer / Passenger Name Lookup
     COALESCE(
       (
         SELECT customer_name FROM (
@@ -330,7 +346,7 @@ const purchases = await db.query(`
       ), 'N/A'
     ) AS customer_name,
 
-    -- Dynamic Customer Type Check (Registered vs Walk-in):
+    -- 3. Customer Type (REGISTERED / WALK-IN) Lookup
     COALESCE(
       (
         SELECT 
