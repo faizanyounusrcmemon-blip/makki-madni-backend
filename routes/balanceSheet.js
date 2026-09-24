@@ -119,8 +119,9 @@ router.get("/", async (req, res) => {
     }
 
     /* ========== 3. REGISTERED CUSTOMER CODES ========== */
+    // ONLY include bookings where is_final is TRUE
     const regCustomerCodesRes = await db.query(`
-      SELECT DISTINCT customer_code FROM bookings WHERE customer_code IS NOT NULL AND customer_code != '' AND is_deleted=false
+      SELECT DISTINCT customer_code FROM bookings WHERE customer_code IS NOT NULL AND customer_code != '' AND is_deleted=false AND COALESCE(is_final, false) = true
       UNION SELECT customer_code FROM hotels WHERE customer_code IS NOT NULL AND customer_code != '' AND is_deleted=false
       UNION SELECT customer_code FROM visa WHERE customer_code IS NOT NULL AND customer_code != '' AND is_deleted=false
       UNION SELECT customer_code FROM card WHERE customer_code IS NOT NULL AND customer_code != '' AND is_deleted=false
@@ -142,9 +143,10 @@ router.get("/", async (req, res) => {
     const supplierSnapshot = supplierSnapshotRes.rows;
 
     /* ========== 5. WALK-IN CUSTOMERS ========== */
+    // ONLY include bookings where is_final is TRUE
     const customersData = await db.query(`
       SELECT * FROM (
-        SELECT ref_no, customer_name, payment_status, total_pkr FROM bookings WHERE is_deleted = false AND ($1::date IS NULL OR created_at::date > $1) AND (customer_code IS NULL OR customer_code = '')
+        SELECT ref_no, customer_name, payment_status, total_pkr FROM bookings WHERE is_deleted = false AND COALESCE(is_final, false) = true AND ($1::date IS NULL OR created_at::date > $1) AND (customer_code IS NULL OR customer_code = '')
         UNION ALL SELECT ref_no, customer_name, payment_status, total_pkr FROM hotels WHERE is_deleted = false AND ($1::date IS NULL OR created_at::date > $1) AND (customer_code IS NULL OR customer_code = '')
         UNION ALL SELECT ref_no, customer_name, payment_status, total_pkr FROM visa WHERE is_deleted = false AND ($1::date IS NULL OR created_at::date > $1) AND (customer_code IS NULL OR customer_code = '')
         UNION ALL SELECT ref_no, customer_name, payment_status, total_pkr FROM card WHERE is_deleted = false AND ($1::date IS NULL OR created_at::date > $1) AND (customer_code IS NULL OR customer_code = '')
@@ -185,11 +187,12 @@ router.get("/", async (req, res) => {
     }).filter(r => Math.abs(r.balance) >= 1 || r.sale_total > 0);
 
     /* ========== 6. REGISTERED CUSTOMERS ========== */
+    // ONLY include bookings where is_final is TRUE
     let registeredRows = [];
     if (regCodes.length > 0) {
       const regSalesAndPayments = await db.query(`
         WITH all_debits AS (
-          SELECT customer_code, total_pkr AS amount FROM bookings WHERE customer_code = ANY($1) AND is_deleted=false AND ($2::date IS NULL OR created_at::date > $2)
+          SELECT customer_code, total_pkr AS amount FROM bookings WHERE customer_code = ANY($1) AND is_deleted=false AND COALESCE(is_final, false) = true AND ($2::date IS NULL OR created_at::date > $2)
           UNION ALL SELECT customer_code, total_pkr FROM hotels WHERE customer_code = ANY($1) AND is_deleted=false AND ($2::date IS NULL OR created_at::date > $2)
           UNION ALL SELECT customer_code, total_pkr FROM visa WHERE customer_code = ANY($1) AND is_deleted=false AND ($2::date IS NULL OR created_at::date > $2)
           UNION ALL SELECT customer_code, total_pkr FROM card WHERE customer_code = ANY($1) AND is_deleted=false AND ($2::date IS NULL OR created_at::date > $2)
@@ -204,7 +207,7 @@ router.get("/", async (req, res) => {
         ),
         customer_names AS (
           SELECT DISTINCT ON (customer_code) customer_code, customer_name FROM (
-            SELECT customer_code, customer_name FROM bookings WHERE customer_code = ANY($1) AND customer_name IS NOT NULL AND customer_name != '' AND is_deleted=false
+            SELECT customer_code, customer_name FROM bookings WHERE customer_code = ANY($1) AND customer_name IS NOT NULL AND customer_name != '' AND is_deleted=false AND COALESCE(is_final, false) = true
             UNION ALL SELECT customer_code, customer_name FROM hotels WHERE customer_code = ANY($1) AND customer_name IS NOT NULL AND customer_name != '' AND is_deleted=false
             UNION ALL SELECT customer_code, customer_name FROM visa WHERE customer_code = ANY($1) AND customer_name IS NOT NULL AND customer_name != '' AND is_deleted=false
             UNION ALL SELECT customer_code, customer_name FROM card WHERE customer_code = ANY($1) AND customer_name IS NOT NULL AND customer_name != '' AND is_deleted=false
@@ -275,6 +278,39 @@ router.get("/", async (req, res) => {
       return { supplier_code: s.supplier_code, supplier_name: s.supplier_name, purchase_total: totalPurchase, paid, balance, status };
     }).filter(s => Math.abs(s.balance) >= 1 || s.purchase_total > 0).sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
 
+    /* ========== 7.5 PENDING & PARTIAL UNPURCHASED PURCHASES TOTALS ========== */
+    const partialPurchasesRes = await db.query(`
+      SELECT 
+        COALESCE(SUM(
+          CASE 
+            WHEN (purchase_sar IS NULL OR purchase_sar = 0 OR purchase_rate IS NULL OR purchase_rate = 0) 
+            THEN COALESCE(sale_pkr, 0) 
+            ELSE 0 
+          END
+        ), 0) AS unpurchased_partial_total
+      FROM purchase_entries
+      WHERE is_deleted = false
+    `);
+
+    // ONLY include bookings where is_final is TRUE
+    const pendingSalesRes = await db.query(`
+      SELECT COALESCE(SUM(total_pkr), 0) AS unpurchased_pending_total FROM (
+        SELECT ref_no, total_pkr FROM bookings WHERE is_deleted = false AND COALESCE(is_final, false) = true AND (purchase_status = 'PENDING' OR purchase_status IS NULL)
+        UNION ALL SELECT ref_no, total_pkr FROM hotels WHERE is_deleted = false AND (purchase_status = 'PENDING' OR purchase_status IS NULL)
+        UNION ALL SELECT ref_no, total_pkr FROM visa WHERE is_deleted = false AND (purchase_status = 'PENDING' OR purchase_status IS NULL)
+        UNION ALL SELECT ref_no, total_pkr FROM card WHERE is_deleted = false AND (purchase_status = 'PENDING' OR purchase_status IS NULL)
+        UNION ALL SELECT ref_no, total_pkr FROM groups WHERE is_deleted = false AND (purchase_status = 'PENDING' OR purchase_status IS NULL)
+        UNION ALL SELECT ref_no, total_pkr FROM ticketing WHERE is_deleted = false AND (purchase_status = 'PENDING' OR purchase_status IS NULL)
+        UNION ALL SELECT ref_no, total_pkr FROM transport WHERE is_deleted = false AND (purchase_status = 'PENDING' OR purchase_status IS NULL)
+        UNION ALL SELECT ref_no, total_pkr FROM ziyarat WHERE is_deleted = false AND (purchase_status = 'PENDING' OR purchase_status IS NULL)
+      ) s
+      WHERE ref_no NOT IN (SELECT DISTINCT ref_no FROM purchase_entries WHERE is_deleted = false)
+    `);
+
+    const partialAmount = Math.round(Number(partialPurchasesRes.rows[0]?.unpurchased_partial_total || 0));
+    const pendingAmount = Math.round(Number(pendingSalesRes.rows[0]?.unpurchased_pending_total || 0));
+    const totalUnpurchasedSales = pendingAmount + partialAmount;
+
     /* ========== 8. INDIVIDUAL & TOTAL BREAKDOWN CALCULATIONS ========== */
     const walkinReceivable = standardCustomerRows.filter(r => r.balance > 0).reduce((a, r) => a + r.balance, 0);
     const registeredReceivable = registeredRows.filter(r => r.balance > 0).reduce((a, r) => a + r.balance, 0);
@@ -289,7 +325,11 @@ router.get("/", async (req, res) => {
     const totalExtraReceived = walkinExtraReceived + registeredExtraReceived;
 
     const totalAssets = currentCashBalance + currentBankBalance + totalReceivable + totalSupplierExtraPaid;
-    const totalLiabilities = totalSupplierPayable + totalExtraReceived;
+    
+    // Total Liabilities including Unpurchased Purchases
+    const totalLiabilities = totalSupplierPayable + totalExtraReceived + totalUnpurchasedSales;
+    
+    // Net Position = Assets - Liabilities
     const netPosition = totalAssets - totalLiabilities;
 
     const summary = {
@@ -308,6 +348,11 @@ router.get("/", async (req, res) => {
       total_extra_received: totalExtraReceived,
 
       total_extra_paid: totalSupplierExtraPaid,
+
+      pending_purchases_amount: pendingAmount,
+      partial_purchases_amount: partialAmount,
+      total_unpurchased_sales: totalUnpurchasedSales,
+
       total_assets: totalAssets,
       total_liabilities: totalLiabilities,
       net_position: netPosition
