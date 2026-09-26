@@ -163,6 +163,37 @@ if (salesRow.infant_count > 0)
           });
         });
       }
+       
+// ========= AGENT COMMISSION (WITH PERSONS & FIXED PKR DISPLAY) =========
+      if (salesRow.show_agent_comm) {
+        if (Array.isArray(salesRow.agent_comm) && salesRow.agent_comm.length > 0) {
+          salesRow.agent_comm.forEach((ac, i) => {
+            const persons = Number(ac.persons || ac.qty || 1);
+            const ratePkr = Number(ac.rate || ac.rate_pkr || 0);
+            const totalPkr = Number(ac.total || ac.amount || (persons * ratePkr) || 0);
+
+            const agentName = ac.agent_name || ac.name || ac.title || ac.type || "";
+            const personText = ` (${persons} Person${persons > 1 ? "s" : ""})`;
+
+            rows.push({
+              item: agentName 
+                ? `Agent Commission ${i + 1} - ${agentName}${personText}` 
+                : `Agent Commission ${i + 1}${personText}`,
+              sale_sar: totalPkr,  // 👈 PKR amount direct SAR me taake frontend 0 na kare
+              sale_rate: 1,        // 👈 Rate 1
+              sale_pkr: totalPkr
+            });
+          });
+        } else if (Number(salesRow.agent_comm_total) > 0) {
+          const totalPkr = Number(salesRow.agent_comm_total);
+          rows.push({
+            item: `Agent Commission`,
+            sale_sar: totalPkr,
+            sale_rate: 1,
+            sale_pkr: totalPkr
+          });
+        }
+      }   
     }
 
     /* =========================
