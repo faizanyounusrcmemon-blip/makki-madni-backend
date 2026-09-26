@@ -340,7 +340,7 @@ router.post("/finalize", async (req, res) => {
 });
 
 /* =====================================================
-   4. UNFINALIZE SALE API (RETURN TO PENDING WITH PASSWORD)
+   4. UNFINALIZE SALE API (RETURN TO PENDING WITH PASSWORD & CHECKS)
 ===================================================== */
 router.post("/unfinalize", async (req, res) => {
   const { type, ref_no, password } = req.body;
@@ -350,6 +350,7 @@ router.post("/unfinalize", async (req, res) => {
   }
 
   try {
+    // 1. Password Verification
     const passQuery = await db.query(
       `SELECT password_val FROM public.system_passwords WHERE key_name = 'unfinalize_pass' LIMIT 1`
     );
@@ -362,6 +363,7 @@ router.post("/unfinalize", async (req, res) => {
       return res.status(401).json({ success: false, message: "Invalid Password!" });
     }
 
+    // 2. Table Validation
     const tableMap = {
       Packages: "bookings",
       Hotels: "hotels",
@@ -379,9 +381,48 @@ router.post("/unfinalize", async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid Parameters" });
     }
 
-    await db.query(`UPDATE ${table} SET is_final = false WHERE ref_no = $1`, [ref_no]);
+    // 3. Check for Existing Purchase Entries
+    const purchaseCheck = await db.query(
+      `SELECT SUM(purchase_pkr) AS total
+       FROM purchase_entries
+       WHERE ref_no = $1 AND is_deleted = false`,
+      [ref_no]
+    );
 
-    res.json({ success: true, message: "Sale returned to Pending status successfully!" });
+    if (purchaseCheck.rows[0].total > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "❌ Cannot unfinalize. Purchase entries exist for this ref. Delete purchases first."
+      });
+    }
+
+    // 4. Check for Received Customer Payments
+    const paymentCheck = await db.query(
+      `SELECT SUM(amount) AS total
+       FROM customer_payments
+       WHERE ref_no = $1 AND type = 'payment'`,
+      [ref_no]
+    );
+
+    if (paymentCheck.rows[0].total > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "❌ Cannot unfinalize. Payment has been received for this ref. Adjust/delete payments first."
+      });
+    }
+
+    // 5. Update Status to Unfinalize (is_final = false)
+    const updateResult = await db.query(
+      `UPDATE ${table} SET is_final = false WHERE ref_no = $1 RETURNING ref_no`,
+      [ref_no]
+    );
+
+    if (updateResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: "Record not found" });
+    }
+
+    res.json({ success: true, message: "✅ Sale returned to Pending status successfully!" });
+
   } catch (err) {
     console.error("UNFINALIZE ERROR:", err);
     res.status(500).json({ success: false, error: err.message });
