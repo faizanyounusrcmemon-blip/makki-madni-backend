@@ -62,29 +62,44 @@ router.post("/create", async (req, res) => {
   }
 });
 
-/* ================= LIST USERS ================= */
+/* ================= LIST USERS (Excluding Soft Deleted) ================= */
 router.get("/list", async (req, res) => {
   try {
-
     const r = await db.query(
       `
       SELECT 
-      id,
-      name,
-      username,
-      password,
-      role,
-      is_active,
-      is_online,
-      last_login,
-      last_logout
+        id,
+        name,
+        username,
+        password,
+        role,
+        is_active,
+        is_online,
+        last_login,
+        last_logout
       FROM users
+      WHERE COALESCE(is_deleted, false) = false
       ORDER BY id DESC
       `
     );
 
     res.json({ success: true, rows: r.rows });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
 
+/* ================= PERMISSIONS LIST ================= */
+router.get("/permissions/list", async (req, res) => {
+  try {
+    const r = await db.query(
+      "SELECT * FROM users WHERE COALESCE(is_deleted, false) = false ORDER BY id ASC"
+    );
+
+    res.json({
+      success: true,
+      rows: r.rows
+    });
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
@@ -155,7 +170,7 @@ router.post("/update", async (req, res) => {
   }
 });
 
-/* ================= DELETE USER (DYNAMIC DB PASSWORD) ================= */
+/* ================= SOFT DELETE USER ================= */
 router.delete("/delete/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -165,7 +180,7 @@ router.delete("/delete/:id", async (req, res) => {
       return res.json({ success: false, error: "Password required" });
     }
 
-    // 🔍 DB Lookup for Delete User Password
+    // DB Lookup for Delete User Password
     const passCheck = await db.query(
       "SELECT password_val FROM public.system_passwords WHERE key_name = 'delete_user_pass'"
     );
@@ -174,13 +189,14 @@ router.delete("/delete/:id", async (req, res) => {
       return res.json({ success: false, error: "Delete user password configuration missing in DB!" });
     }
 
-    // 🔒 Password Match Check
+    // Password Match Check
     if (password !== passCheck.rows[0].password_val) {
       return res.json({ success: false, error: "Invalid security password" });
     }
 
+    // SOFT DELETE: Mark user as deleted and disable account
     const q = await db.query(
-      "DELETE FROM users WHERE id=$1 RETURNING id",
+      "UPDATE users SET is_deleted = true, is_active = false WHERE id = $1 RETURNING id",
       [id]
     );
 
@@ -188,7 +204,7 @@ router.delete("/delete/:id", async (req, res) => {
       return res.json({ success: false, error: "User not found" });
     }
 
-    res.json({ success: true, message: "User deleted successfully" });
+    res.json({ success: true, message: "User soft deleted successfully" });
   } catch (err) {
     console.error("DELETE USER ERROR:", err);
     res.status(500).json({ success: false, error: err.message });
