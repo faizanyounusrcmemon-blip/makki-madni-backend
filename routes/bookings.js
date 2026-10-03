@@ -5,10 +5,22 @@ const db = require("../db");
 // ============================================
 // AUTO REF NO GENERATOR
 // ============================================
+// ⚡ SMART AUTO REF NO GENERATOR (Handles Deleted & Existing Gaps for Bookings/Packages)
 async function generateRefNo() {
-  const q = await db.query("SELECT nextval('booking_ref_seq') AS no");
-  const no = q.rows[0].no;
-  return "PKG-" + String(no).padStart(5, "0");
+  const q = await db.query(`
+    SELECT MAX(CAST(SUBSTRING(ref_no FROM 'PKG-([0-9]+)') AS INTEGER)) AS max_no 
+    FROM bookings
+  `);
+
+  const lastNo = q.rows[0].max_no || 0;
+  const nextNo = lastNo + 1;
+
+  await db.query(`
+    CREATE SEQUENCE IF NOT EXISTS booking_ref_seq START WITH 1 INCREMENT BY 1;
+    SELECT setval('booking_ref_seq', $1, false);
+  `, [nextNo]).catch(() => {});
+
+  return "PKG-" + String(nextNo).padStart(5, "0");
 }
 
 // ============================================
@@ -24,66 +36,67 @@ router.post("/save", async (req, res) => {
         UPDATE bookings SET
           customer_code=$2,
           customer_name=$3,
-          contact_no=$4,
-          booking_date=$5,
+          sub_customer_name=$4,
+          contact_no=$5,
+          booking_date=$6,
 
-          adult_count=$6,
-          adult_rate=$7,
-          child_count=$8,
-          child_rate=$9,
-          infant_count=$10,
-          infant_rate=$11,
-          flight_total=$12,
+          adult_count=$7,
+          adult_rate=$8,
+          child_count=$9,
+          child_rate=$10,
+          infant_count=$11,
+          infant_rate=$12,
+          flight_total=$13,
 
-          flights=$13::jsonb,
-          hotels=$14::jsonb,
-          hotels_total=$15,
+          flights=$14::jsonb,
+          hotels=$15::jsonb,
+          hotels_total=$16,
 
-          visa=$16::jsonb,
-          transport=$17::jsonb,
-          transport_total=$18,
+          visa=$17::jsonb,
+          transport=$18::jsonb,
+          transport_total=$19,
 
-          ziyarat=$19::jsonb,
-          ziyarat_total=$20,
+          ziyarat=$20::jsonb,
+          ziyarat_total=$21,
 
-          flight_sar_total=$21,
-          hotel_sar_total=$22,
-          visa_sar_total=$23,
-          transport_sar_total=$24,
-          ziyarat_sar_total=$25,
+          flight_sar_total=$22,
+          hotel_sar_total=$23,
+          visa_sar_total=$24,
+          transport_sar_total=$25,
+          ziyarat_sar_total=$26,
 
-          flight_sar_rate=$26,
-          hotel_sar_rate=$27,
-          visa_sar_rate=$28,
-          transport_sar_rate=$29,
-          ziyarat_sar_rate=$30,
+          flight_sar_rate=$27,
+          hotel_sar_rate=$28,
+          visa_sar_rate=$29,
+          transport_sar_rate=$30,
+          ziyarat_sar_rate=$31,
 
-          flight_pkr_total=$31,
-          hotel_pkr_total=$32,
-          visa_pkr_total=$33,
-          transport_pkr_total=$34,
-          ziyarat_pkr_total=$35,
+          flight_pkr_total=$32,
+          hotel_pkr_total=$33,
+          visa_pkr_total=$34,
+          transport_pkr_total=$35,
+          ziyarat_pkr_total=$36,
 
-          net_pkr_total=$36,
-          total_sar=$37,
-          total_pkr=$38,
-          per_person_qty=$39,
-          per_person_final=$40,
-          adult_per_person=$41,
-          child_per_person=$42,
-          infant_per_person=$43,
+          net_pkr_total=$37,
+          total_sar=$38,
+          total_pkr=$39,
+          per_person_qty=$40,
+          per_person_final=$41,
+          adult_per_person=$42,
+          child_per_person=$43,
+          infant_per_person=$44,
 
-          show_agent_comm=$44,
-          agent_comm=$45::jsonb,
-          agent_comm_total=$46,
-          show_gifting=$47,
-          gifting=$48::jsonb,
-          gifting_total=$49
+          show_agent_comm=$45,
+          agent_comm=$46::jsonb,
+          agent_comm_total=$47,
+          show_gifting=$48,
+          gifting=$49::jsonb,
+          gifting_total=$50
 
         WHERE ref_no=$1
         `,
         [
-          d.ref_no, d.customer_code || null, d.customer_name, d.contact_no, d.booking_date,
+          d.ref_no, d.customer_code || null, d.customer_name, d.sub_customer_name || null, d.contact_no, d.booking_date,
           d.adult_count, d.adult_rate, d.child_count, d.child_rate, d.infant_count, d.infant_rate, d.flight_total,
           JSON.stringify(d.flights || []), JSON.stringify(d.hotels || []), d.hotels_total,
           JSON.stringify(d.visa || []), JSON.stringify(d.transport || []), d.transport_total,
@@ -100,13 +113,25 @@ router.post("/save", async (req, res) => {
       return res.json({ success: true, ref_no: d.ref_no });
     }
 
-    // INSERT NEW RECORD
+    // ===============================
+    // NEW MODE (INSERT)
+    // ===============================
+    
+    // ⚡ Auto-fix primary key sequence before inserting new record
+    await db.query(`
+      SELECT setval(
+        COALESCE(pg_get_serial_sequence('bookings', 'id'), 'bookings_id_seq'), 
+        COALESCE((SELECT MAX(id) FROM bookings), 0) + 1, 
+        false
+      );
+    `).catch(() => {});
+
     const ref_no = await generateRefNo();
 
     await db.query(
       `
       INSERT INTO bookings (
-        ref_no, customer_code, customer_name, contact_no, booking_date,
+        ref_no, customer_code, customer_name, sub_customer_name, contact_no, booking_date,
         adult_count, adult_rate, child_count, child_rate, infant_count, infant_rate, flight_total,
         flights, hotels, hotels_total, visa, transport, transport_total, ziyarat, ziyarat_total,
         flight_sar_total, hotel_sar_total, visa_sar_total, transport_sar_total, ziyarat_sar_total,
@@ -116,11 +141,11 @@ router.post("/save", async (req, res) => {
         show_agent_comm, agent_comm, agent_comm_total, show_gifting, gifting, gifting_total
       )
       VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb,$15,$16::jsonb,$17::jsonb,$18,$19::jsonb,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45::jsonb,$46,$47,$48::jsonb,$49
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15::jsonb,$16,$17::jsonb,$18::jsonb,$19,$20::jsonb,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46::jsonb,$47,$48,$49::jsonb,$50
       )
       `,
       [
-        ref_no, d.customer_code || null, d.customer_name, d.contact_no, d.booking_date,
+        ref_no, d.customer_code || null, d.customer_name, d.sub_customer_name || null, d.contact_no, d.booking_date,
         d.adult_count, d.adult_rate, d.child_count, d.child_rate, d.infant_count, d.infant_rate, d.flight_total,
         JSON.stringify(d.flights || []), JSON.stringify(d.hotels || []), d.hotels_total,
         JSON.stringify(d.visa || []), JSON.stringify(d.transport || []), d.transport_total,
