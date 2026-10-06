@@ -212,52 +212,6 @@ router.get("/get/:ref", async (req, res) => {
 });
 
 
-// ===================================
-// GET HOTEL BY REF (EDIT + VOUCHER)
-// ===================================
-router.get("/get/:ref", async (req, res) => {
-  try {
-    const q = await db.query(
-      "SELECT * FROM hotels WHERE ref_no=$1 AND is_deleted=false",
-      [req.params.ref]
-    );
-
-    if (q.rows.length === 0) {
-      return res.json({ success: false });
-    }
-
-    const r = q.rows[0];
-
-    const hotels = (r.hotel_name || []).map((_, i) => ({
-      hotel: r.hotel_name[i],
-      location: r.hotel_location?.[i] || "",
-      checkIn: r.hotel_checkin?.[i] || "",
-      checkOut: r.hotel_checkout?.[i] || "",
-      nights: r.hotel_nights?.[i] || 0,
-      rooms: r.hotel_rooms?.[i] || 0,
-      type: r.hotel_type?.[i] || "",
-      rate: r.hotel_rate?.[i] || 0,
-      total: r.hotel_total?.[i] || 0,
-    }));
-
-    res.json({
-      success: true,
-      row: {
-        ref_no: r.ref_no,
-        customer_code: r.customer_code || "",
-        customer_name: r.customer_name,
-        agent_name: r.agent_name || "",
-        booking_date: r.booking_date,
-        hotels,
-        hotels_total: r.hotels_total,
-        sar_rate: r.sar_rate,
-        total_pkr: r.total_pkr,
-      },
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
 
 // ===================================
 // DELETE (SOFT) WITH PURCHASE/PAYMENT CHECK & SYSTEM PASSWORD LOOKUP
