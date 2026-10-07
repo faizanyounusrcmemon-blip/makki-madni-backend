@@ -201,18 +201,12 @@ router.get("/get/:ref", async (req, res) => {
 });
 
 // ============================================
-
-// HOTEL VOUCHER
-
-// ============================================
-
-// ============================================
-// HOTEL VOUCHER (Without Agent Name)
+// HOTEL VOUCHER ROUTE (Matched with React Frontend)
 // ============================================
 router.get("/voucher/:ref", async (req, res) => {
   try {
     const q = await db.query(
-      `SELECT ref_no, customer_name, sub_customer_name, booking_date, hotels 
+      `SELECT ref_no, customer_name, sub_customer_name, agent_name, booking_date, hotels 
        FROM bookings WHERE ref_no=$1 AND is_deleted=false`,
       [req.params.ref]
     );
@@ -223,7 +217,7 @@ router.get("/voucher/:ref", async (req, res) => {
 
     const r = q.rows[0];
 
-    // Safely parse hotels data
+    // Safely parse JSON array for hotels
     let parsedHotels = [];
     if (r.hotels) {
       if (typeof r.hotels === "string") {
@@ -237,18 +231,19 @@ router.get("/voucher/:ref", async (req, res) => {
       }
     }
 
-    res.json({ 
-      success: true, 
-      row: {
-        ref_no: r.ref_no,
-        customer_name: r.customer_name || "",
-        sub_customer_name: r.sub_customer_name || "",
-        booking_date: r.booking_date,
-        hotels: parsedHotels
-      }
+    // React frontend expects these properties directly at root level for PKG-
+    res.json({
+      success: true,
+      ref_no: r.ref_no,
+      customer_name: r.customer_name || "",
+      sub_customer_name: r.sub_customer_name || "",
+      agent_name: r.agent_name || "",
+      booking_date: r.booking_date,
+      hotels: parsedHotels
     });
+
   } catch (err) {
-    console.error("VOUCHER ERROR:", err.message);
+    console.error("VOUCHER ROUTE ERROR:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
