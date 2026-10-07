@@ -201,12 +201,12 @@ router.get("/get/:ref", async (req, res) => {
 });
 
 // ============================================
-// HOTEL VOUCHER ROUTE (Matched with React Frontend)
+// HOTEL VOUCHER ROUTE (Fixed for 500 Error)
 // ============================================
 router.get("/voucher/:ref", async (req, res) => {
   try {
     const q = await db.query(
-      `SELECT ref_no, customer_name, sub_customer_name, agent_name, booking_date, hotels 
+      `SELECT ref_no, customer_name, sub_customer_name, booking_date, hotels 
        FROM bookings WHERE ref_no=$1 AND is_deleted=false`,
       [req.params.ref]
     );
@@ -231,13 +231,13 @@ router.get("/voucher/:ref", async (req, res) => {
       }
     }
 
-    // React frontend expects these properties directly at root level for PKG-
+    // React Frontend expects properties directly at root level
     res.json({
       success: true,
       ref_no: r.ref_no,
       customer_name: r.customer_name || "",
       sub_customer_name: r.sub_customer_name || "",
-      agent_name: r.agent_name || "",
+      agent_name: "", // Fixed: Default empty string to avoid SQL missing column error
       booking_date: r.booking_date,
       hotels: parsedHotels
     });
