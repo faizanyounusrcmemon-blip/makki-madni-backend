@@ -211,9 +211,26 @@ router.get("/voucher/:ref", async (req, res) => {
       [req.params.ref]
     );
 
-    if (!q.rows.length) return res.json({ success: false });
+    if (!q.rows.length) {
+      return res.status(404).json({ success: false, message: "Voucher not found" });
+    }
 
     const r = q.rows[0];
+
+    // Safely parse hotels if it is stored as Text/String in Postgres
+    let parsedHotels = [];
+    if (r.hotels) {
+      if (typeof r.hotels === "string") {
+        try {
+          parsedHotels = JSON.parse(r.hotels);
+        } catch (e) {
+          console.error("Hotels JSON Parse Error:", e);
+          parsedHotels = [];
+        }
+      } else if (Array.isArray(r.hotels)) {
+        parsedHotels = r.hotels;
+      }
+    }
 
     res.json({ 
       success: true, 
@@ -223,10 +240,11 @@ router.get("/voucher/:ref", async (req, res) => {
         sub_customer_name: r.sub_customer_name || "",
         agent_name: r.agent_name || "",
         booking_date: r.booking_date,
-        hotels: r.hotels || []
+        hotels: parsedHotels
       }
     });
   } catch (err) {
+    console.error("VOUCHER ROUTE ERROR:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
