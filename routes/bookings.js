@@ -201,37 +201,65 @@ router.get("/get/:ref", async (req, res) => {
 });
 
 // ============================================
+
 // HOTEL VOUCHER
+
 // ============================================
+
 router.get("/voucher/:ref", async (req, res) => {
+
   try {
+
     const q = await db.query(
+
       `SELECT ref_no, customer_name, sub_customer_name, agent_name, booking_date, hotels 
+
        FROM bookings WHERE ref_no=$1 AND is_deleted=false`,
+
       [req.params.ref]
+
     );
 
-    if (!q.rows.length) return res.status(404).json({ success: false, message: "Voucher not found" });
+
+
+    if (!q.rows.length) return res.json({ success: false });
+
+
 
     const r = q.rows[0];
 
+
+
     res.json({ 
+
       success: true, 
+
       row: {
+
         ref_no: r.ref_no,
+
         customer_name: r.customer_name || "",
+
         sub_customer_name: r.sub_customer_name || "",
+
         agent_name: r.agent_name || "",
+
         booking_date: r.booking_date,
-        hotels: typeof r.hotels === "string" ? JSON.parse(r.hotels || "[]") : (r.hotels || [])
+
+        hotels: r.hotels || []
+
       }
+
     });
+
   } catch (err) {
-    // Ye line online logs aur browser dono me exact problem bata degi
-    console.error("Voucher Route Online Error:", err);
-    res.status(500).json({ success: false, error: err.message, detail: err.detail || "Database Error" });
+
+    res.status(500).json({ success: false, error: err.message });
+
   }
+
 });
+
 // ============================================
 // SOFT DELETE WITH PURCHASE / PAYMENT CHECK & SYSTEM PASSWORD LOOKUP (BOOKINGS)
 // ============================================
