@@ -211,26 +211,9 @@ router.get("/voucher/:ref", async (req, res) => {
       [req.params.ref]
     );
 
-    if (!q.rows.length) {
-      return res.status(404).json({ success: false, message: "Voucher not found" });
-    }
+    if (!q.rows.length) return res.status(404).json({ success: false, message: "Voucher not found" });
 
     const r = q.rows[0];
-
-    // Safely parse hotels if it is stored as Text/String in Postgres
-    let parsedHotels = [];
-    if (r.hotels) {
-      if (typeof r.hotels === "string") {
-        try {
-          parsedHotels = JSON.parse(r.hotels);
-        } catch (e) {
-          console.error("Hotels JSON Parse Error:", e);
-          parsedHotels = [];
-        }
-      } else if (Array.isArray(r.hotels)) {
-        parsedHotels = r.hotels;
-      }
-    }
 
     res.json({ 
       success: true, 
@@ -240,15 +223,15 @@ router.get("/voucher/:ref", async (req, res) => {
         sub_customer_name: r.sub_customer_name || "",
         agent_name: r.agent_name || "",
         booking_date: r.booking_date,
-        hotels: parsedHotels
+        hotels: typeof r.hotels === "string" ? JSON.parse(r.hotels || "[]") : (r.hotels || [])
       }
     });
   } catch (err) {
-    console.error("VOUCHER ROUTE ERROR:", err.message);
-    res.status(500).json({ success: false, error: err.message });
+    // Ye line online logs aur browser dono me exact problem bata degi
+    console.error("Voucher Route Online Error:", err);
+    res.status(500).json({ success: false, error: err.message, detail: err.detail || "Database Error" });
   }
 });
-
 // ============================================
 // SOFT DELETE WITH PURCHASE / PAYMENT CHECK & SYSTEM PASSWORD LOOKUP (BOOKINGS)
 // ============================================
