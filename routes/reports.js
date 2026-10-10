@@ -1996,9 +1996,9 @@ router.get("/customer-sale-detail-ledger", async (req, res) => {
   try {
     const { customer_code, from_date, to_date } = req.query;
 
-    // 1. Fetch Registered Customers List
+    // 1. Fetch Registered Customers List (Ordered by Customer Code)
     const custRes = await db.query(
-      `SELECT customer_code AS code, name FROM customers WHERE is_deleted = false ORDER BY name ASC`
+      `SELECT customer_code AS code, name FROM customers WHERE is_deleted = false ORDER BY customer_code ASC`
     );
     const customerList = custRes.rows;
 
@@ -2040,6 +2040,8 @@ router.get("/customer-sale-detail-ledger", async (req, res) => {
       return true;
     };
 
+    const validRefsMap = new Map();
+
     const isCustomerValid = (cCode, cName, refNo) => {
       if (!customer_code || customer_code === "ALL") return true;
       const targetCode = (cCode || "").trim().toUpperCase();
@@ -2049,7 +2051,16 @@ router.get("/customer-sale-detail-ledger", async (req, res) => {
         return !targetCode || targetCode === "WALKIN" || targetCode === "";
       }
 
-      return targetCode === filter;
+      // Direct Code Match
+      if (targetCode === filter) return true;
+
+      // Fallback via Ref No mapping
+      if (refNo) {
+        const mappedCode = validRefsMap.get(refNo.trim().toUpperCase());
+        if (mappedCode && mappedCode.toUpperCase() === filter) return true;
+      }
+
+      return false;
     };
 
     const safeParse = (val) => {
@@ -2057,8 +2068,6 @@ router.get("/customer-sale-detail-ledger", async (req, res) => {
       if (Array.isArray(val)) return val;
       try { return JSON.parse(val); } catch { return []; }
     };
-
-    const validRefsMap = new Map();
 
     // 3. BOOKINGS (PACKAGES) BREAKDOWN
     const pkgRes = await db.query(`SELECT * FROM bookings WHERE is_deleted = false ORDER BY booking_date ASC, id ASC`);
@@ -2404,9 +2413,17 @@ router.get("/customer-sale-detail-ledger", async (req, res) => {
     for (const t of otherTables) {
       const modRes = await db.query(`SELECT * FROM ${t.name} WHERE is_deleted = false ORDER BY booking_date ASC, id ASC`);
       modRes.rows.forEach((r) => {
-        const cCode = r.customer_code ? r.customer_code.trim() : "";
+        let cCode = r.customer_code ? r.customer_code.trim() : "";
         const cName = r.customer_name || "Walk-in Customer";
-        if (r.ref_no) validRefsMap.set(r.ref_no.trim().toUpperCase(), cCode || "WALKIN");
+        
+        if (r.ref_no) {
+          const existingRefCode = validRefsMap.get(r.ref_no.trim().toUpperCase());
+          if (!cCode && existingRefCode) {
+            cCode = existingRefCode;
+          } else if (r.ref_no) {
+            validRefsMap.set(r.ref_no.trim().toUpperCase(), cCode || "WALKIN");
+          }
+        }
 
         if (!isCustomerValid(cCode, cName, r.ref_no) || !isDateValid(r.booking_date)) return;
 
@@ -2436,7 +2453,6 @@ router.get("/customer-sale-detail-ledger", async (req, res) => {
               const label = rowItem.description || rowItem.text || rowItem.route || "";
               itemLabel = label ? `${base} - ${label}` : base;
             } else {
-              // Visa, Card, Groups
               const persons = Number(rowItem.persons || 0);
               itemLabel = rowItem.type
                 ? `${t.title} ${i + 1} - ${rowItem.type} (${persons} Person${persons > 1 ? "s" : ""})`
@@ -2460,7 +2476,6 @@ router.get("/customer-sale-detail-ledger", async (req, res) => {
             });
           });
         } else {
-          // Fallback if no sub-rows exist
           rows.push({
             id: `${t.prefix}-${r.id}`,
             date: r.booking_date,
@@ -2476,7 +2491,7 @@ router.get("/customer-sale-detail-ledger", async (req, res) => {
           });
         }
       });
-    } // ✅ यहाँ bracket miss thi jo ab theek kar di gayi hai
+    }
 
     // 7. PAYMENTS & OPENING BALANCES (DEEP WALK-IN & REGISTERED NAME RESOLUTION)
     const payRes = await db.query(`
@@ -2559,11 +2574,20 @@ router.get("/customer-sale-detail-ledger", async (req, res) => {
       }
     });
 
-    // 8. CHRONOLOGICAL SORTING
+// 8. CHRONOLOGICAL SORTING (SAME DATE PAR SALE PEHLE, PAYMENT BAAD MEIN)
     rows.sort((a, b) => {
       const dateA = new Date(a.date).getTime();
       const dateB = new Date(b.date).getTime();
+      
+      // 1. Pehle Tariq (Date) ke hisab se sort karein
       if (dateA !== dateB) return dateA - dateB;
+
+      // 2. Agar Tariq same ho, to SALE (priority 1) ko PAYMENT (priority 2) se pehle rakhein
+      const priorityA = a.type === "SALE" ? 1 : 2;
+      const priorityB = b.type === "SALE" ? 1 : 2;
+      if (priorityA !== priorityB) return priorityA - priorityB;
+
+      // 3. Phir ID ke hisab se sort karein
       return String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
     });
 
