@@ -611,8 +611,8 @@ router.get("/today-restricted", async (req, res) => {
 
 
 /* =====================================================
-   🔹 CUSTOMER SALE DETAIL REPORT (DIRECT FROM SALES TABLES)
-   - Fetches registered active customers from customers table
+    🔹 CUSTOMER SALE DETAIL REPORT (DIRECT FROM SALES TABLES)
+    - Fetches registered active customers from customers table
 ===================================================== */
 router.get("/customer-sale", async (req, res) => {
   try {
@@ -967,7 +967,7 @@ router.get("/customer-sale", async (req, res) => {
       }
     });
 
-    // 8. TRANSPORT ONLY (TRN-)
+// 8. TRANSPORT ONLY (TRN-)
     const trnRes = await db.query(
       `SELECT * FROM transport WHERE is_deleted = false ORDER BY booking_date DESC`
     );
@@ -978,9 +978,12 @@ router.get("/customer-sale", async (req, res) => {
           const base = `Transport ${i + 1}`;
           const label = t.description || t.text || t.route || "";
 
+          // 🔹 Traveling Date Extraction (Checking all possible property names & parent row date)
+          const rawDate = t.date || t.travelDate || t.travel_date || r.date || r.travel_date;
           let formattedDate = "";
-          if (t.date) {
-            const d = new Date(t.date);
+          
+          if (rawDate) {
+            const d = new Date(rawDate);
             if (!isNaN(d.getTime())) {
               const day = String(d.getDate()).padStart(2, "0");
               const mon = d.toLocaleString("en-US", { month: "short" }).toUpperCase();
@@ -2434,18 +2437,22 @@ router.get("/customer-sale-detail-ledger", async (req, res) => {
           subRows.forEach((rowItem, i) => {
             let itemLabel = "";
 
-            if (t.name === "transport") {
-              const base = `Transport ${i + 1}`;
-              const label = rowItem.description || rowItem.text || rowItem.route || "";
-              let formattedDate = "";
-              if (rowItem.date) {
-                const d = new Date(rowItem.date);
-                if (!isNaN(d.getTime())) {
-                  const day = String(d.getDate()).padStart(2, "0");
-                  const mon = d.toLocaleString("en-US", { month: "short" }).toUpperCase();
-                  const year = d.getFullYear();
-                  formattedDate = ` (${day}/${mon}/${year})`;
-                }
+if (t.name === "transport") {
+            const base = `Transport ${i + 1}`;
+            const label = rowItem.description || rowItem.text || rowItem.route || "";
+            let formattedDate = "";
+            
+            // 🔹 Traveling Date Extraction & DD/MMM/YYYY Format Logic
+            const rawDate = rowItem.date || rowItem.travelDate || rowItem.travel_date || r.date || r.travel_date;
+            if (rawDate) {
+              const d = new Date(rawDate);
+              if (!isNaN(d.getTime())) {
+                const day = String(d.getDate()).padStart(2, "0");
+                const mon = d.toLocaleString("en-US", { month: "short" }).toUpperCase();
+                const year = d.getFullYear();
+                formattedDate = ` (${day}/${mon}/${year})`;
+              }
+
               }
               itemLabel = label ? `${base}${formattedDate} - ${label}` : `${base}${formattedDate}`;
             } else if (t.name === "ziyarat") {
