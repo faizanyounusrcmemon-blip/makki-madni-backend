@@ -430,9 +430,7 @@ router.post("/unfinalize", async (req, res) => {
 });
 
 /* =====================================================
-   🔹 SUPPLIER WISE PURCHASE REPORT
-   - Fetch from purchase_entries
-   - Supplier list from suppliers table
+   🔹 SUPPLIER WISE PURCHASE REPORT (FIXED MATH ENGINE)
 ===================================================== */
 router.get("/supplier-purchase", async (req, res) => {
   try {
@@ -461,11 +459,45 @@ router.get("/supplier-purchase", async (req, res) => {
       LEFT JOIN suppliers s
         ON s.supplier_code = p.supplier_code
       WHERE p.is_deleted = false
-        AND (p.purchase_sar > 0 OR p.purchase_rate > 0)  -- ✅ یہ شرط
+        AND (p.purchase_sar > 0 OR p.purchase_rate > 0)
       ORDER BY p.created_at DESC
     `;
 
-    const { rows } = await db.query(query);
+    const dbResult = await db.query(query);
+
+    // 🧮 SMART MULTI-FACTOR QUANTITY CALCULATOR ENGINE
+    const rows = dbResult.rows.map(r => {
+      let qty = 1;
+      const itemStr = r.item || "";
+
+      // Case 1: Hotel (Rooms * Nights) -> e.g. "1 Room, 16 Nights"
+      const roomMatch = itemStr.match(/(\d+)\s*Room/i);
+      const nightMatch = itemStr.match(/(\d+)\s*Night/i);
+
+      if (roomMatch || nightMatch) {
+        const rooms = roomMatch ? Number(roomMatch[1]) || 1 : 1;
+        const nights = nightMatch ? Number(nightMatch[1]) || 1 : 1;
+        qty = rooms * nights;
+      } 
+      // Case 2: Persons (Visa, Ticket, Card, Group) -> e.g. "2 Persons"
+      else {
+        const personMatch = itemStr.match(/(\d+)\s*Person/i);
+        if (personMatch) {
+          qty = Number(personMatch[1]) || 1;
+        }
+      }
+
+      if (qty <= 0) qty = 1;
+
+      const saleSar = Number(r.sale_sar) || 0;
+      const purchSar = Number(r.purchase_sar) || 0;
+
+      return {
+        ...r,
+        sale_per_unit: saleSar / qty,
+        purchase_per_unit: purchSar / qty
+      };
+    });
 
     const sup = await db.query(`
       SELECT supplier_name
@@ -481,10 +513,9 @@ router.get("/supplier-purchase", async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
-
 
 
 
