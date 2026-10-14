@@ -770,11 +770,16 @@ router.get("/customer-sale", async (req, res) => {
         });
       }
 
-      // Transport
+      // Package Transport (With Vehicle & Persons Support)
       if (Array.isArray(s.transport)) {
         s.transport.forEach((t, i) => {
           const base = `Transport ${i + 1}`;
           const label = t.text || t.route || t.description || "";
+          const vehicle = t.vehicle ? ` [${t.vehicle}]` : "";
+          const persons = Number(t.persons) || 1;
+          const rateVal = Number(t.rate) || 0;
+          const sar = Number(t.amount) || Number(t.total) || (persons * rateVal);
+          const perUnit = persons > 0 ? sar / persons : rateVal;
 
           let formattedDate = "";
           if (t.date) {
@@ -787,7 +792,8 @@ router.get("/customer-sale", async (req, res) => {
             }
           }
 
-          const sar = Number(t.amount) || 0;
+          const descPart = label ? ` - ${label}` : "";
+          const itemName = `${base}${formattedDate}${descPart}${vehicle} (${persons} Person${persons > 1 ? "s" : ""})`;
           const rate = Number(s.transport_sar_rate) || 0;
 
           rows.push({
@@ -795,8 +801,8 @@ router.get("/customer-sale", async (req, res) => {
             customer_code: cCode,
             customer_name: s.customer_name || "Walk-in Customer",
             ref_no: s.ref_no,
-            item: label ? `${base}${formattedDate} - ${label}` : `${base}${formattedDate}`,
-            sale_per_unit: sar,
+            item: itemName,
+            sale_per_unit: perUnit,
             sale_sar: sar,
             sale_rate: rate,
             sale_pkr: sar * rate,
@@ -804,12 +810,30 @@ router.get("/customer-sale", async (req, res) => {
         });
       }
 
-      // Ziyarat
+      // Package Ziyarat (With Vehicle & Persons Support)
       if (Array.isArray(s.ziyarat)) {
         s.ziyarat.forEach((t, i) => {
           const base = `Ziyarat ${i + 1}`;
           const label = t.text || t.route || t.description || "";
-          const sar = Number(t.amount) || 0;
+          const vehicle = t.vehicle ? ` [${t.vehicle}]` : "";
+          const persons = Number(t.persons) || 1;
+          const rateVal = Number(t.rate) || 0;
+          const sar = Number(t.amount) || Number(t.total) || (persons * rateVal);
+          const perUnit = persons > 0 ? sar / persons : rateVal;
+
+          let formattedDate = "";
+          if (t.date) {
+            const d = new Date(t.date);
+            if (!isNaN(d.getTime())) {
+              const day = String(d.getDate()).padStart(2, "0");
+              const mon = d.toLocaleString("en-US", { month: "short" }).toUpperCase();
+              const year = d.getFullYear();
+              formattedDate = ` (${day}/${mon}/${year})`;
+            }
+          }
+
+          const descPart = label ? ` - ${label}` : "";
+          const itemName = `${base}${formattedDate}${descPart}${vehicle} (${persons} Person${persons > 1 ? "s" : ""})`;
           const rate = Number(s.ziyarat_sar_rate) || 0;
 
           rows.push({
@@ -817,8 +841,8 @@ router.get("/customer-sale", async (req, res) => {
             customer_code: cCode,
             customer_name: s.customer_name || "Walk-in Customer",
             ref_no: s.ref_no,
-            item: label ? `${base} - ${label}` : base,
-            sale_per_unit: sar,
+            item: itemName,
+            sale_per_unit: perUnit,
             sale_sar: sar,
             sale_rate: rate,
             sale_pkr: sar * rate,
@@ -1039,6 +1063,11 @@ router.get("/customer-sale", async (req, res) => {
         r.rows.forEach((t, i) => {
           const base = `Transport ${i + 1}`;
           const label = t.description || t.text || t.route || "";
+          const vehicle = t.vehicle ? ` [${t.vehicle}]` : "";
+          const persons = Number(t.persons) || 1;
+          const rateVal = Number(t.rate) || 0;
+          const sar = Number(t.total) || Number(t.sar) || Number(t.amount) || (persons * rateVal);
+          const perUnit = persons > 0 ? sar / persons : rateVal;
 
           const rawDate = t.date || t.travelDate || t.travel_date || r.date || r.travel_date;
           let formattedDate = "";
@@ -1052,7 +1081,8 @@ router.get("/customer-sale", async (req, res) => {
             }
           }
 
-          const sar = Number(t.sar || t.amount) || 0;
+          const descPart = label ? ` - ${label}` : "";
+          const itemName = `${base}${formattedDate}${descPart}${vehicle} (${persons} Person${persons > 1 ? "s" : ""})`;
           const rate = Number(r.pkr_rate) || 0;
 
           rows.push({
@@ -1060,8 +1090,8 @@ router.get("/customer-sale", async (req, res) => {
             customer_code: cCode,
             customer_name: r.customer_name || "Walk-in Customer",
             ref_no: r.ref_no,
-            item: label ? `${base}${formattedDate} - ${label}` : `${base}${formattedDate}`,
-            sale_per_unit: sar,
+            item: itemName,
+            sale_per_unit: perUnit,
             sale_sar: sar,
             sale_rate: rate,
             sale_pkr: sar * rate,
@@ -1080,7 +1110,26 @@ router.get("/customer-sale", async (req, res) => {
         r.rows.forEach((t, i) => {
           const base = `Ziyarat ${i + 1}`;
           const label = t.description || t.text || t.route || "";
-          const sar = Number(t.sar || t.amount) || 0;
+          const vehicle = t.vehicle ? ` [${t.vehicle}]` : "";
+          const persons = Number(t.persons) || 1;
+          const rateVal = Number(t.rate) || 0;
+          const sar = Number(t.total) || Number(t.sar) || Number(t.amount) || (persons * rateVal);
+          const perUnit = persons > 0 ? sar / persons : rateVal;
+
+          const rawDate = t.date || t.travelDate || t.travel_date || r.date || r.travel_date;
+          let formattedDate = "";
+          if (rawDate) {
+            const d = new Date(rawDate);
+            if (!isNaN(d.getTime())) {
+              const day = String(d.getDate()).padStart(2, "0");
+              const mon = d.toLocaleString("en-US", { month: "short" }).toUpperCase();
+              const year = d.getFullYear();
+              formattedDate = ` (${day}/${mon}/${year})`;
+            }
+          }
+
+          const descPart = label ? ` - ${label}` : "";
+          const itemName = `${base}${formattedDate}${descPart}${vehicle} (${persons} Person${persons > 1 ? "s" : ""})`;
           const rate = Number(r.pkr_rate) || 0;
 
           rows.push({
@@ -1088,8 +1137,8 @@ router.get("/customer-sale", async (req, res) => {
             customer_code: cCode,
             customer_name: r.customer_name || "Walk-in Customer",
             ref_no: r.ref_no,
-            item: label ? `${base} - ${label}` : base,
-            sale_per_unit: sar,
+            item: itemName,
+            sale_per_unit: perUnit,
             sale_sar: sar,
             sale_rate: rate,
             sale_pkr: sar * rate,
@@ -1218,7 +1267,7 @@ router.get("/activity", async (req, res) => {
    - Groups   : past + today + selected future days
    - Transport: past + today + selected future days 
    - Ziyarat / Visa / Card: 
-                  NO DATE CRITERIA - ALL BOOKINGS
+                  NO DATE CRITERIA - ALL BOOKINGS (Agar date na mile toh bhi include honge)
    - Payments / Adjustments / Opening Balance:
                   NO DATE CRITERIA - ALL HISTORY
 
@@ -1294,14 +1343,6 @@ const extractFlightDates = (value) => {
     Object.entries(node).forEach(([key, val]) => {
       const k = String(key).toLowerCase();
 
-      /*
-        Possible existing frontend keys:
-        date
-        flightDate
-        flight_date
-        travelDate
-        travel_date
-      */
       if (
         k === "date" ||
         k === "flightdate" ||
@@ -1320,9 +1361,6 @@ const extractFlightDates = (value) => {
         }
       }
 
-      /*
-        Continue inside nested objects.
-      */
       if (val && typeof val === "object") {
         walk(val);
       }
@@ -1474,7 +1512,7 @@ router.get('/upcoming-payment-due', async (req, res) => {
                         NULLIF(to_jsonb(customer_payments.*)->>'customer_id', ''),
                         NULLIF(to_jsonb(customer_payments.*)->>'ref_no', '')
                     ) AS cust_ref, 
-                    ref_no,
+                  ref_no,
                     SUM(COALESCE(amount, 0)::numeric) as total 
                 FROM customer_payments 
                 WHERE is_deleted = false 
@@ -1488,7 +1526,7 @@ router.get('/upcoming-payment-due', async (req, res) => {
                         NULLIF(to_jsonb(customer_payments.*)->>'customer_id', ''),
                         NULLIF(to_jsonb(customer_payments.*)->>'ref_no', '')
                     ) AS cust_ref, 
-                    ref_no,
+                  ref_no,
                     SUM(COALESCE(amount, 0)::numeric) as total 
                 FROM customer_payments 
                 WHERE is_deleted = false AND type = 'adjustment' 
@@ -1524,9 +1562,22 @@ router.get('/upcoming-payment-due', async (req, res) => {
             }
         });
 
-        // 3. Travel Date Extractor
+        // 3. Travel Date Extractor (Updated: Added ziyarat alongside visa & card for no-date criteria if date is missing)
         const extractTravelDate = (moduleType, row) => {
-            if (['visa', 'card', 'ziyarat'].includes(moduleType)) return null;
+            if (['visa', 'card', 'ziyarat'].includes(moduleType)) {
+                // Agar ziyarat mein row/subrow ke andar date di gayi ho to pehle wo check karein
+                if (moduleType === 'ziyarat') {
+                    if (row.travel_date) return row.travel_date;
+                    let subRows = row.rows || row.details;
+                    if (typeof subRows === 'string') { try { subRows = JSON.parse(subRows); } catch(e){} }
+                    if (Array.isArray(subRows) && subRows.length > 0) {
+                        const validSub = subRows.find(s => s.date || s.travelDate || s.travel_date);
+                        if (validSub) return validSub.date || validSub.travelDate || validSub.travel_date;
+                    }
+                }
+                // Agar fir bhi date na mile toh null return karein taake no date criteria mein aaye
+                return row.travel_date || null;
+            }
 
             if (moduleType === 'packages') {
                 let flightArr = row.flights;
@@ -1622,7 +1673,7 @@ router.get('/upcoming-payment-due', async (req, res) => {
             const cust = registeredCustMap[custId];
             const custSales = allSales.filter(s => s.customer_id === custId || s.customer_id === cust.id);
 
-            // Filter sales that fall into window (No-date modules or travel_date <= endDate)
+            // Filter sales that fall into window (No-date modules like visa, card, ziyarat or travel_date <= endDate)
             const eligibleSales = custSales.filter(s => {
                 if (!s.travel_date) return true;
                 const tDate = new Date(s.travel_date);
@@ -1662,15 +1713,13 @@ router.get('/upcoming-payment-due', async (req, res) => {
 
             // Step C: Allocate Payment and Collect Only Pending References
             const pendingSales = [];
-            let totalPendingBalance = Math.max(0, openingBalance - totalPaid); // Residual OB if payment < OB
+            let totalPendingBalance = Math.max(0, openingBalance - totalPaid);
 
             for (const sale of sortedSales) {
                 const amount = sale.sale_amount;
                 if (availablePayment >= amount) {
-                    // Fully cleared -> Do NOT show this ref_no
                     availablePayment -= amount;
                 } else {
-                    // Partial or Unpaid -> Show this ref_no
                     const dueAmt = amount - availablePayment;
                     availablePayment = 0;
 
@@ -1684,12 +1733,10 @@ router.get('/upcoming-payment-due', async (req, res) => {
 
             // Step D: Add to report if there is balance due
             if (totalPendingBalance > 0 && (pendingSales.length > 0 || openingBalance > 0)) {
-                // Find nearest travel date among ONLY pending sales
                 const datedPending = pendingSales.filter(s => s.travel_date);
                 datedPending.sort((a, b) => new Date(a.travel_date) - new Date(b.travel_date));
                 const displayDate = datedPending.length > 0 ? datedPending[0].travel_date : null;
 
-                // Module counts for service breakup of pending items
                 const moduleCounts = {};
                 pendingSales.forEach(s => {
                     moduleCounts[s.module_label] = (moduleCounts[s.module_label] || 0) + 1;
@@ -1814,6 +1861,8 @@ router.get('/upcoming-payment-due', async (req, res) => {
 
 /* =============================================================
    ✈️ UPCOMING TRAVEL / DEPARTURE REPORT (DETAILED)
+   - Includes Packages (Flight, Hotel, Transport, Ziyarat), 
+     Standalone Hotels, Ticketing, Transport, Ziyarat & Groups
    ============================================================= */
 router.get('/upcoming-travel-report', async (req, res) => {
     try {
@@ -1890,13 +1939,15 @@ router.get('/upcoming-travel-report', async (req, res) => {
                 });
             }
 
-            // C. Package Transport
+            // C. Package Transport (With Vehicle & Description)
             let transports = row.transport || row.transports;
             if (typeof transports === 'string') { try { transports = JSON.parse(transports); } catch (e) {} }
             if (Array.isArray(transports)) {
                 transports.forEach((t) => {
                     const transportDate = parseValidDate(t.date || t.travel_date || t.pickup_date);
                     if (transportDate && transportDate >= todayISO && transportDate <= endISO) {
+                        const vehicleStr = t.vehicle ? ` | Vehicle: ${t.vehicle}` : '';
+                        const personsStr = t.persons ? ` | Persons: ${t.persons}` : '';
                         travelRecords.push({
                             module: 'packages',
                             service_type: 'Transport',
@@ -1904,8 +1955,31 @@ router.get('/upcoming-travel-report', async (req, res) => {
                             customer_id: custId,
                             customer_name: customerName,
                             travel_date: transportDate,
-                            details: `Vehicle: ${t.vehicle_type || t.car_type || 'N/A'} | Route/Sector: ${t.text || t.route || t.description || 'N/A'}`,
-                            pax_count: paxCount
+                            details: `Route/Details: ${t.text || t.route || t.description || 'N/A'}${vehicleStr}${personsStr}`,
+                            pax_count: Number(t.persons) || paxCount
+                        });
+                    }
+                });
+            }
+
+            // D. Package Ziyarat (With Vehicle & Description)
+            let ziyarats = row.ziyarat;
+            if (typeof ziyarats === 'string') { try { ziyarats = JSON.parse(ziyarats); } catch (e) {} }
+            if (Array.isArray(ziyarats)) {
+                ziyarats.forEach((z) => {
+                    const ziyaratDate = parseValidDate(z.date || z.travel_date);
+                    if (ziyaratDate && ziyaratDate >= todayISO && ziyaratDate <= endISO) {
+                        const vehicleStr = z.vehicle ? ` | Vehicle: ${z.vehicle}` : '';
+                        const personsStr = z.persons ? ` | Persons: ${z.persons}` : '';
+                        travelRecords.push({
+                            module: 'packages',
+                            service_type: 'Ziyarat',
+                            ref_no: refNo,
+                            customer_id: custId,
+                            customer_name: customerName,
+                            travel_date: ziyaratDate,
+                            details: `Details: ${z.text || z.route || z.description || 'N/A'}${vehicleStr}${personsStr}`,
+                            pax_count: Number(z.persons) || paxCount
                         });
                     }
                 });
@@ -1970,7 +2044,7 @@ router.get('/upcoming-travel-report', async (req, res) => {
         });
 
         // -------------------------------------------------------------
-        // 4. TRANSPORT MODULE (Standalone)
+        // 4. TRANSPORT MODULE (Standalone - TRN-)
         // -------------------------------------------------------------
         const transportRes = await db.query(`SELECT * FROM transport WHERE is_deleted = false`);
         transportRes.rows.forEach(row => {
@@ -1979,8 +2053,10 @@ router.get('/upcoming-travel-report', async (req, res) => {
 
             if (Array.isArray(rowsArr)) {
                 rowsArr.forEach((t) => {
-                    const travelDate = parseValidDate(t.travel_date || t.date || row.travel_date);
+                    const travelDate = parseValidDate(t.date || t.travelDate || t.travel_date || row.booking_date);
                     if (travelDate && travelDate >= todayISO && travelDate <= endISO) {
+                        const vehicleStr = t.vehicle ? ` | Vehicle: ${t.vehicle}` : '';
+                        const persons = Number(t.persons) || Number(row.pax_count) || 1;
                         travelRecords.push({
                             module: 'transport',
                             service_type: 'Transport Standalone',
@@ -1988,8 +2064,8 @@ router.get('/upcoming-travel-report', async (req, res) => {
                             customer_id: row.customer_code || row.customer_id || 'N/A',
                             customer_name: row.customer_name || 'N/A',
                             travel_date: travelDate,
-                            details: `Route: ${t.description || t.text || t.route || 'N/A'} | Vehicle: ${row.vehicle_type || 'N/A'}`,
-                            pax_count: row.pax_count || 1
+                            details: `Route: ${t.description || t.text || t.route || 'N/A'}${vehicleStr} | Persons: ${persons}`,
+                            pax_count: persons
                         });
                     }
                 });
@@ -1997,22 +2073,73 @@ router.get('/upcoming-travel-report', async (req, res) => {
         });
 
         // -------------------------------------------------------------
-        // 5. GROUPS MODULE
+        // 5. ZIYARAT MODULE (Standalone - ZIY-)
+        // -------------------------------------------------------------
+        const ziyaratRes = await db.query(`SELECT * FROM ziyarat WHERE is_deleted = false`);
+        ziyaratRes.rows.forEach(row => {
+            let rowsArr = row.rows || row.details;
+            if (typeof rowsArr === 'string') { try { rowsArr = JSON.parse(rowsArr); } catch(e){} }
+
+            if (Array.isArray(rowsArr)) {
+                rowsArr.forEach((z) => {
+                    const travelDate = parseValidDate(z.date || z.travelDate || z.travel_date || row.booking_date);
+                    if (travelDate && travelDate >= todayISO && travelDate <= endISO) {
+                        const vehicleStr = z.vehicle ? ` | Vehicle: ${z.vehicle}` : '';
+                        const persons = Number(z.persons) || Number(row.pax_count) || 1;
+                        travelRecords.push({
+                            module: 'ziyarat',
+                            service_type: 'Ziyarat Standalone',
+                            ref_no: row.ref_no || 'N/A',
+                            customer_id: row.customer_code || row.customer_id || 'N/A',
+                            customer_name: row.customer_name || 'N/A',
+                            travel_date: travelDate,
+                            details: `Details: ${z.description || z.text || z.route || 'N/A'}${vehicleStr} | Persons: ${persons}`,
+                            pax_count: persons
+                        });
+                    }
+                });
+            }
+        });
+
+        // -------------------------------------------------------------
+        // 6. GROUPS MODULE
         // -------------------------------------------------------------
         const groupRes = await db.query(`SELECT * FROM groups WHERE is_deleted = false`);
         groupRes.rows.forEach(row => {
-            const travelDate = parseValidDate(row.travel_date || row.start_date || row.booking_date);
-            if (travelDate && travelDate >= todayISO && travelDate <= endISO) {
-                travelRecords.push({
-                    module: 'groups',
-                    service_type: 'Group Departure',
-                    ref_no: row.ref_no || 'N/A',
-                    customer_id: row.customer_code || row.customer_id || 'N/A',
-                    customer_name: row.customer_name || row.group_name || 'N/A',
-                    travel_date: travelDate,
-                    details: `Group: ${row.group_name || 'N/A'} | Title: ${row.title || 'N/A'}`,
-                    pax_count: row.total_pax || 1
+            let subRows = row.rows;
+            if (typeof subRows === 'string') { try { subRows = JSON.parse(subRows); } catch(e){} }
+
+            if (Array.isArray(subRows) && subRows.length > 0) {
+                subRows.forEach(g => {
+                    const travelDate = parseValidDate(g.date || g.travel_date || row.travel_date || row.start_date || row.booking_date);
+                    if (travelDate && travelDate >= todayISO && travelDate <= endISO) {
+                        const persons = Number(g.persons) || Number(row.total_pax) || 1;
+                        travelRecords.push({
+                            module: 'groups',
+                            service_type: 'Group Departure',
+                            ref_no: row.ref_no || 'N/A',
+                            customer_id: row.customer_code || row.customer_id || 'N/A',
+                            customer_name: row.customer_name || row.group_name || 'N/A',
+                            travel_date: travelDate,
+                            details: `Group: ${row.group_name || 'N/A'} | Type: ${g.type || row.title || 'N/A'} | Persons: ${persons}`,
+                            pax_count: persons
+                        });
+                    }
                 });
+            } else {
+                const travelDate = parseValidDate(row.travel_date || row.start_date || row.booking_date);
+                if (travelDate && travelDate >= todayISO && travelDate <= endISO) {
+                    travelRecords.push({
+                        module: 'groups',
+                        service_type: 'Group Departure',
+                        ref_no: row.ref_no || 'N/A',
+                        customer_id: row.customer_code || row.customer_id || 'N/A',
+                        customer_name: row.customer_name || row.group_name || 'N/A',
+                        travel_date: travelDate,
+                        details: `Group: ${row.group_name || 'N/A'} | Title: ${row.title || 'N/A'}`,
+                        pax_count: row.total_pax || 1
+                    });
+                }
             }
         });
 
@@ -2265,10 +2392,12 @@ router.get("/customer-sale-detail-ledger", async (req, res) => {
         });
       });
 
-      // Transport
+      // Transport (With Vehicle & Persons Support)
       safeParse(s.transport).forEach((t, i) => {
         const base = `Transport ${i + 1}`;
         const label = t.text || t.route || t.description || "";
+        const vehicle = t.vehicle ? ` [${t.vehicle}]` : "";
+        const persons = Number(t.persons) || 1;
         
         let formattedDate = "";
         if (t.date) {
@@ -2281,6 +2410,8 @@ router.get("/customer-sale-detail-ledger", async (req, res) => {
           }
         }
 
+        const descPart = label ? ` - ${label}` : "";
+        const itemName = `${base}${formattedDate}${descPart}${vehicle} (${persons} Person${persons > 1 ? "s" : ""})`;
         const sar = Math.round(Number(t.amount || t.total || 0));
         const rate = Number(s.transport_sar_rate) || Number(s.pkr_rate) || 0;
         rows.push({
@@ -2289,7 +2420,7 @@ router.get("/customer-sale-detail-ledger", async (req, res) => {
           customer_code: cCode || "WALKIN",
           customer_name: cName,
           ref_no: s.ref_no,
-          item: label ? `${base}${formattedDate} - ${label}` : `${base}${formattedDate}`,
+          item: itemName,
           type: "SALE",
           sale_sar: sar,
           sale_rate: rate,
@@ -2298,10 +2429,26 @@ router.get("/customer-sale-detail-ledger", async (req, res) => {
         });
       });
 
-      // Ziyarat
+      // Ziyarat (With Vehicle & Persons Support)
       safeParse(s.ziyarat).forEach((z, i) => {
         const base = `Ziyarat ${i + 1}`;
         const label = z.text || z.route || z.description || "";
+        const vehicle = z.vehicle ? ` [${z.vehicle}]` : "";
+        const persons = Number(z.persons) || 1;
+
+        let formattedDate = "";
+        if (z.date) {
+          const d = new Date(z.date);
+          if (!isNaN(d.getTime())) {
+            const day = String(d.getDate()).padStart(2, "0");
+            const mon = d.toLocaleString("en-US", { month: "short" }).toUpperCase();
+            const year = d.getFullYear();
+            formattedDate = ` (${day}/${mon}/${year})`;
+          }
+        }
+
+        const descPart = label ? ` - ${label}` : "";
+        const itemName = `${base}${formattedDate}${descPart}${vehicle} (${persons} Person${persons > 1 ? "s" : ""})`;
         const sar = Math.round(Number(z.amount || z.total || 0));
         const rate = Number(s.ziyarat_sar_rate) || Number(s.pkr_rate) || 0;
         rows.push({
@@ -2310,7 +2457,7 @@ router.get("/customer-sale-detail-ledger", async (req, res) => {
           customer_code: cCode || "WALKIN",
           customer_name: cName,
           ref_no: s.ref_no,
-          item: label ? `${base} - ${label}` : base,
+          item: itemName,
           type: "SALE",
           sale_sar: sar,
           sale_rate: rate,
@@ -2499,28 +2646,44 @@ router.get("/customer-sale-detail-ledger", async (req, res) => {
           subRows.forEach((rowItem, i) => {
             let itemLabel = "";
 
-if (t.name === "transport") {
-            const base = `Transport ${i + 1}`;
-            const label = rowItem.description || rowItem.text || rowItem.route || "";
-            let formattedDate = "";
-            
-            // 🔹 Traveling Date Extraction & DD/MMM/YYYY Format Logic
-            const rawDate = rowItem.date || rowItem.travelDate || rowItem.travel_date || r.date || r.travel_date;
-            if (rawDate) {
-              const d = new Date(rawDate);
-              if (!isNaN(d.getTime())) {
-                const day = String(d.getDate()).padStart(2, "0");
-                const mon = d.toLocaleString("en-US", { month: "short" }).toUpperCase();
-                const year = d.getFullYear();
-                formattedDate = ` (${day}/${mon}/${year})`;
+            if (t.name === "transport") {
+              const base = `Transport ${i + 1}`;
+              const label = rowItem.description || rowItem.text || rowItem.route || "";
+              const vehicle = rowItem.vehicle ? ` [${rowItem.vehicle}]` : "";
+              const persons = Number(rowItem.persons) || 1;
+              
+              let formattedDate = "";
+              const rawDate = rowItem.date || rowItem.travelDate || rowItem.travel_date || r.date || r.travel_date;
+              if (rawDate) {
+                const d = new Date(rawDate);
+                if (!isNaN(d.getTime())) {
+                  const day = String(d.getDate()).padStart(2, "0");
+                  const mon = d.toLocaleString("en-US", { month: "short" }).toUpperCase();
+                  const year = d.getFullYear();
+                  formattedDate = ` (${day}/${mon}/${year})`;
+                }
               }
-
-              }
-              itemLabel = label ? `${base}${formattedDate} - ${label}` : `${base}${formattedDate}`;
+              const descPart = label ? ` - ${label}` : "";
+              itemLabel = `${base}${formattedDate}${descPart}${vehicle} (${persons} Person${persons > 1 ? "s" : ""})`;
             } else if (t.name === "ziyarat") {
               const base = `Ziyarat ${i + 1}`;
               const label = rowItem.description || rowItem.text || rowItem.route || "";
-              itemLabel = label ? `${base} - ${label}` : base;
+              const vehicle = rowItem.vehicle ? ` [${rowItem.vehicle}]` : "";
+              const persons = Number(rowItem.persons) || 1;
+
+              let formattedDate = "";
+              const rawDate = rowItem.date || rowItem.travelDate || rowItem.travel_date || r.date || r.travel_date;
+              if (rawDate) {
+                const d = new Date(rawDate);
+                if (!isNaN(d.getTime())) {
+                  const day = String(d.getDate()).padStart(2, "0");
+                  const mon = d.toLocaleString("en-US", { month: "short" }).toUpperCase();
+                  const year = d.getFullYear();
+                  formattedDate = ` (${day}/${mon}/${year})`;
+                }
+              }
+              const descPart = label ? ` - ${label}` : "";
+              itemLabel = `${base}${formattedDate}${descPart}${vehicle} (${persons} Person${persons > 1 ? "s" : ""})`;
             } else {
               const persons = Number(rowItem.persons || 0);
               itemLabel = rowItem.type
@@ -2576,7 +2739,7 @@ if (t.name === "transport") {
                (SELECT customer_name FROM ticketing WHERE TRIM(LOWER(ref_no)) = TRIM(LOWER(cp.ref_no)) AND customer_name IS NOT NULL AND customer_name != '' AND customer_name != 'Walk-in Customer' LIMIT 1),
                (SELECT customer_name FROM transport WHERE TRIM(LOWER(ref_no)) = TRIM(LOWER(cp.ref_no)) AND customer_name IS NOT NULL AND customer_name != '' AND customer_name != 'Walk-in Customer' LIMIT 1),
                (SELECT customer_name FROM ziyarat WHERE TRIM(LOWER(ref_no)) = TRIM(LOWER(cp.ref_no)) AND customer_name IS NOT NULL AND customer_name != '' AND customer_name != 'Walk-in Customer' LIMIT 1),
-               'Walk-in Customer'
+              'Walk-in Customer'
              ) AS resolved_name
       FROM customer_payments cp
       LEFT JOIN public.banks b ON b.id = cp.bank_profile_id
@@ -2643,7 +2806,7 @@ if (t.name === "transport") {
       }
     });
 
-// 8. CHRONOLOGICAL SORTING (SAME DATE PAR SALE PEHLE, PAYMENT BAAD MEIN)
+    // 8. CHRONOLOGICAL SORTING (SAME DATE PAR SALE PEHLE, PAYMENT BAAD MEIN)
     rows.sort((a, b) => {
       const dateA = new Date(a.date).getTime();
       const dateB = new Date(b.date).getTime();

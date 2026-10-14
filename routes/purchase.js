@@ -3,7 +3,7 @@ const router = express.Router();
 const db = require("../db");
 
 /* =====================================================
-   LOAD PURCHASE (SAVE + EDIT AUTO) ✅ SUPPLIER INCLUDED
+   LOAD PURCHASE (UNIVERSAL SMART DESCRIPTION UPDATE) ✅
 ===================================================== */
 router.get("/load/:ref_no", async (req, res) => {
   try {
@@ -129,11 +129,16 @@ router.get("/load/:ref_no", async (req, res) => {
         });
       }
 
-      // TRANSPORT
+      // PACKAGES TRANSPORT (With Vehicle Support)
       if (Array.isArray(salesRow.transport)) {
         salesRow.transport.forEach((t, i) => {
           const base = `Transport ${i + 1}`;
           const label = t.text || t.route || t.description || "";
+          const vehicle = t.vehicle ? ` [${t.vehicle}]` : "";
+          const persons = Number(t.persons) || 1;
+          const rate = Number(t.rate) || 0;
+          const sar = Number(t.amount) || (persons * rate);
+          const perUnit = persons > 0 ? sar / persons : rate;
           
           let formattedDate = "";
           if (t.date) {
@@ -146,11 +151,13 @@ router.get("/load/:ref_no", async (req, res) => {
             }
           }
 
-          const sar = Number(t.amount) || 0;
+          const descPart = label ? ` - ${label}` : "";
+          const itemName = `${base}${formattedDate}${descPart}${vehicle} (${persons} Person${persons > 1 ? "s" : ""})`;
+
           rows.push({
-            item: label ? `${base}${formattedDate} - ${label}` : `${base}${formattedDate}`,
-            unit_qty: 1,
-            sale_per_unit: sar,
+            item: itemName,
+            unit_qty: persons,
+            sale_per_unit: perUnit,
             sale_sar: sar,
             sale_rate: salesRow.transport_sar_rate || 0,
             sale_pkr: sar * (salesRow.transport_sar_rate || 0)
@@ -158,16 +165,35 @@ router.get("/load/:ref_no", async (req, res) => {
         });
       }
 
-      // ZIYARAT
+      // PACKAGES ZIYARAT (With Vehicle Support)
       if (Array.isArray(salesRow.ziyarat)) {
         salesRow.ziyarat.forEach((t, i) => {
           const base = `Ziyarat ${i+1}`;
           const label = t.text || t.route || t.description || "";
-          const sar = Number(t.amount) || 0;
+          const vehicle = t.vehicle ? ` [${t.vehicle}]` : "";
+          const persons = Number(t.persons) || 1;
+          const rate = Number(t.rate) || 0;
+          const sar = Number(t.amount) || (persons * rate);
+          const perUnit = persons > 0 ? sar / persons : rate;
+
+          let formattedDate = "";
+          if (t.date) {
+            const d = new Date(t.date);
+            if (!isNaN(d.getTime())) {
+              const day = String(d.getDate()).padStart(2, "0");
+              const mon = d.toLocaleString("en-US", { month: "short" }).toUpperCase();
+              const year = d.getFullYear();
+              formattedDate = ` (${day}/${mon}/${year})`;
+            }
+          }
+
+          const descPart = label ? ` - ${label}` : "";
+          const itemName = `${base}${formattedDate}${descPart}${vehicle} (${persons} Person${persons > 1 ? "s" : ""})`;
+
           rows.push({
-            item: label ? `${base} - ${label}` : base,
-            unit_qty: 1,
-            sale_per_unit: sar,
+            item: itemName,
+            unit_qty: persons,
+            sale_per_unit: perUnit,
             sale_sar: sar,
             sale_rate: salesRow.ziyarat_sar_rate || 0,
             sale_pkr: sar * (salesRow.ziyarat_sar_rate || 0)
@@ -182,6 +208,7 @@ router.get("/load/:ref_no", async (req, res) => {
             const persons = Number(ac.persons || ac.qty || 1);
             const ratePkr = Number(ac.rate || ac.rate_pkr || 0);
             const totalPkr = Number(ac.total || ac.amount || (persons * ratePkr) || 0);
+            const perUnitPkr = persons > 0 ? (totalPkr / persons) : totalPkr;
 
             const agentName = ac.agent_name || ac.name || ac.title || ac.type || "";
             const personText = ` (${persons} Person${persons > 1 ? "s" : ""})`;
@@ -189,7 +216,7 @@ router.get("/load/:ref_no", async (req, res) => {
             rows.push({
               item: agentName ? `Agent Commission ${i + 1} - ${agentName}${personText}` : `Agent Commission ${i + 1}${personText}`,
               unit_qty: persons,
-              sale_per_unit: totalPkr,
+              sale_per_unit: perUnitPkr,
               sale_sar: totalPkr,
               sale_rate: 1,
               sale_pkr: totalPkr
@@ -209,7 +236,7 @@ router.get("/load/:ref_no", async (req, res) => {
       }
     }
 
-/* =========================
+    /* =========================
        HOTEL ONLY (HOT-)
     ========================= */
     else if (ref_no.startsWith("HOT-")) {
@@ -285,7 +312,6 @@ router.get("/load/:ref_no", async (req, res) => {
           sale_pkr: sar * pkrRate
         });
       });
-
     }
 
     // =======================
@@ -319,7 +345,6 @@ router.get("/load/:ref_no", async (req, res) => {
           sale_pkr: sar * pkrRate
         });
       });
-
     }
 
     // =======================
@@ -353,12 +378,9 @@ router.get("/load/:ref_no", async (req, res) => {
           sale_pkr: sar * pkrRate
         });
       });
-
     }
 
-
-   
-/* =========================
+    /* =========================
        TRANSPORT ONLY (TRN-)
     ========================= */
     else if (ref_no.startsWith("TRN-")) {
@@ -380,8 +402,13 @@ router.get("/load/:ref_no", async (req, res) => {
         r.rows.forEach((t, i) => {
           const baseItem = `Transport ${i + 1}`;
           const label = t.description || t.text || t.route || "";
+          const vehicle = t.vehicle ? ` [${t.vehicle}]` : "";
+          const persons = Number(t.persons) || 1;
+          const rateVal = Number(t.rate) || 0;
+          const sar = Number(t.total) || Number(t.sar) || Number(t.amount) || (persons * rateVal);
+          const perUnit = persons > 0 ? sar / persons : rateVal;
+          const rate = Number(r.pkr_rate) || 0;
           
-          // Traveling Date Extraction & DD/MMM/YYYY Format Logic
           const rawDate = t.date || t.travelDate || t.travel_date;
           let formattedDate = "";
           
@@ -395,11 +422,13 @@ router.get("/load/:ref_no", async (req, res) => {
             }
           }
 
-          const sar = Number(t.sar) || Number(t.amount) || 0;
-          const rate = Number(r.pkr_rate) || 0;
+          const descPart = label ? ` - ${label}` : "";
+          const itemName = `${baseItem}${formattedDate}${descPart}${vehicle} (${persons} Person${persons > 1 ? "s" : ""})`;
 
           rows.push({
-            item: label ? `${baseItem}${formattedDate} - ${label}` : `${baseItem}${formattedDate}`, // ✅ Traveling Date added
+            item: itemName,
+            unit_qty: persons,
+            sale_per_unit: perUnit,
             sale_sar: sar,
             sale_rate: rate,
             sale_pkr: sar * rate,
@@ -408,9 +437,9 @@ router.get("/load/:ref_no", async (req, res) => {
       }
     }
 
-        /* =========================
-          ZIYARAT ONLY (ZIY-)
-         ========================= */
+    /* =========================
+       ZIYARAT ONLY (ZIY-)
+    ========================= */
     else if (ref_no.startsWith("ZIY-")) {
       const q = await db.query(
         `
@@ -430,24 +459,42 @@ router.get("/load/:ref_no", async (req, res) => {
         r.rows.forEach((t, i) => {
           const baseItem = `Ziyarat ${i + 1}`;
           const label = t.description || t.text || t.route || "";
-
-          const sar = Number(t.sar) || 0;     // ✅ FIX HERE
+          const vehicle = t.vehicle ? ` [${t.vehicle}]` : "";
+          const persons = Number(t.persons) || 1;
+          const rateVal = Number(t.rate) || 0;
+          const sar = Number(t.total) || Number(t.sar) || Number(t.amount) || (persons * rateVal);
+          const perUnit = persons > 0 ? sar / persons : rateVal;
           const rate = Number(r.pkr_rate) || 0;
 
+          const rawDate = t.date || t.travelDate || t.travel_date;
+          let formattedDate = "";
+          
+          if (rawDate) {
+            const d = new Date(rawDate);
+            if (!isNaN(d.getTime())) {
+              const day = String(d.getDate()).padStart(2, "0");
+              const mon = d.toLocaleString("en-US", { month: "short" }).toUpperCase();
+              const year = d.getFullYear();
+              formattedDate = ` (${day}/${mon}/${year})`;
+            }
+        }
+
+          const descPart = label ? ` - ${label}` : "";
+          const itemName = `${baseItem}${formattedDate}${descPart}${vehicle} (${persons} Person${persons > 1 ? "s" : ""})`;
+
           rows.push({
-            item: label ? `${baseItem} - ${label}` : baseItem, // ✅ include route/text in item
-            sale_sar: sar,        // ✅ now works
+            item: itemName,
+            unit_qty: persons,
+            sale_per_unit: perUnit,
+            sale_sar: sar,
             sale_rate: rate,
             sale_pkr: sar * rate,
           });
-        });
-      }
+      });
     }
+  }
 
     /* =========================
-       TICKETING ONLY (TIC-)
-    ========================= */
-/* =========================
        TICKETING ONLY (TIC-)
     ========================= */
     else if (ref_no.startsWith("TIC-")) {
@@ -471,15 +518,12 @@ router.get("/load/:ref_no", async (req, res) => {
 
       const r = q.rows[0];
 
-      /* ========= SAFE ROUTE + AIRLINE TEXT ========= */
       const from = Array.isArray(r.flight_from) ? r.flight_from.join(", ") : r.flight_from || "";
       const to = Array.isArray(r.flight_to) ? r.flight_to.join(", ") : r.flight_to || "";
       const airline = Array.isArray(r.airline) ? r.airline.join(", ") : r.airline || "";
 
       const routeText = from && to ? `${from} → ${to}` : "";
       const extraInfo = [airline, routeText].filter(Boolean).join(" | ");
-
-      /* ========= TICKETS ========= */
 
       if (r.adult_qty > 0) {
         const qty = Number(r.adult_qty);
@@ -524,87 +568,91 @@ router.get("/load/:ref_no", async (req, res) => {
       return res.json({ success: false, error: "Invalid Ref No" });
     }
 
+  const p = await db.query(
+    `SELECT * FROM purchase_entries WHERE ref_no=$1 AND is_deleted=false`,
+    [ref_no]
+  );
 
+  // 🔹 UNIVERSAL SMART UPDATE: Har module/prefix ke liye agar item ki description/route change hui hai toh purane record ko UPDATE kar do
+  for (const r of rows) {
+    const basePrefix = r.item.split(" - ")[0].split(" (")[0]; // Jaise "Transport 2", "Hotel 1", "Ziyarat 1", "Visa 1", etc.
+    
+    const existingMatch = p.rows.find(oldP => oldP.item !== r.item && oldP.item.startsWith(basePrefix));
+    
+    if (existingMatch) {
+      await db.query(
+        `UPDATE purchase_entries SET item=$1 WHERE id=$2`,
+        [r.item, existingMatch.id]
+      );
+      existingMatch.item = r.item;
+    }
+  }
 
-    /* =========================
-       MERGE PURCHASE (EDIT) ✅
-       SHOW BLANK FOR EMPTY SAR/RATE
-    ========================= */
-    /* =========================
-       MERGE PURCHASE (EDIT) ✅
-       HARD RESET PROFIT IF CLEARED
-    ========================= */
-const p = await db.query(
-      `SELECT * FROM purchase_entries WHERE ref_no=$1 AND is_deleted=false`,
-      [ref_no]
-    );
+  rows = rows.map(r => {
+    const baseItem = r.item.split(" - ")[0].split(" (")[0];
+    const x = p.rows.find(p => p.item === r.item || p.item.startsWith(baseItem));
 
-    rows = rows.map(r => {
-      const baseItem = r.item.split(" - ")[0];
-      const x = p.rows.find(p => p.item === r.item || p.item === baseItem);
+    const sale_sar = Number(r.sale_sar) || 0;
+    const sale_rate = Number(r.sale_rate) || 0;
+    const sale_pkr = sale_sar * sale_rate;
+    const unit_qty = Number(r.unit_qty) || 1;
 
-      const sale_sar = Number(r.sale_sar) || 0;
-      const sale_rate = Number(r.sale_rate) || 0;
-      const sale_pkr = sale_sar * sale_rate;
-      const unit_qty = Number(r.unit_qty) || 1;
+    const raw_sar = r.purchase_sar !== undefined ? r.purchase_sar : x?.purchase_sar;
+    const raw_rate = r.purchase_rate !== undefined ? r.purchase_rate : x?.purchase_rate;
+    const raw_per_unit = x?.purchase_per_unit;
 
-      const raw_sar = r.purchase_sar !== undefined ? r.purchase_sar : x?.purchase_sar;
-      const raw_rate = r.purchase_rate !== undefined ? r.purchase_rate : x?.purchase_rate;
-      const raw_per_unit = x?.purchase_per_unit;
+    const sarCleared = raw_sar === "" || raw_sar === null || Number(raw_sar) === 0;
+    const rateCleared = raw_rate === "" || raw_rate === null || Number(raw_rate) === 0;
 
-      const sarCleared = raw_sar === "" || raw_sar === null || Number(raw_sar) === 0;
-      const rateCleared = raw_rate === "" || raw_rate === null || Number(raw_rate) === 0;
+    let purchase_sar = "";
+    let purchase_rate = "";
+    let purchase_per_unit = "";
+    let purchase_pkr = 0;
+    let profit = 0;
 
-      let purchase_sar = "";
-      let purchase_rate = "";
-      let purchase_per_unit = "";
-      let purchase_pkr = 0;
-      let profit = 0;
-
-      if (!sarCleared && !rateCleared) {
-        purchase_sar = Number(raw_sar);
-        purchase_rate = Number(raw_rate);
-        purchase_per_unit = raw_per_unit ? Number(raw_per_unit) : (purchase_sar / unit_qty);
-        purchase_pkr = purchase_sar * purchase_rate;
-        profit = sale_pkr - purchase_pkr;
-      }
-
-      return {
-        ...r,
-        unit_qty,
-        sale_per_unit: r.sale_per_unit || (sale_sar / unit_qty),
-        sale_sar,
-        sale_rate,
-        sale_pkr,
-        purchase_per_unit,
-        purchase_sar,
-        purchase_rate,
-        purchase_pkr,
-        profit,
-        supplier_code: x?.supplier_code ?? "",
-        supplier_name: x?.supplier_name ?? ""
-      };
-    });
-
-let customer_name = "";
-    const cust = await db.query(`
-      SELECT customer_name FROM bookings WHERE ref_no=$1
-      UNION SELECT customer_name FROM hotels WHERE ref_no=$1
-      UNION SELECT customer_name FROM visa WHERE ref_no=$1
-      UNION SELECT customer_name FROM card WHERE ref_no=$1
-      UNION SELECT customer_name FROM groups WHERE ref_no=$1
-      UNION SELECT customer_name FROM ticketing WHERE ref_no=$1
-      UNION SELECT customer_name FROM transport WHERE ref_no=$1
-      UNION SELECT customer_name FROM ziyarat WHERE ref_no=$1
-      LIMIT 1
-    `, [ref_no]);
-
-    if (cust.rows.length) {
-      customer_name = cust.rows[0].customer_name;
+    if (!sarCleared && !rateCleared) {
+      purchase_sar = Number(raw_sar);
+      purchase_rate = Number(raw_rate);
+      purchase_per_unit = raw_per_unit ? Number(raw_per_unit) : (purchase_sar / unit_qty);
+      purchase_pkr = purchase_sar * purchase_rate;
+      profit = sale_pkr - purchase_pkr;
     }
 
+    return {
+      ...r,
+      unit_qty,
+      sale_per_unit: r.sale_per_unit || (sale_sar / unit_qty),
+      sale_sar,
+      sale_rate,
+      sale_pkr,
+      purchase_per_unit,
+      purchase_sar,
+      purchase_rate,
+      purchase_pkr,
+      profit,
+      supplier_code: x?.supplier_code ?? "",
+      supplier_name: x?.supplier_name ?? ""
+    };
+  });
 
-    return res.json({ success: true, is_edit: isEdit, customer_name, rows });
+  let customer_name = "";
+  const cust = await db.query(`
+    SELECT customer_name FROM bookings WHERE ref_no=$1
+    UNION SELECT customer_name FROM hotels WHERE ref_no=$1
+    UNION SELECT customer_name FROM visa WHERE ref_no=$1
+    UNION SELECT customer_name FROM card WHERE ref_no=$1
+    UNION SELECT customer_name FROM groups WHERE ref_no=$1
+    UNION SELECT customer_name FROM ticketing WHERE ref_no=$1
+    UNION SELECT customer_name FROM transport WHERE ref_no=$1
+    UNION SELECT customer_name FROM ziyarat WHERE ref_no=$1
+    LIMIT 1
+  `, [ref_no]);
+
+  if (cust.rows.length) {
+    customer_name = cust.rows[0].customer_name;
+  }
+
+  return res.json({ success: true, is_edit: isEdit, customer_name, rows });
      
   } catch(err){
     console.error("PURCHASE LOAD ERROR:", err);
