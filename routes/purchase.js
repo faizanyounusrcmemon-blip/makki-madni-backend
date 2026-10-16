@@ -635,24 +635,28 @@ router.get("/load/:ref_no", async (req, res) => {
     };
   });
 
-  let customer_name = "";
+let customer_name = "";
+  let sub_customer_name = "";
+
   const cust = await db.query(`
-    SELECT customer_name FROM bookings WHERE ref_no=$1
-    UNION SELECT customer_name FROM hotels WHERE ref_no=$1
-    UNION SELECT customer_name FROM visa WHERE ref_no=$1
-    UNION SELECT customer_name FROM card WHERE ref_no=$1
-    UNION SELECT customer_name FROM groups WHERE ref_no=$1
-    UNION SELECT customer_name FROM ticketing WHERE ref_no=$1
-    UNION SELECT customer_name FROM transport WHERE ref_no=$1
-    UNION SELECT customer_name FROM ziyarat WHERE ref_no=$1
+    SELECT customer_name, sub_customer_name FROM bookings WHERE ref_no=$1 AND is_deleted=false
+    UNION SELECT customer_name, sub_customer_name FROM hotels WHERE ref_no=$1 AND is_deleted=false
+    UNION SELECT customer_name, sub_customer_name FROM visa WHERE ref_no=$1 AND is_deleted=false
+    UNION SELECT customer_name, sub_customer_name FROM card WHERE ref_no=$1 AND is_deleted=false
+    UNION SELECT customer_name, sub_customer_name FROM groups WHERE ref_no=$1 AND is_deleted=false
+    UNION SELECT customer_name, sub_customer_name FROM ticketing WHERE ref_no=$1 AND is_deleted=false
+    UNION SELECT customer_name, sub_customer_name FROM transport WHERE ref_no=$1 AND is_deleted=false
+    UNION SELECT customer_name, sub_customer_name FROM ziyarat WHERE ref_no=$1 AND is_deleted=false
     LIMIT 1
   `, [ref_no]);
 
   if (cust.rows.length) {
-    customer_name = cust.rows[0].customer_name;
+    customer_name = cust.rows[0].customer_name || "";
+    sub_customer_name = cust.rows[0].sub_customer_name || "";
   }
 
-  return res.json({ success: true, is_edit: isEdit, customer_name, rows });
+  return res.json({ success: true, is_edit: isEdit, customer_name, sub_customer_name, rows });
+
      
   } catch(err){
     console.error("PURCHASE LOAD ERROR:", err);
