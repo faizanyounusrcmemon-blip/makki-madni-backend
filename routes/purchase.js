@@ -1270,6 +1270,7 @@ router.get("/missing-supplier", async (req, res) => {
       SELECT
         p.id,
         p.ref_no,
+        p.item,
         p.supplier_name,
         p.supplier_code,
         (p.purchase_sar * p.purchase_rate) AS row_amount
@@ -1316,6 +1317,7 @@ router.get("/missing-supplier", async (req, res) => {
     const rows = result.rows.map(r => ({
       id: r.id,
       ref_no: r.ref_no,
+      item: r.item || "-",
       customer_name: customerMap[r.ref_no] || "",
       supplier_name: r.supplier_name,
       supplier_code: r.supplier_code,
